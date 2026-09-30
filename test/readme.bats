@@ -33,6 +33,26 @@ quickstart() {
 	assert_eq "$(quickstart | wc -l)" 5
 }
 
+@test "FR37: the credential helper snippet leaves only lend's helper after none, or after gh's two" {
+	require git
+	local snippet host want
+	snippet=$(sed -n '/^### Git credential helper$/,/^###/p' "$README" | sed -n '/^```$/,/^```$/p' | sed '1d;$d')
+	want=$'\n!lend run -- gh auth git-credential'
+	cd "$HOME"
+	bash -c "$snippet"
+	for host in github.com gist.github.com; do
+		assert_eq "$(git config --global --get-all "credential.https://$host.helper")" "$want"
+	done
+	for host in github.com gist.github.com; do
+		git config --global --replace-all "credential.https://$host.helper" ''
+		git config --global --add "credential.https://$host.helper" '!/usr/bin/gh auth git-credential'
+	done
+	bash -c "$snippet"
+	for host in github.com gist.github.com; do
+		assert_eq "$(git config --global --get-all "credential.https://$host.helper")" "$want"
+	done
+}
+
 @test "AC5: the README's quick start runs as written and gh then receives GH_TOKEN" {
 	require git
 	require make

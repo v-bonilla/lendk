@@ -137,7 +137,7 @@ CLASS (hint): TEXT. Interactive FIX.
 - `locked` (120, non-interactive, or a loopback prompt that cannot take the terminal): `env/KEY needs the gpg passphrase and this call cannot prompt.`
 - `canceled` (120, interactive only): `passphrase entry for env/KEY was canceled.` `Run the command again to retry.`
 - `timeout` (120): `env/KEY: gpg did not finish within N s.` `Retry; a hardware token may need a touch, or raise LEND_TIMEOUT.`
-- `map` (125): `MAP:LINE: TEXT.` `Fix the line, then run: lend check`
+- `map` (125): `MAP:LINE: TEXT.` `Fix the line, then run: lend check`; or, when `add` names a group the map does not define, `MAP: group @NAME is not defined.` `Define it first: lend add @GROUP KEY...`
 - `unmapped` (125): `CMD is not mapped.` `Map it: lend add CMD KEY..., or name keys: lend run KEY... -- CMD`
 - `missing-key` (125): `env/KEY is not in the store.` per missing key, `Add it: pass insert env/KEY`; or `env/KEY has an empty first line.` `Set it: pass edit env/KEY`; for `unlock` without names, `MAP does not exist.` `Create it with lend add, or name the keys to unlock.`, or `no key mapped in MAP is in the store.` `Add a mapped key with pass insert, then retry.`
 - `decrypt` (125): `env/KEY: gpg says: TEXT.`, TEXT being gpg's last stderr line. `See gpg's error: lend unlock KEY`
@@ -213,7 +213,7 @@ Shims:
 
 - NFR1 Shim overhead: with keys preset and a 50-entry map, shim exec to target exec exceeds a direct exec of the target by at most 20 ms median and 40 ms p95 over 200 runs (`make bench`).
 - NFR2 Decrypt cost: `run` makes one backend read per key the caller did not set, `unlock` one per key it names, in sequence; other verbs make none. With real GnuPG, a warm cache and a key protected at `s2k-count 8388608`, a 3-key call takes at most 500 ms median (`make bench`).
-- NFR3 Bash 4.4+ and GnuPG 2.4+ (FR22). Tier 1 is Linux (Debian 13, Ubuntu 24.04+, current Fedora): every change passes `make check` and `make check-docker` (AC1). macOS works with Homebrew bash and GnuPG; its CI job never blocks. `bin/lend` uses POSIX utilities and options, plus `mktemp -d TEMPLATE`, plain `readlink` and fractional `sleep`, which GNU, BSD and busybox share; never `timeout`, `flock`, `stat`, `readlink -f` or `setsid`. It reads `/proc/PID/stat`, or runs `ps` where `/proc` is absent, only to learn whether its process group owns the terminal before a loopback prompt.
+- NFR3 Bash 4.4+ and GnuPG 2.4+ (FR22). Tier 1 is Linux (Debian 13, Ubuntu 24.04+, current Fedora): every change passes `make check` and `make check-docker` (AC1). macOS is untested and needs bash and GnuPG from Homebrew; its CI job never blocks. `bin/lend` uses POSIX utilities and options, plus `mktemp -d TEMPLATE`, plain `readlink` and fractional `sleep`, which GNU, BSD and busybox share; never `timeout`, `flock`, `stat`, `readlink -f` or `setsid`. It reads `/proc/PID/stat`, or runs `ps` where `/proc` is absent, only to learn whether its process group owns the terminal before a loopback prompt.
 - NFR4 Runtime dependencies: bash 4.4+, pass 1.7+, GnuPG 2.4+, POSIX utilities. Development: bats-core as a pinned git submodule, shellcheck pinned through `uvx` with zero findings, Docker for `make check-docker`; nothing else.
 - NFR5 lend writes only the map (`add`, `rm`), the shim directory (`add`, `rm`, `sync`) and the lock: no caches or logs. Temporary files are mode 0600 in a 0700 directory, hold no value, and are gone before exit or exec, and within 2 s when lend is killed.
 - NFR6 No network, telemetry or auto-update: every verb run under `strace -f --seccomp-bpf -e trace=connect` makes no AF_INET or AF_INET6 `connect`; the source has no `curl`, `wget`, `nc` or `/dev/tcp`. `check` is the self-report for drift, and a GnuPG status-code change fails FR18.
@@ -234,7 +234,7 @@ Relative XDG values are ignored. lend sets `LEND_INJECTED` for targets and `GPG_
 
 - Install only from the project repository; same-named npm and crates.io packages are unrelated. `make install` copies `bin/lend` to a temporary file in `$PREFIX/bin`, makes it executable and renames it over `lend`, so a running copy keeps reading the old file. `PREFIX` defaults to `$HOME/.local` and must be absolute; `DESTDIR` is honored.
 - Upgrade: `git pull`, then `make install`. With versioned install directories behind a stable symlink, run `lend sync` once through the symlink.
-- Uninstall: delete the `# >>> lend >>>` blocks and the environment.d file, then `make uninstall`: it removes marker-bearing shims, the shim directory if empty, and the installed file, never the map, store or rc files.
+- Uninstall: delete the `# >>> lend >>>` blocks and the environment.d file, then `make uninstall`: it removes marker-bearing shims, the shim directory and lend's default data directory if empty, and the installed file only when its second line is `bin/lend`'s, never the map, store or rc files.
 
 ## 10. Alternatives considered
 

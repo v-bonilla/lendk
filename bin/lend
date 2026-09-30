@@ -49,7 +49,7 @@ for lend_f in ${lend_bashopts//:/ }; do
 	esac
 done
 # lend_env keeps the caller's environment, which lend's own variables may shadow, for FR2 and for
-# the target (R4). The names come from expansions, not a fork (R8).
+# the target (FR1). The names come from expansions, not a fork, to keep shim overhead low (NFR1).
 lend_i=
 case ${lend_env@a} in *x*) lend_i=$lend_env ;; esac
 builtin unset -v lend_env
@@ -103,7 +103,7 @@ set_paths() {
 	prefix=${LEND_PREFIX:-env}
 }
 
-# R8: the FR28 listing of a plain map and its directory starts first and runs while bash does the
+# For shim overhead (NFR1): the FR28 listing of a plain map and its directory starts first and runs while bash does the
 # rest; check_map_paths reads it. Helpers come from the system path, never from the shims. The
 # paths stay local here, so the snapshot below still sees any caller variables of their names.
 # shellcheck disable=SC2034
@@ -343,7 +343,7 @@ expand_keys() {
 		fi
 		for line in "${lines[@]}"; do
 			((++i))
-			# Pattern tests on the raw line; no line is split (R8).
+			# Pattern tests on the raw line; no line is split, which keeps the read fast (NFR1).
 			[[ $line == [[:blank:]]* ]] && line=${line#"${line%%[![:blank:]]*}"}
 			case $line in
 			"$cmd" | "$cmd"[[:blank:]#]*)
@@ -422,7 +422,7 @@ resolve() {
 				[[ ${dir:-/} -ef $shims ]] && continue
 			fi
 			# A shim directory other than this call's (LEND_SHIMS set only in some shells) would
-			# make the shim exec itself forever; only this one hit is read (R8).
+			# make the shim exec itself forever; only this one hit is read (NFR1).
 			line=
 			{ IFS= read -r -n 256 line && IFS= read -r -n 256 line; } <"$file" 2>/dev/null
 			[[ $line == '# lend shim '* ]] && continue
@@ -450,7 +450,7 @@ backend_has() {
 	[[ -f $store/$prefix/$1.gpg ]]
 }
 
-# backend_read KEY...: the backend job's body (R5). Reads each KEY's entry with pass under an
+# backend_read KEY...: the backend job's body (FR16, FR17). Reads each KEY's entry with pass under an
 # environment built from scratch (FR8, FR14, FR15), then prints "COUNT STATUS KEY" and the first line
 # of each entry read through one forked writer, so the job never waits for its reader.
 backend_read() {
@@ -476,7 +476,7 @@ backend_read() {
 			st=empty
 			break
 		fi
-		# R3: splitting under set -f, never ${out%%$'\n'*}, which is quadratic on bash 4.4.
+		# First line (FR10): splitting under set -f, never ${out%%$'\n'*}, which is quadratic on bash 4.4.
 		IFS=$'\n'
 		# shellcheck disable=SC2206
 		lines=($out)
@@ -510,7 +510,7 @@ allow_env() {
 	done
 }
 
-# backend_job KEY...: J (R5), run as a coproc. A signal ends it with a status bash never reports
+# backend_job KEY...: J, run as a coproc (FR16, FR17). A signal ends it with a status bash never reports
 # as a killed job, recorded for classification.
 backend_job() {
 	builtin trap 'backend_exit 143' TERM
@@ -529,7 +529,7 @@ backend_exit() {
 	builtin exit "$1"
 }
 
-# watchdog: W (R5), started before J, whose PID it reads from the temporary directory. Every 0.1 s it
+# watchdog: W, started before J (FR16, FR17), whose PID it reads from the temporary directory. Every 0.1 s it
 # wakes lend in interactive calls, then checks. At LEND_TIMEOUT it marks the timeout, and when lend
 # is gone it notes that. Either way it stops the job's group, with KILL after 0.5 s, and removes a
 # gone lend's temporary directory once the job can write no more.
@@ -608,8 +608,8 @@ backend_fail() {
 	fail "$1" "$2" KEY="$3"
 }
 
-# read_values KEY...: lend_values[KEY] for each KEY, read by the backend job J under the watchdog W
-# (R5): bounded by LEND_TIMEOUT (FR16), leaving no process behind (FR17), classified per PRD 5.2.
+# read_values KEY...: lend_values[KEY] for each KEY, read by the backend job J under the watchdog W:
+# bounded by LEND_TIMEOUT (FR16), leaving no process behind (FR17), classified per PRD 5.2.
 read_values() {
 	local err out line wpid jpid i st k ecode last
 	local -a f keys=("$@")
@@ -689,6 +689,7 @@ read_values() {
 		last=
 		while IFS= read -r line; do [[ -z $line ]] || last=$line; done <"$lend_tmp/err.$k"
 		[[ -n $last ]] || last='pass failed with no message'
+		last=${last#gpg: }
 		backend_fail decrypt "$prefix/$k: gpg says: ${last%.}" "$k"
 		;;
 	esac
@@ -771,7 +772,7 @@ read_keys() {
 }
 
 # restore_options: the caller's shell options, which an exported SHELLOPTS or BASHOPTS carries to
-# the target (R4), with execfail kept so a failed exec returns to lend.
+# the target (FR1), with execfail kept so a failed exec returns to lend.
 restore_options() {
 	local o
 	for o in ${SHELLOPTS//:/ }; do
@@ -887,7 +888,7 @@ run_verb() {
 	}
 }
 
-# R8: run, which every shim calls, starts before bash parses the rest of the file.
+# run, which every shim calls, starts before bash parses the rest of the file (NFR1).
 if [[ ${1-} == run ]]; then
 	shift
 	load_env
@@ -1060,7 +1061,7 @@ scan_map() {
 		done
 		m_keys[$name]=${m_keys[$name]# }
 	done
-	((${#m_bad[@]} < 2)) || mapfile -t m_bad < <(printf '%s\n' "${m_bad[@]}" | command -p sort -t '|' -k 1,1n)
+	((${#m_bad[@]} < 2)) || mapfile -t m_bad < <(printf '%s\n' "${m_bad[@]}" | command -p sort -s -t '|' -k 1,1n)
 }
 
 # set_self: self, the path lend was invoked by, made absolute with symlinks unresolved (FR29).

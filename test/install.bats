@@ -66,3 +66,27 @@ inode() { ls -i "$1" | awk '{ print $1 }'; }
 	assert_eq "$status" 0
 	assert_eq "$(ls -A "$LEND_SHIMS")" tool
 }
+
+@test "uninstall: leaves a foreign lend in PREFIX/bin and says so" {
+	mkdir -p "$SB/p/bin"
+	printf '#!/bin/sh\necho other\n' >"$SB/p/bin/lend"
+	mk uninstall PREFIX="$SB/p"
+	assert_eq "$status" 2
+	assert_line "$output" "$SB/p/bin/lend is not a file make install wrote, so it stays"
+	assert_eq "$(cat "$SB/p/bin/lend")" $'#!/bin/sh\necho other'
+}
+
+@test "uninstall: removes the default data directory only when empty" {
+	unset LEND_SHIMS
+	mk install PREFIX="$SB/p"
+	ln -s "$FIXTURES/stub-target" "$SB/bin/gh"
+	"$SB/p/bin/lend" add gh GH_TOKEN >/dev/null 2>&1
+	[[ -f $HOME/.local/share/lend/shims/gh ]]
+	mk uninstall PREFIX="$SB/p"
+	assert_eq "$status" 0
+	[[ ! -e $HOME/.local/share/lend && -d $HOME/.local/share ]]
+	mkdir -p "$HOME/.local/share/lend/shims" && touch "$HOME/.local/share/lend/other"
+	mk uninstall PREFIX="$SB/p"
+	assert_eq "$status" 0
+	assert_eq "$(ls -A "$HOME/.local/share/lend")" other
+}

@@ -64,7 +64,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	rm "$SB/bin/pass"
 	ln -s "$SB/bin/failpass" "$SB/bin/pass"
 	run_lend run -- stub
-	assert_eq "$stderr" "lend: decrypt: env/K1: gpg says: gpg: decryption failed: No secret key. Ask the user to run 'lend unlock K1' in a terminal, then retry."
+	assert_eq "$stderr" "lend: decrypt: env/K1: gpg says: decryption failed: No secret key. Ask the user to run 'lend unlock K1' in a terminal, then retry."
 	assert_class decrypt 125
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	assert_eq "$(ls -A "$TMPDIR")" ""

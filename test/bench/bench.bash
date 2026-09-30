@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # make bench: NFR1, shim overhead with keys preset and a 50-entry map, as paired, interleaved runs
-# after warmups (R13); NFR2, a 3-key run with real GnuPG, a warm cache and a key at s2k-count 8388608.
+# after warmups; NFR2, a 3-key run with real GnuPG, a warm cache and a key at s2k-count 8388608.
 # Writes test/bench/out/nfr1.txt and nfr2.txt and exits 1 on a miss.
 set -u -o pipefail
 # A fixed, minimal environment keeps runs comparable and keeps the caller's variables out.
@@ -55,7 +55,7 @@ printf '%s\n' "$line" | tee "$root/test/bench/out/nfr1.txt"
 miss=0
 ((median <= 20000 && p95 <= 40000)) || miss=1
 
-# NFR2. The GnuPG home lives under /tmp for the agent's socket path (R11); nothing may prompt.
+# NFR2. The GnuPG home lives under /tmp for the agent's socket path; nothing may prompt.
 unset K1 K2 K3
 if ! command -v gpg >/dev/null || ! command -v pass >/dev/null; then
 	echo "bench: NFR2 needs gpg and pass" >&2

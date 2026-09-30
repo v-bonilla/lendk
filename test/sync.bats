@@ -146,6 +146,14 @@ sums() { (cd "$LEND_SHIMS" && cksum -- *); }
 	assert_eq "$(ls "$LEND_SHIMS")" $'empty\nother\nstub'
 }
 
+@test "FR23: several violations on one line are reported in word order" {
+	map 'stub PATH 9x @nope HOME'
+	run_lend sync
+	assert_eq "$stderr" "$(printf 'lend: map: %s. Stop and ask the user.\n' \
+		"$MAP:1: key 'PATH' is denied" "$MAP:1: '9x' is not a valid key name" \
+		"$MAP:1: key 'HOME' is denied" "$MAP:1: group @nope is not defined")"
+}
+
 @test "FR23: sync without a map writes no shim and removes the old ones" {
 	map 'stub K1'
 	run_lend sync

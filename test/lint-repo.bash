@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repository lint: NFR9 content rules, portability of bin/lend (R9), one file in bin/, PRD ID coverage.
+# Repository lint: NFR9 content rules, portability of bin/lend (NFR3), one file in bin/, PRD ID coverage.
 # Usage: test/lint-repo.bash [ROOT]; prints one line per problem and exits 1 when there is any.
 set -u -o pipefail
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -27,7 +27,7 @@ if ! grep -q '^MIT License' LICENSE 2>/dev/null || ! grep -q 'v-bonilla' LICENSE
 bins=(bin/*)
 [[ ${#bins[@]} -eq 1 && ${bins[0]} == bin/lend ]] || problem "bin/: holds ${bins[*]}, not only bin/lend"
 
-# R9 on bin/lend, skipping the name-list tables and the terminal-owner test.
+# NFR3 on bin/lend, skipping the name-list tables and the terminal-owner test.
 # cmdpos WORD [START]: WORD in command position; START matches the line start.
 cmdpos() { printf '(%s|[;&|(]|[$][(])[[:space:]]*%s([^A-Za-z0-9_=-]|$)' "${2:-^}" "$1"; }
 if [[ -f bin/lend ]]; then

@@ -4,6 +4,8 @@
 
 ## Quick start
 
+You need `git`, `make`, a GPG key and a pass store initialized for it. Without a store, run `pass init GPG-ID` first, GPG-ID being your key's ID or email.
+
 Five commands, bash on Linux:
 
 <!-- quickstart -->
@@ -83,6 +85,7 @@ lend protects against ambient exposure: keys reach only mapped commands, `lend r
 It does not protect against:
 
 - Other processes running as you. While gpg-agent holds your passphrase, any of them, an AI agent included, can run `pass show`, read `/proc/PID/environ`, or edit the map, the shims or PATH. lend keeps keys out of an agent's context; it does not stop an agent that goes looking for them.
+- A mapped command itself. It holds the key and can print it, as `gh auth token` does, so map only tools you trust with that key.
 - Descendants of a mapped command, for their lifetime, and root. Running processes keep old values after a rotation.
 - Callers that bypass PATH. They run without lend's keys and fail, or act under the tool's own stored credentials, such as gh's `hosts.yml` or `~/.aws/credentials`.
 
@@ -128,14 +131,16 @@ Real binaries still resolve in PATH order, so a virtualenv's `llm` is the one th
 
 ### Git credential helper
 
-`gh auth setup-git` writes an absolute path to gh into `~/.gitconfig`, which bypasses the shim. Replace it:
+`gh auth setup-git` writes an empty helper, then an absolute path to gh, into `~/.gitconfig`; the absolute path bypasses the shim. Replace both, whether or not they exist:
 
 ```
-git config --global credential.https://github.com.helper ''
-git config --global --add credential.https://github.com.helper '!lend run -- gh auth git-credential'
+for host in github.com gist.github.com; do
+  git config --global --replace-all credential.https://$host.helper ''
+  git config --global --add credential.https://$host.helper '!lend run -- gh auth git-credential'
+done
 ```
 
-Do the same for `credential.https://gist.github.com.helper`.
+The empty helper keeps any global helper from answering for these hosts.
 
 ### cron, systemd units, MCP servers
 
@@ -217,16 +222,17 @@ make -C lend install                  # PREFIX defaults to ~/.local; DESTDIR is 
 
 Upgrade: `git pull`, then `make install`. With versioned install directories behind a stable symlink, run `lend sync` once through the symlink.
 
-Uninstall: delete the `# >>> lend >>>` blocks from your rc files and the environment.d file, then `make uninstall`. It removes lend's shims, the shim directory if empty, and the installed file, never the map, the store or your rc files.
+Uninstall: delete the `# >>> lend >>>` blocks from your rc files and the environment.d file, then `make -C lend uninstall`. It removes lend's shims, the shim directory and lend's data directory if empty, and the installed file when it is lend's, never the map, the store or your rc files.
 
 ## Requirements
 
 - bash 4.4 or later
 - GnuPG 2.4 or later
-- pass 1.7 or later
+- pass 1.7 or later, with a store initialized by `pass init`
 - POSIX utilities
+- `git` and `make` to install
 
-Linux is the main platform; macOS works with Homebrew bash, GnuPG and pass. Development needs Docker for `make check-docker` and `uv` for shellcheck; `make deps` fetches bats-core.
+lend is tested on Linux. macOS is untested; there it needs bash 4.4 or later and GnuPG 2.4 or later from Homebrew, since the system bash is 3.2. Development needs Docker for `make check-docker` and `uv` for shellcheck; `make deps` fetches bats-core.
 
 ## License
 

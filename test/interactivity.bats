@@ -64,7 +64,7 @@ pass_var() {
 			LEND_PROMPT=$prompt run_lend run -- stub
 			assert_eq "$(wc -l <"$SB/stderr")" 1
 			assert_class "$want" "$( [[ $want == decrypt ]] && echo 125 || echo 120)"
-			[[ $want != decrypt ]] || assert_line "$stderr" "lend: decrypt: env/K1: gpg says: gpg: decryption failed: $mode. $(
+			[[ $want != decrypt ]] || assert_line "$stderr" "lend: decrypt: env/K1: gpg says: decryption failed: $mode. $(
 				[[ $prompt == allow ]] && echo 'See gpg'"'"'s error: lend unlock K1' || echo "Ask the user to run 'lend unlock K1' in a terminal, then retry.")"
 			assert_eq "$(ls -A "$TMPDIR")" ""
 		done

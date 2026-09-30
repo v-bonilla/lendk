@@ -1,4 +1,4 @@
-# Real GnuPG helpers, loaded after common.bash and sandbox: a scratch GnuPG home under /tmp (R11) whose
+# Real GnuPG helpers, loaded after common.bash and sandbox: a scratch GnuPG home under /tmp, short enough for the agent's socket path, whose
 # agent asks pinentry-recorder, a passphrase-protected key and a store initialized for it.
 # shellcheck disable=SC2034
 GPG_PASS=lend-test-passphrase
