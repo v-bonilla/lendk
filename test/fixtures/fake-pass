@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# Stand-in for pass: `pass show PREFIX/KEY` prints $PASSWORD_STORE_DIR/PREFIX/KEY.gpg, which holds plaintext.
+# Each call logs argv, its environment and its PID under $PASSWORD_STORE_DIR/../log/pass.PID/.
+log=$PASSWORD_STORE_DIR/../log/pass.$$
+mkdir -p "$log"
+printf '%s\0' "$@" >"$log/argv"
+env -0 >"$log/env"
+printf '%s\n' "$$" >"$log/pid"
+
+[[ ${1-} == show && $# -eq 2 ]] || { echo "fake-pass: unsupported call: $*" >&2; exit 1; }
+entry=$PASSWORD_STORE_DIR/$2.gpg
+[[ -f $entry ]] || { echo "Error: $2 is not in the password store." >&2; exit 1; }
+cat -- "$entry"
