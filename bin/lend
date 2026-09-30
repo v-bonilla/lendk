@@ -1573,6 +1573,43 @@ rm_verb() {
 	edit_end "$name"
 }
 
+# init_verb sh|bash|zsh|systemd: FR35, the PRD 4.3 block for the named file, holding the absolute
+# shim directory; FR28 for the shim directory only, and no code when it fails.
+# shellcheck disable=SC2016 # the printed code expands where it runs
+init_verb() {
+	local dir q front hook
+	(($# == 1)) || fail usage "init takes one of sh, bash, zsh or systemd"
+	case $1 in sh | bash | zsh | systemd) ;; *) fail usage "init takes one of sh, bash, zsh or systemd, not '$1'" ;; esac
+	dir=$shims
+	[[ $dir == /* ]] || dir=$PWD/${dir#./}
+	check_dir "$dir"
+	if [[ $1 == systemd ]]; then
+		printf '# >>> lend >>>\nPATH=%s:${PATH}\n# <<< lend <<<\n' "$dir"
+		exit 0
+	fi
+	q="'${dir//\'/\'\\\'\'}'"
+	# The loop keeps every other entry, empty ones included, in order.
+	front="lend_p=; lend_r=\${PATH:+\$PATH:}
+while [ -n \"\$lend_r\" ]; do
+	lend_d=\${lend_r%%:*}; lend_r=\${lend_r#*:}
+	[ \"\$lend_d\" = $q ] || lend_p=\$lend_p:\$lend_d
+done
+PATH=$q\$lend_p; export PATH
+unset lend_p lend_r lend_d"
+	case $1 in
+	sh) printf '# >>> lend >>>\n%s\n# <<< lend <<<\n' "$front" ;;
+	bash)
+		hook='case ";${PROMPT_COMMAND-};" in *";__lend_path;"*) ;; *) PROMPT_COMMAND="__lend_path${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;; esac'
+		printf '# >>> lend >>>\n__lend_path() {\n%s\nhash -r\n}\n__lend_path\n%s\n# <<< lend <<<\n' "$front" "$hook"
+		;;
+	zsh)
+		hook='(( ${precmd_functions[(Ie)__lend_path]} )) || precmd_functions+=(__lend_path)'
+		printf '# >>> lend >>>\n__lend_path() {\n%s\nrehash\n}\n__lend_path\n%s\n# <<< lend <<<\n' "$front" "$hook"
+		;;
+	esac
+	exit 0
+}
+
 main() {
 	case ${1-} in
 	--version) (($# == 1)) || fail usage "--version takes no arguments"; printf 'lend %s\n' "$LEND_VERSION" ;;
@@ -1586,6 +1623,7 @@ main() {
 		[[ $1 == check ]] && shift && check_verb "$@"
 		[[ $1 == add ]] && shift && add_verb "$@"
 		[[ $1 == rm ]] && shift && rm_verb "$@"
+		[[ $1 == init ]] && shift && init_verb "$@"
 		fail usage "unknown verb '$1'"
 		;;
 	esac

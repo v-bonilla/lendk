@@ -81,11 +81,12 @@ A shim works when PATH lists the shim directory before any other copy of the com
 lend init sh >> ~/.profile     # bash logins and desktop sessions (~/.bash_profile when it exists)
 lend init sh >> ~/.zshenv      # every zsh, zsh -c included
 lend init bash >> ~/.bashrc    # optional prompt hook; zsh: lend init zsh >> ~/.zshrc
-lend init systemd > ~/.config/environment.d/50-lend.conf
+lend init systemd > ~/.config/environment.d/99-lend.conf
 ```
 
 - `init sh` moves the shim directory to the front of PATH; in `~/.zshenv` that covers every `zsh -c`, even under a harness that prepended its own directory.
 - `init bash|zsh` repeats that before every prompt, against version managers and virtualenvs.
+- The environment.d file sorts after `99-environment.conf`, which Ubuntu links to `/etc/environment` and which sets PATH.
 - macOS: also `~/.zprofile`, since `path_helper` reorders PATH after `~/.zshenv`. Dock-launched apps read none of these files.
 - Blocks sit between `# >>> lend >>>` and `# <<< lend <<<`. Rerun `init` after changing `LEND_SHIMS`.
 

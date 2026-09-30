@@ -1,0 +1,10 @@
+# ~/.bashrc as in Debian's /etc/skel: non-interactive shells return at once.
+
+case $- in
+	*i*) ;;
+	*) return ;;
+esac
+
+HISTCONTROL=ignoreboth
+shopt -s histappend checkwinsize
+PS1='\u@\h:\w\$ '
