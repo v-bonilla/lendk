@@ -121,6 +121,19 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	done
 }
 
+@test "FR7: the target's open descriptors are exactly those of a direct call" {
+	map 'stub K1'
+	entry K1 "$SENTINEL"
+	local logs
+	(exec 7>"$SB/fd7" && "$SB/bin/stub" </dev/null 2>"$SB/stderr")
+	logs=("$SB"/log/target.*)
+	mv "${logs[0]}/fds" "$SB/direct"
+	rm -rf "$SB/log" && mkdir "$SB/log"
+	(exec 7>"$SB/fd7" && "$LEND" run -- stub </dev/null 2>"$SB/stderr")
+	logs=("$SB"/log/target.*)
+	assert_eq "$(<"${logs[0]}/fds")" "$(<"$SB/direct")"
+}
+
 @test "FR10: the value is the first line without its newline, spaces and glob characters kept" {
 	map 'stub K1'
 	printf '  a * b\\n  \nsecond\n' >"$SB/store/env/K1.gpg"

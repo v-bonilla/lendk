@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# Target stand-in: logs argv0, arguments, environment and PID under $STUB_LOG/target.PID/, then exits $STUB_EXIT.
+# Target stand-in: logs argv0, arguments, environment, PID and open descriptors under $STUB_LOG/target.PID/, then exits $STUB_EXIT.
 log=${STUB_LOG:?}/target.$$
 mkdir -p "$log"
 printf '%s\n' "$0" >"$log/argv0"
 printf '%s\0' "$@" >"$log/argv"
 env -0 >"$log/env"
 printf '%s\n' "$$" >"$log/pid"
+ls "/proc/$$/fd" >"$log/fds" 2>/dev/null
 exit "${STUB_EXIT:-0}"

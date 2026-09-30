@@ -11,8 +11,11 @@
 #   slow      the entry after 1 s
 #   hang      a child that sleeps for an hour
 #   stubborn  like hang, with TERM ignored by pass and its child
-#   tty       a loopback prompt: reads a line from the terminal with echo off and prints it; each
-#             SIGCONT, one per terminal handoff, adds a line to its conts log
+#   tty       a loopback prompt: reads a line from the terminal with echo off and prints it, and
+#             fails like gpg when it cannot read; each SIGCONT, one per terminal handoff, adds a
+#             line to its conts log
+# In modes stubborn and tty, a lister appends listings of lend's temporary directory, which holds
+# the call's stderr file, to tmp-modes while the call runs.
 log=$PASSWORD_STORE_DIR/../log/pass.$$
 mkdir -p "$log"
 printf '%s\0' "$@" >"$log/argv"
@@ -42,6 +45,17 @@ child() {
 	wait
 }
 
+lister() {
+	local pass=$$
+	[[ $err == /* ]] || return 0
+	trap '' TERM
+	while kill -0 "$pass" 2>/dev/null; do
+		ls -ln "${err%/*}" >>"$log/tmp-modes" 2>/dev/null
+		sleep 0.1
+	done
+}
+case $mode in stubborn | tty) lister </dev/null >/dev/null 2>&1 & ;; esac
+
 case $mode in
 big)
 	printf '%*s' 200000 '' | tr ' ' x
@@ -66,7 +80,7 @@ tty)
 	trap 'echo cont >>"$log/conts"' CONT
 	saved=$(stty -g </dev/tty)
 	stty -echo </dev/tty
-	IFS= read -r line </dev/tty
+	IFS= read -r line </dev/tty || { echo 'gpg: error reading the passphrase from the terminal' >&2; exit 2; }
 	stty "$saved" </dev/tty
 	printf '%s\n' "$line"
 	;;

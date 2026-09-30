@@ -500,7 +500,9 @@ backend_job() {
 	builtin trap 'backend_exit 129' HUP
 	builtin trap '' TSTP
 	builtin umask 077
-	builtin exec 2>"$lend_tmp/job-err"
+	exec 2>"$lend_tmp/job-err"
+	builtin printf '%s\n' "$BASHPID" >"$lend_tmp/pid"
+	: >"$lend_tmp/stopped"
 	backend_read "$@"
 }
 # shellcheck disable=SC2329 # called from traps
@@ -509,15 +511,18 @@ backend_exit() {
 	builtin exit "$1"
 }
 
-# watchdog: W (R5). Every 0.1 s it wakes lend in interactive calls, then checks. At LEND_TIMEOUT it
-# marks the timeout, and when lend is gone it notes that. Either way it stops the job's group, with
-# KILL after 0.5 s, and removes a gone lend's temporary directory once the job can write no more.
+# watchdog: W (R5), started before J, whose PID it reads from the temporary directory. Every 0.1 s it
+# wakes lend in interactive calls, then checks. At LEND_TIMEOUT it marks the timeout, and when lend
+# is gone it notes that. Either way it stops the job's group, with KILL after 0.5 s, and removes a
+# gone lend's temporary directory once the job can write no more.
 watchdog() {
-	local ticks=0 i abandon=0
+	local ticks=0 i abandon=0 jpid=
+	builtin umask 077
 	SECONDS=0
 	while :; do
 		command -p sleep 0.1
 		((interactive == 0)) || builtin kill -USR1 "$$" 2>/dev/null
+		[[ -n $jpid ]] || { builtin read -r jpid <"$lend_tmp/pid"; } 2>/dev/null
 		if ! builtin kill -0 "$$" 2>/dev/null; then
 			abandon=1
 			break
@@ -528,28 +533,35 @@ watchdog() {
 		fi
 	done
 	builtin trap '' TERM
-	builtin kill -TERM -- "-$lend_jpid" 2>/dev/null
-	builtin kill -CONT -- "-$lend_jpid" 2>/dev/null
+	# A lend killed right after starting J leaves J to record its PID.
 	for i in 1 2 3 4 5; do
-		builtin kill -0 -- "-$lend_jpid" 2>/dev/null || break
+		[[ -z $jpid ]] || break
 		command -p sleep 0.1
+		{ builtin read -r jpid <"$lend_tmp/pid"; } 2>/dev/null
 	done
-	builtin kill -KILL -- "-$lend_jpid" 2>/dev/null
+	if [[ -n $jpid ]]; then
+		builtin kill -TERM -- "-$jpid" 2>/dev/null
+		builtin kill -CONT -- "-$jpid" 2>/dev/null
+		for i in 1 2 3 4 5; do
+			builtin kill -0 -- "-$jpid" 2>/dev/null || break
+			command -p sleep 0.1
+		done
+		builtin kill -KILL -- "-$jpid" 2>/dev/null
+	fi
 	((abandon == 0)) || command -p rm -rf -- "$lend_tmp"
 }
 
-# backend_signal SIGNAL: lend's trap while the job runs. It stops the job, removes the temporary
-# directory and re-raises SIGNAL; the watchdog, outside lend's group, kills what the job leaves and
-# removes what it writes after that.
+# backend_signal SIGNAL: lend's trap while the job runs. It stops the job and re-raises SIGNAL; the
+# watchdog, outside lend's group, kills what the job leaves and removes the temporary directory.
 # shellcheck disable=SC2329 # called from traps
 backend_signal() {
+	local j=${lend_jpid:-${LEND_J_PID-}}
 	builtin trap '' USR1
-	if [[ -n $lend_jpid ]]; then
-		builtin kill -TERM -- "-$lend_jpid" 2>/dev/null
-		builtin kill -CONT -- "-$lend_jpid" 2>/dev/null
+	if [[ -n $j ]]; then
+		builtin kill -TERM -- "-$j" 2>/dev/null
+		builtin kill -CONT -- "-$j" 2>/dev/null
 	fi
 	builtin set +m
-	command -p rm -rf -- "$lend_tmp" 2>/dev/null
 	builtin trap - "$1"
 	builtin kill "-$1" "$$"
 	builtin exit 1
@@ -584,19 +596,24 @@ read_values() {
 	local err out line wpid i st k ecode last
 	local -a f keys=("$@")
 	lend_jpid=
-	builtin exec {err}>&2
-	[[ -t 0 ]] && builtin exec 2<&0
+	exec {err}>&2
+	[[ -t 0 ]] && exec 2<&0
 	builtin trap 'backend_signal TERM' TERM
 	builtin trap 'backend_signal INT' INT
 	builtin trap 'backend_signal HUP' HUP
 	builtin trap : USR1
+	# A pipeline neighbor reading the terminal during a handoff stops lend's whole group; caught, not
+	# ignored, so J keeps the default action.
+	builtin trap : TTIN TTOU
 	# From set -m to set +m only builtins run: an external command would be a job taking the terminal.
 	builtin set -m
-	coproc LEND_J { backend_job "$@"; }
-	lend_jpid=$LEND_J_PID
-	builtin exec {out}<&"${LEND_J[0]}"
 	watchdog </dev/null >/dev/null 2>&1 &
 	wpid=$!
+	coproc LEND_J { backend_job "$@"; }
+	# Tests widen the window before lend_jpid is set.
+	[[ -z ${LEND_TEST_PAUSE-} ]] || IFS= builtin read -r -t "$LEND_TEST_PAUSE" -u "${LEND_J[0]}" line
+	lend_jpid=$LEND_J_PID
+	exec {out}<&"${LEND_J[0]}"
 	while :; do
 		# Plain wait: bash 4.4 runs traps during wait only when wait is not called through builtin.
 		wait "$lend_jpid" 2>/dev/null
@@ -605,15 +622,19 @@ read_values() {
 		builtin jobs -sp >"$lend_tmp/stopped" 2>/dev/null
 		{ builtin read -r line <"$lend_tmp/stopped"; } 2>/dev/null
 		# A loopback prompt stops J on the terminal; J gets it only from a group that owns it (FR17).
-		# fg hands the terminal over through fd 2, so fd 2 stays on it.
-		[[ $line == "$lend_jpid" ]] && tty_owner && builtin fg %% >/dev/null
+		# fg hands the terminal over through fd 2, so fd 2 stays on it. A pipeline neighbor that
+		# touched the terminal meanwhile stopped; CONT to lend's group resumes it.
+		if [[ $line == "$lend_jpid" ]] && tty_owner; then
+			builtin fg %% >/dev/null
+			builtin kill -CONT 0 2>/dev/null
+		fi
 	done
 	builtin trap '' USR1
 	[[ -e $lend_tmp/timeout ]] || builtin kill -KILL -- "-$wpid" 2>/dev/null
 	wait "$wpid" 2>/dev/null
 	builtin set +m
-	builtin exec 2>&"$err" {err}>&-
-	builtin trap - TERM INT HUP USR1
+	exec 2>&"$err" {err}>&-
+	builtin trap - TERM INT HUP USR1 TTIN TTOU
 	line=
 	IFS= builtin read -r -u "$out" line
 	# shellcheck disable=SC2206
@@ -621,7 +642,7 @@ read_values() {
 	for ((i = 0; i < ${f[0]:-0}; i++)); do
 		IFS= builtin read -r -u "$out" "lend_values[${keys[i]}]"
 	done
-	builtin exec {out}<&-
+	exec {out}<&-
 	st=${f[1]-}
 	k=${f[2]-}
 	case $st in

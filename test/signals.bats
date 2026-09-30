@@ -115,3 +115,49 @@ stop_lend() {
 	refute_contains "$output" Stopped
 	[[ $output == *"lend: timeout: env/K1: gpg did not finish within 1 s."* ]]
 }
+
+@test "FR17: with stderr redirected to a file, a loopback prompt still gets the terminal" {
+	echo tty >"$SB/store/env/K1.mode"
+	in_shell "$LEND run -- stub 2>$SB/err; echo rc=\$?" @2 typed-secret @1 exit
+	assert_line "$output" rc=0
+	refute_contains "$output" typed-secret
+	assert_eq "$(<"$SB/err")" ""
+	local logs=("$SB"/log/target.*)
+	tr '\0' '\n' <"${logs[0]}/env" | grep -qx K1=typed-secret
+}
+
+@test "FR17: a signal before lend records the job's PID leaves nothing behind" {
+	local sig
+	for sig in TERM KILL; do
+		rm -f "$SB/log/pids"
+		LEND_TEST_PAUSE=3 start_lend stubborn
+		kill "-$sig" -- "-$lpid"
+		none_within 2
+		wait "$lpid" 2>/dev/null || true
+	done
+}
+
+@test "FR17: a loopback prompt in a command substitution, which cannot take the terminal, gives decrypt" {
+	echo tty >"$SB/store/env/K1.mode"
+	in_shell "x=\$($LEND run -- stub); echo rc=\$?" @2 exit
+	assert_line "$output" rc=125
+	[[ $output == *"lend: decrypt: env/K1: gpg says: gpg: error reading the passphrase from the terminal."* ]]
+}
+
+@test "FR17: a pipeline neighbor that reads the terminal during a loopback prompt resumes afterwards" {
+	echo tty >"$SB/store/env/K1.mode"
+	in_shell "$LEND run -- stub | { sleep 0.5; IFS= read -r x </dev/tty; echo neighbor=\$x; }" @2 typed-secret @1.5 neighbor-line @1 exit
+	assert_line "$output" neighbor=neighbor-line
+	refute_contains "$output" Stopped
+}
+
+@test "FR17: under umask 000, lend's files for the backend phase are private" {
+	local listing
+	echo tty >"$SB/store/env/K1.mode"
+	in_shell "umask 000; $LEND run -- stub" @2 typed-secret @1 exit
+	echo stubborn >"$SB/store/env/K1.mode"
+	(umask 000 && LEND_TIMEOUT=1 "$LEND" run -- stub </dev/null 2>/dev/null) || true
+	listing=$(cat "$SB"/log/pass.*/tmp-modes)
+	[[ $listing == *" stopped"* && $listing == *" timeout"* ]] || { echo "$listing" >&2; return 1; }
+	assert_eq "$(grep -E '^-' <<<"$listing" | grep -v '^-rw------- ')" ""
+}
