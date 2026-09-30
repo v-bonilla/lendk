@@ -121,3 +121,12 @@ dead_pid() {
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
 }
+
+@test "FR26: a trailing slash on LEND_SHIMS keeps the lock beside the shim directory" {
+	LEND_SHIMS=$LEND_SHIMS/ run_lend sync
+	assert_eq "$status" 0
+	assert_eq "$stderr" ""
+	assert_eq "$(ls -A "$LEND_SHIMS")" stub
+	LEND_MAP=map run_lend sync
+	assert_eq "$stderr" "lend: usage: LEND_MAP is 'map'; use an absolute path. See: lend --help"
+}

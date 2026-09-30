@@ -33,8 +33,8 @@ block() {
 	printf 'broken line !\n' >"$HOME/.config/lend/map"
 	chmod 777 "$HOME/.config/lend/map"
 	mkdir "$SB/it's"
-	cd "$SB/it's"
-	LEND_SHIMS=./shims block sh
+
+	LEND_SHIMS="$SB/it's/shims/" block sh
 	assert_line "$output" "PATH='$SB/it'\\''s/shims'\$lend_p; export PATH"
 	run env -i PATH=/usr/bin:/bin sh -c '. "$1"; printf "%s" "$PATH"' sh "$SB/block"
 	assert_eq "$output" "$SB/it's/shims:/usr/bin:/bin"
@@ -97,4 +97,14 @@ block() {
 	assert_eq "$output" ""
 	run_lend init sh bash
 	assert_class usage 2
+}
+
+@test "FR35: the zsh block runs under nounset, and init rejects a relative LEND_SHIMS" {
+	require zsh
+	block zsh
+	run env -i PATH=/usr/bin:/bin zsh -f -o nounset -c '. "$1"; . "$1"; print -r -- "${(j: :)precmd_functions}"' zsh "$SB/block"
+	assert_eq "$output" "__lend_path"
+	LEND_SHIMS=./shims run_lend init sh
+	assert_eq "$stderr" "lend: usage: LEND_SHIMS is './shims'; use an absolute path. See: lend --help"
+	assert_eq "$output" ""
 }

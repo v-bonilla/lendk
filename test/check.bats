@@ -224,3 +224,11 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	run_lend check other
 	assert_eq "$status" 1
 }
+
+@test "FR33: a shim that lost its mode 0755 is stale" {
+	healthy
+	chmod 644 "$SHIMS/stub"
+	run_lend check
+	assert_line "$output" $'stub\tK1 @g\tstale shim (lend sync)'
+	assert_eq "$status" 1
+}

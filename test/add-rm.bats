@@ -253,3 +253,13 @@ state() {
 	LEND_PROMPT=allow run_lend add stub K9
 	assert_eq "$output" $'stub\tK1 K9\tenv/K9 is not in the store (pass insert env/K9)'
 }
+
+@test "FR25: an unknown group creates nothing, and its FIX says to define the group" {
+	run_lend add stub @nope
+	assert_eq "$stderr" "lend: map: $MAP: group @nope is not defined. Stop and ask the user."
+	assert_class map 125
+	[[ ! -e $SHIMS && ! -e $SHIMS.lock && ! -e $HOME/.config ]]
+	LEND_PROMPT=allow run_lend add stub @nope
+	assert_eq "$stderr" "lend: map: $MAP: group @nope is not defined. Define it first: lend add @nope KEY..."
+	[[ ! -e $SHIMS ]]
+}

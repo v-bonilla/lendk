@@ -98,6 +98,7 @@ set_paths() {
 	[[ ${XDG_DATA_HOME-} == /* ]] && data=$XDG_DATA_HOME
 	map=${LEND_MAP:-$config/lend/map}
 	shims=${LEND_SHIMS:-$data/lend/shims}
+	while [[ $shims == ?*/ ]]; do shims=${shims%/}; done
 	store=${PASSWORD_STORE_DIR:-${HOME-}/.password-store}
 	prefix=${LEND_PREFIX:-env}
 }
@@ -175,6 +176,7 @@ classes=(
 	"canceled|120|Run the command again to retry.|$stop_fix"
 	"timeout|120|Retry; a hardware token may need a touch, or raise LEND_TIMEOUT.|$unlock_fix"
 	"map|125|Fix the line, then run: lend check|$stop_fix"
+	"map:group|125|Define it first: lend add @GROUP KEY...|$stop_fix"
 	"unmapped|125|Map it: lend add CMD KEY..., or name keys: lend run KEY... -- CMD|$stop_fix"
 	"missing-key|125|Add it: pass insert env/KEY|$stop_fix"
 	"missing-key:nomap|125|Create it with lend add, or name the keys to unlock.|$stop_fix"
@@ -244,6 +246,8 @@ load_env() {
 	auto | never | allow) ;;
 	*) fail usage "LEND_PROMPT is '${LEND_PROMPT}'; use auto, never or allow" ;;
 	esac
+	[[ -z ${LEND_MAP-} || $LEND_MAP == /* ]] || fail usage "LEND_MAP is '$LEND_MAP'; use an absolute path"
+	[[ -z ${LEND_SHIMS-} || $LEND_SHIMS == /* ]] || fail usage "LEND_SHIMS is '$LEND_SHIMS'; use an absolute path"
 	if ((interactive)); then timeout=60; else timeout=10; fi
 	if [[ -n ${LEND_TIMEOUT+set} ]]; then
 		if ! [[ $LEND_TIMEOUT =~ ^[1-9][0-9]{0,3}$ ]] || ((LEND_TIMEOUT > 3600)); then
@@ -417,6 +421,11 @@ resolve() {
 				[[ $resolved == */* ]] && dir=${resolved%/*}
 				[[ ${dir:-/} -ef $shims ]] && continue
 			fi
+			# A shim directory other than this call's (LEND_SHIMS set only in some shells) would
+			# make the shim exec itself forever; only this one hit is read (R8).
+			line=
+			{ IFS= read -r -n 256 line && IFS= read -r -n 256 line; } <"$file" 2>/dev/null
+			[[ $line == '# lend shim '* ]] && continue
 			target=$file
 			break
 		done
@@ -1225,6 +1234,13 @@ sync_verb() {
 	exit 125
 }
 
+# shim_mode_ok FILE: FILE has the shim mode 0755 (FR29).
+shim_mode_ok() {
+	local m
+	m=$(command -p ls -ln -- "$1" 2>/dev/null)
+	[[ $m == -rwxr-xr-x* ]]
+}
+
 # write_shims: the shims for scan_map's commands. Prints notices; sets lines to the map violations,
 # then the write failures and foreign files.
 write_shims() {
@@ -1232,6 +1248,12 @@ write_shims() {
 	local -A mapped=()
 	set_self
 	lend_synctmp=$shims/.lend-sync.$$
+	# Under the lock no other sync is writing, so any other temporary file is a killed call's.
+	builtin set +f
+	for f in "$shims"/.lend-sync.*; do
+		[[ ! -f $f || -L $f ]] || command -p rm -f -- "$f"
+	done
+	builtin set -f
 	for name in "${m_cmds[@]}"; do
 		mapped[$name]=1
 		f=$shims/$name
@@ -1239,7 +1261,7 @@ write_shims() {
 		if [[ -e $f || -L $f ]]; then
 			is_shim "$f" || { foreign+=("$f") && continue; }
 			read_file "$f"
-			[[ $content != "$shim" ]] || continue
+			[[ $content != "$shim" ]] || ! shim_mode_ok "$f" || continue
 		fi
 		if ! { (builtin umask 077 && builtin printf '%s' "$shim" >"$lend_synctmp") &&
 			command -p chmod 755 -- "$lend_synctmp" && command -p mv -f -- "$lend_synctmp" "$f"; } 2>/dev/null; then
@@ -1347,7 +1369,7 @@ check_scan() {
 		elif is_shim "$f"; then
 			shim_text "$name"
 			read_file "$f"
-			if [[ $content != "$shim" ]]; then
+			if [[ $content != "$shim" ]] || ! shim_mode_ok "$f"; then
 				path=${content#*$'\n'*$'\n'}
 				path=${path%%$'\n'*}
 				path=${path#lend=\'}
@@ -1432,19 +1454,57 @@ is_guarded() {
 	return 1
 }
 
-# edit_begin: for add and rm, FR28 paths, the lock and a whole valid map (FR23), read into m_*.
+# edit_begin CHECK ARG...: for add and rm, FR28 paths, a whole valid map (FR23) read into m_* and
+# the verb's CHECK, all before anything is created (FR25); then again under the lock.
 edit_begin() {
-	local lines
 	check_map_paths
 	resolve_links "$map"
 	[[ -e $resolved || $resolved != */* ]] || check_dir "${resolved%/*}"
 	check_shim_dir
+	edit_scan "$@"
 	lock_shims
+	edit_scan "$@"
+}
+
+# edit_scan CHECK ARG...: scan_map, failing on any violation, then CHECK ARG....
+edit_scan() {
+	local lines
 	scan_map
-	((${#m_bad[@]} == 0)) && return 0
-	map_lines
-	printf '%s\n' "${lines[@]}" >&2
-	exit 125
+	if ((${#m_bad[@]})); then
+		map_lines
+		printf '%s\n' "${lines[@]}" >&2
+		exit 125
+	fi
+	"$@"
+}
+
+# shellcheck disable=SC2329 # called through edit_begin
+# add_check WORD...: every group WORD names is defined.
+add_check() {
+	local w
+	for w in "$@"; do
+		[[ $w != @* || -n ${m_line[$w]-} ]] || fail map:group "$map: group $w is not defined" GROUP="${w#@}"
+	done
+	return 0
+}
+
+# shellcheck disable=SC2329 # called through edit_begin
+# rm_check NAME [WORD...]: a group rm would remove is used by no command.
+rm_check() {
+	local name=$1 w c left=0
+	shift
+	[[ $name == @* && -n ${m_line[$name]-} ]] || return 0
+	if (($#)); then
+		for w in ${m_words[$name]}; do
+			[[ " $* " == *" $w "* ]] || left=1
+		done
+	fi
+	((left == 0)) || return 0
+	for c in "${m_cmds[@]}"; do
+		[[ " ${m_words[$c]} " != *" $name "* ]] ||
+			fail map "$map:${m_line[$c]}: $c uses group $name, so it cannot be removed"
+	done
+	return 0
 }
 
 # edit_map N [TEXT]: FR27. Replace map line N with TEXT, delete it without TEXT, or append TEXT when
@@ -1503,10 +1563,7 @@ add_verb() {
 	if [[ -z $g ]] && is_guarded "$name" && ((force == 0)); then
 		fail guarded "$name runs other programs, so its keys reach all of them" CMD="$name"
 	fi
-	edit_begin
-	for w in "$@"; do
-		[[ $w != @* || -n ${m_line[$w]-} ]] || fail map "$map: group $w is not defined"
-	done
+	edit_begin add_check "$@"
 	have=" ${m_words[$name]-} "
 	for w in "$@"; do
 		[[ $have == *" $w "* ]] && continue
@@ -1531,7 +1588,7 @@ add_verb() {
 
 # rm_verb NAME [WORD...]: FR24 and FR25 for rm.
 rm_verb() {
-	local name g='' w n c line rest kept=()
+	local name g='' w n line rest kept=()
 	(($#)) || fail usage "rm needs a command or @group"
 	name=$1
 	shift
@@ -1540,7 +1597,7 @@ rm_verb() {
 	for w in "$@"; do
 		bad_word "$w" "$g" && fail usage "$problem"
 	done
-	edit_begin
+	edit_begin rm_check "$name" "$@"
 	n=${m_line[$name]-}
 	if [[ -z $n ]]; then
 		printf 'lend: notice: %s is not in %s, so nothing changed.\n' "$name" "$map" >&2
@@ -1562,12 +1619,6 @@ rm_verb() {
 			edit_map "$n" "$name ${kept[*]}${rest:+ $rest}"
 		fi
 	else
-		if [[ -n $g ]]; then
-			for c in "${m_cmds[@]}"; do
-				[[ " ${m_words[$c]} " != *" $name "* ]] ||
-					fail map "$map:${m_line[$c]}: $c uses group $name, so it cannot be removed"
-			done
-		fi
 		edit_map "$n"
 	fi
 	edit_end "$name"
@@ -1603,7 +1654,7 @@ unset lend_p lend_r lend_d"
 		printf '# >>> lend >>>\n__lend_path() {\n%s\nhash -r\n}\n__lend_path\n%s\n# <<< lend <<<\n' "$front" "$hook"
 		;;
 	zsh)
-		hook='(( ${precmd_functions[(Ie)__lend_path]} )) || precmd_functions+=(__lend_path)'
+		hook='(( ${+precmd_functions} )) || typeset -ga precmd_functions; (( ${precmd_functions[(Ie)__lend_path]} )) || precmd_functions+=(__lend_path)'
 		printf '# >>> lend >>>\n__lend_path() {\n%s\nrehash\n}\n__lend_path\n%s\n# <<< lend <<<\n' "$front" "$hook"
 		;;
 	esac

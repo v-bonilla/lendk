@@ -189,3 +189,23 @@ sums() { (cd "$LEND_SHIMS" && cksum -- *); }
 	assert_eq "$stderr" "lend: unsafe: / is owned by another user. Stop and ask the user."
 	assert_class unsafe 125
 }
+
+@test "FR30: sync restores a shim's mode 0755, and removes a killed sync's temporary file" {
+	map 'stub K1'
+	run_lend sync
+	chmod 644 "$LEND_SHIMS/stub"
+	: >"$LEND_SHIMS/.lend-sync.99999999"
+	run_lend sync
+	assert_eq "$status" 0
+	assert_eq "$stderr" ""
+	[[ $(ls -ln "$LEND_SHIMS/stub") == -rwxr-xr-x* ]]
+	assert_eq "$(ls -A "$LEND_SHIMS")" stub
+}
+
+@test "FR5: a shim directory other than this call's is skipped, so a shim never runs itself" {
+	map 'stub K1'
+	run_lend sync
+	local shims=$LEND_SHIMS
+	PATH=$shims:$PATH LEND_SHIMS='' timeout 10 "$shims/stub"
+	[[ -n $(compgen -G "$SB/log/target.*") ]]
+}
