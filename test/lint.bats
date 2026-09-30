@@ -101,7 +101,7 @@ lint_copy() {
 		lint_copy "non-portable command"
 	done
 	cp "$ROOT/bin/lend" "$COPY/bin/lend"
-	printf '# lint: tables begin\ntimeout stat\n# lint: tables end\n' >>"$COPY/bin/lend"
+	printf '# lint: tables begin\ntimeout stat\n# lint: tables end\ntimeout=5\n' >>"$COPY/bin/lend"
 	run bash "$ROOT/test/lint-repo.bash" "$COPY"
 	assert_eq "$output" ""
 	assert_eq "$status" 0

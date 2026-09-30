@@ -3,13 +3,14 @@
 # SPDX-License-Identifier: MIT
 
 # These lines must parse and run in bash 3.2 and any POSIX sh.
+# No commands run before the version test, so inherited functions cannot interfere with it.
 lend_old=
-if [ -z "${BASH_VERSION-}" ]; then
-	lend_old=unknown
-elif [ "${BASH_VERSINFO[0]}" -lt 4 ] || { [ "${BASH_VERSINFO[0]}" -eq 4 ] && [ "${BASH_VERSINFO[1]}" -lt 4 ]; }; then
-	lend_old="${BASH_VERSINFO[0]}.${BASH_VERSINFO[1]}.${BASH_VERSINFO[2]}"
-fi
-if [ -n "$lend_old" ]; then
+case ${BASH_VERSION-} in
+'') lend_old=unknown ;;
+[0-3].* | 4.[0-3].*) lend_old=${BASH_VERSION%%[!0-9.]*} ;;
+esac
+case $lend_old in
+?*)
 	lend_fix='Stop and ask the user.'
 	case "${LEND_PROMPT-auto}" in
 	allow) lend_fix='Put a newer bash first on PATH.' ;;
@@ -17,22 +18,217 @@ if [ -n "$lend_old" ]; then
 	esac
 	printf 'lend: unsupported: bash %s found; lend needs bash 4.4 or later. %s\n' "$lend_old" "$lend_fix" >&2
 	exit 125
-fi
-unset lend_old
+	;;
+esac
+
+# FR9: discard inherited functions. POSIX mode makes the special builtins (set, unset) win over
+# functions of the same name until builtin is safe; it leaves before the purge, since bash 4.4
+# refuses names like [ in POSIX mode.
+lend_posix=${POSIXLY_CORRECT+set}
+lend_posix_value=${POSIXLY_CORRECT-}
+POSIXLY_CORRECT=y
+set -f
+IFS=$' \t\n'
+unset -f builtin
+case $lend_posix in
+set) POSIXLY_CORRECT=$lend_posix_value ;;
+*) unset POSIXLY_CORRECT ;;
+esac
+# declare -F prints "declare -f NAME" per function: every third word is a name.
+lend_i=0
+for lend_f in $(builtin declare -F); do
+	lend_i=$((lend_i + 1))
+	case $((lend_i % 3)) in 0) builtin unset -f "$lend_f" ;; esac
+done
+builtin unset lend_old lend_f lend_i lend_posix lend_posix_value
+
+set -u -o pipefail
 
 LEND_VERSION=0.0.0
 
-usage() {
-	printf 'usage: lend --help | --version\n'
+# lint: tables begin
+verbs=(
+	'lend run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys'
+	'lend add [--force] CMD|@GROUP KEY|@GROUP...   # map, then sync'
+	'lend rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync'
+	'lend check [NAME...]                          # diagnose without decrypting'
+	'lend sync                                     # write shims to match the map'
+	'lend unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere'
+	'lend init sh|bash|zsh|systemd                 # print PATH setup'
+	'lend --help | --version'
+)
+
+grammar=(
+	'One entry per line; fields split on blanks; # starts a comment anywhere; blank lines are ignored.'
+	'@NAME KEY...   defines a group of keys; NAME matches [A-Za-z0-9_-]+'
+	'CMD WORD...    maps a command; WORD is a KEY or @NAME; CMD matches [A-Za-z0-9_+][A-Za-z0-9._+-]*'
+	'KEY matches [A-Za-z_][A-Za-z0-9_]*; its value is the first line of store entry PREFIX/KEY.'
+	'Each CMD and group appears once; a group may be used before its definition.'
+	'Expansion follows word order, inlines groups, and drops duplicates, keeping the first.'
+	'Guarded commands are mapped only with add --force: their keys reach every program they run.'
+)
+
+# The lists are read through the names in lists.
+# shellcheck disable=SC2034
+reserved_cmds=(lend bash pass gpg gpg2 gpg-agent gpgconf)
+# shellcheck disable=SC2034
+denied_prefixes=(BASH LEND_ PASSWORD_STORE_ GNUPG GPG_ LD_ DYLD_ LC_ XDG_)
+# shellcheck disable=SC2034
+denied_names=(PATH HOME SHELL ENV IFS CDPATH PS4 PROMPT_COMMAND TMPDIR USER LOGNAME LANG TERM DISPLAY
+	WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS PINENTRY_USER_DATA SHELLOPTS UID EUID PPID GROUPS
+	RANDOM SRANDOM SECONDS LINENO HISTCMD EPOCHSECONDS EPOCHREALTIME FUNCNAME DIRSTACK PIPESTATUS OPTIND OPTARG)
+# shellcheck disable=SC2034
+guarded_shells=(sh dash zsh ksh mksh fish csh tcsh busybox)
+# shellcheck disable=SC2034
+guarded_interpreters=('python*' 'pypy*' node nodejs deno bun 'perl*' 'ruby*' 'php*' 'lua*' java)
+# shellcheck disable=SC2034
+guarded_launchers=(env sudo doas su xargs nohup setsid timeout nice make tmux screen)
+# shellcheck disable=SC2034
+guarded_package_tools=(npm npx pnpm yarn pip pip3 pipx uv uvx)
+# shellcheck disable=SC2034
+guarded_agent_clis=(aider claude codex gemini goose opencode)
+lists=(
+	'reserved commands' reserved_cmds
+	'denied key prefixes' denied_prefixes
+	'denied key names' denied_names
+	'guarded shells' guarded_shells
+	'guarded interpreters' guarded_interpreters
+	'guarded launchers' guarded_launchers
+	'guarded package tools' guarded_package_tools
+	'guarded agent CLIs' guarded_agent_clis
+)
+
+# Rows: CLASS|HINT|interactive FIX|non-interactive FIX. A class with two TEXT forms has two rows,
+# keyed CLASS and CLASS:FORM.
+unlock_fix="Ask the user to run 'lend unlock KEY' in a terminal, then retry."
+stop_fix='Stop and ask the user.'
+classes=(
+	"usage|2|See: lend --help|See: lend --help"
+	"guarded|2|To map it anyway: lend add --force CMD WORD...|$stop_fix"
+	"unsupported|125|Put a newer bash first on PATH.|$stop_fix"
+	"unsupported:gnupg|125|Upgrade GnuPG.|$stop_fix"
+	"locked|120|$unlock_fix|$unlock_fix"
+	"canceled|120|Run the command again to retry.|$stop_fix"
+	"timeout|120|Retry; a hardware token may need a touch, or raise LEND_TIMEOUT.|$unlock_fix"
+	"map|125|Fix the line, then run: lend check|$stop_fix"
+	"unmapped|125|Map it: lend add CMD KEY..., or name keys: lend run KEY... -- CMD|$stop_fix"
+	"missing-key|125|Add it: pass insert env/KEY|$stop_fix"
+	"missing-key:empty|125|Set it: pass edit env/KEY|$stop_fix"
+	"decrypt|125|See gpg's error: lend unlock KEY|$unlock_fix"
+	"unsafe|125|Fix it: chmod go-w PATH, or recreate it as your own|$stop_fix"
+	"write|125|Fix it, then run: lend sync|$stop_fix"
+	"exec|126|Fix it, or unmap it: lend rm CMD|$stop_fix"
+	"not-found|127|Install it, or unmap it: lend rm CMD|Install CMD, or ask the user."
+	"lend-missing|127|The user must reinstall lend from its project repository, then run: lend sync|The user must reinstall lend from its project repository, then run: lend sync"
+)
+
+# shellcheck disable=SC2016
+variables=(
+	'LEND_MAP|map file; default ${XDG_CONFIG_HOME:-~/.config}/lend/map'
+	'LEND_SHIMS|shim directory, set wherever lend runs; default ${XDG_DATA_HOME:-~/.local/share}/lend/shims; lock: SHIMS.lock'
+	'LEND_PREFIX|store entry prefix; default env'
+	'LEND_PROMPT|auto (default), never or allow'
+	'LEND_TIMEOUT|seconds of backend work per call, 1 to 3600; default 60 interactive, 10 otherwise'
+	'LEND_INJECTED|set by lend for targets: the names injected, space-separated'
+	'PASSWORD_STORE_DIR|store; default ~/.password-store'
+	'XDG_CONFIG_HOME|base of the default map; relative values are ignored'
+	'XDG_DATA_HOME|base of the default shim directory; relative values are ignored'
+	'GPG_TTY|set by lend for the backend only'
+)
+# lint: tables end
+
+# set_interactive: PRD 5.1. An invalid LEND_PROMPT counts as non-interactive until validated.
+set_interactive() {
+	interactive=0
+	case ${LEND_PROMPT-auto} in
+	allow) interactive=1 ;;
+	auto) [[ -t 0 || -t 2 ]] && interactive=1 ;;
+	esac
+	return 0
+}
+
+# fail CLASS[:FORM] TEXT [TOKEN=VALUE...]: print the class line with the FIX for this call, and exit.
+# Each TOKEN (KEY, CMD, PATH, WORD...) in the FIX becomes VALUE; env/ becomes the entry prefix.
+fail() {
+	local id=$1 text=$2 row='' fix sub
+	shift 2
+	[[ -n ${interactive-} ]] || set_interactive
+	for row in "${classes[@]}"; do
+		[[ ${row%%|*} == "$id" ]] && break
+	done
+	row=${row#*|}
+	fix=${row#*|}
+	if ((interactive)); then fix=${fix%%|*}; else fix=${fix#*|}; fi
+	for sub in "$@"; do
+		fix=${fix//"${sub%%=*}"/"${sub#*=}"}
+	done
+	fix=${fix//env\//"${prefix:-env}/"}
+	printf 'lend: %s: %s. %s\n' "${id%%:*}" "$text" "$fix" >&2
+	exit "${row%%|*}"
+}
+
+# load_env: PRD section 8 paths and the LEND_PROMPT and LEND_TIMEOUT checks; the verbs read the globals.
+# shellcheck disable=SC2034
+load_env() {
+	local config=${HOME-}/.config data=${HOME-}/.local/share
+	[[ ${XDG_CONFIG_HOME-} == /* ]] && config=$XDG_CONFIG_HOME
+	[[ ${XDG_DATA_HOME-} == /* ]] && data=$XDG_DATA_HOME
+	map=${LEND_MAP:-$config/lend/map}
+	shims=${LEND_SHIMS:-$data/lend/shims}
+	store=${PASSWORD_STORE_DIR:-${HOME-}/.password-store}
+	prefix=${LEND_PREFIX:-env}
+	set_interactive
+	case ${LEND_PROMPT-auto} in
+	auto | never | allow) ;;
+	*) fail usage "LEND_PROMPT is '${LEND_PROMPT}'; use auto, never or allow" ;;
+	esac
+	if ((interactive)); then timeout=60; else timeout=10; fi
+	if [[ -n ${LEND_TIMEOUT+set} ]]; then
+		if ! [[ $LEND_TIMEOUT =~ ^[1-9][0-9]{0,3}$ ]] || ((LEND_TIMEOUT > 3600)); then
+			fail usage "LEND_TIMEOUT is '${LEND_TIMEOUT}'; use whole seconds from 1 to 3600"
+		fi
+		timeout=$LEND_TIMEOUT
+	fi
+}
+
+print_help() {
+	local line name i
+	printf 'lend %s: give API keys stored in pass to the commands that need them, only while they run.\n\n' "$LEND_VERSION"
+	printf 'Usage:\n'
+	printf '  %s\n' "${verbs[@]}"
+	printf '\n--force is the only flag. Shims call: lend run -- CMD. After a hand edit of the map, run: lend sync\n'
+	printf '\nMap file (LEND_MAP):\n'
+	printf '  %s\n' "${grammar[@]}"
+	printf '\nName lists:\n'
+	for ((i = 0; i < ${#lists[@]}; i += 2)); do
+		declare -n list=${lists[i + 1]}
+		printf '  %s: %s\n' "${lists[i]}" "${list[*]}"
+		unset -n list
+	done
+	printf '\nClasses: lend: CLASS: TEXT. FIX (exit hint): interactive FIX | non-interactive FIX\n'
+	for line in "${classes[@]}"; do
+		name=${line%%|*}
+		line=${line#*|}
+		i=${line%%|*}
+		line=${line#*|}
+		printf '  %s (%s): %s | %s\n' "${name%%:*}" "$i" "${line%%|*}" "${line#*|}"
+	done
+	printf '  notice: a change or a risk, never a failure\n'
+	printf '\nExit: 0 success; 1 check found a problem; after exec, the command'"'"'s own status.\n'
+	printf '\nEnvironment:\n'
+	for line in "${variables[@]}"; do
+		printf '  %-18s %s\n' "${line%%|*}" "${line#*|}"
+	done
 }
 
 main() {
-	case "${1-}" in
-	--version) printf 'lend %s\n' "$LEND_VERSION" ;;
-	--help) usage ;;
+	case ${1-} in
+	--version) (($# == 1)) || fail usage "--version takes no arguments"; printf 'lend %s\n' "$LEND_VERSION" ;;
+	--help) (($# == 1)) || fail usage "--help takes no arguments"; print_help ;;
 	*)
-		printf 'lend: usage: %s. See: lend --help\n' "unknown arguments" >&2
-		return 2
+		load_env
+		[[ -n ${1-} ]] || fail usage "no verb given"
+		fail usage "unknown verb '$1'"
 		;;
 	esac
 }

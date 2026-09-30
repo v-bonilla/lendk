@@ -29,7 +29,7 @@ bins=(bin/*)
 
 # R9 on bin/lend, skipping the name-list tables and the terminal-owner test.
 # cmdpos WORD [START]: WORD in command position; START matches the line start.
-cmdpos() { printf '(%s|[;&|(]|[$][(])[[:space:]]*%s([^A-Za-z0-9_-]|$)' "${2:-^}" "$1"; }
+cmdpos() { printf '(%s|[;&|(]|[$][(])[[:space:]]*%s([^A-Za-z0-9_=-]|$)' "${2:-^}" "$1"; }
 if [[ -f bin/lend ]]; then
 	body=$(awk '
 		/# lint: tables begin/ { t = 1 } /# lint: tables end/ { t = 0; next }
