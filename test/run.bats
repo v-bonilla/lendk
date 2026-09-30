@@ -20,7 +20,7 @@ map() {
 # run_fake ARG...: lend run ARG... with a backend that logs each key to $SB/reads and returns value-KEY.
 run_fake() {
 	local LEND=$SB/bin/lend-fn
-	run_lend eval "backend_has() { :; }; backend_read() { printf '%s\n' \"\$1\" >>$(printf %q "$SB/reads"); lend_values[\$1]=value-\$1; }; main run $(printf '%q ' "$@")"
+	run_lend eval "backend_has() { :; }; read_values() { local k; for k; do printf '%s\n' \"\$k\" >>$(printf %q "$SB/reads"); lend_values[\$k]=value-\$k; done; }; main run $(printf '%q ' "$@")"
 }
 
 # target_env: the environment file the one stub-target call logged.

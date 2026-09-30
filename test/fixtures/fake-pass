@@ -1,13 +1,24 @@
 #!/usr/bin/env bash
 # Stand-in for pass: `pass show PREFIX/KEY` prints $PASSWORD_STORE_DIR/PREFIX/KEY.gpg, which holds plaintext.
 # Each call logs argv, its environment, its PID, where its stdin points and the modes of its stderr
-# file and that file's directory under $PASSWORD_STORE_DIR/../log/pass.PID/.
-# PREFIX/KEY.mode holding `big` makes the entry a 200 kB first line and a second line.
+# file and that file's directory under $PASSWORD_STORE_DIR/../log/pass.PID/, and appends its PID and
+# its children's to $PASSWORD_STORE_DIR/../log/pids.
+# PREFIX/KEY.mode selects a behavior:
+#   big       a 200 kB first line and a second line
+#   locked    gpg's status for a passphrase it cannot ask for (code 85), exit 2
+#   cancel    gpg's status for a canceled pinentry (code 99), exit 2
+#   fail      another gpg error (code 58), exit 2
+#   slow      the entry after 1 s
+#   hang      a child that sleeps for an hour
+#   stubborn  like hang, with TERM ignored by pass and its child
+#   tty       a loopback prompt: reads a line from the terminal with echo off and prints it; each
+#             SIGCONT, one per terminal handoff, adds a line to its conts log
 log=$PASSWORD_STORE_DIR/../log/pass.$$
 mkdir -p "$log"
 printf '%s\0' "$@" >"$log/argv"
 env -0 >"$log/env"
 printf '%s\n' "$$" >"$log/pid"
+printf '%s\n' "$$" >>"$PASSWORD_STORE_DIR/../log/pids"
 readlink "/proc/$$/fd/0" >"$log/stdin" 2>/dev/null
 err=$(readlink "/proc/$$/fd/2" 2>/dev/null)
 [[ $err != /* ]] || ls -ldn "${err%/*}" "$err" >"$log/stderr-modes" 2>/dev/null
@@ -17,10 +28,47 @@ entry=$PASSWORD_STORE_DIR/$2
 [[ -f $entry.gpg ]] || { echo "Error: $2 is not in the password store." >&2; exit 1; }
 mode=
 [[ -f $entry.mode ]] && mode=$(<"$entry.mode")
+
+# status LINE: write a gpg status line to the --status-fd descriptor in PASSWORD_STORE_GPG_OPTS.
+status() {
+	local fd=
+	[[ " ${PASSWORD_STORE_GPG_OPTS-} " =~ \ --status-fd\ ([0-9]+)\  ]] && fd=${BASH_REMATCH[1]}
+	[[ -n $fd ]] && printf '[GNUPG:] %s\n' "$1" >&"$fd"
+}
+# child: start an hour-long sleep, record its PID and wait for it.
+child() {
+	sleep 3600 &
+	printf '%s\n' "$!" >>"$PASSWORD_STORE_DIR/../log/pids"
+	wait
+}
+
 case $mode in
 big)
 	printf '%*s' 200000 '' | tr ' ' x
 	printf '\nsecond\n'
+	;;
+locked | cancel | fail)
+	case $mode in locked) code=67108949 ;; cancel) code=67108963 ;; fail) code=67108922 ;; esac
+	status "ERROR pkdecrypt_failed $code"
+	echo "gpg: decryption failed: $mode" >&2
+	exit 2
+	;;
+slow)
+	sleep 1
+	cat -- "$entry.gpg"
+	;;
+hang) child ;;
+stubborn)
+	trap '' TERM
+	child
+	;;
+tty)
+	trap 'echo cont >>"$log/conts"' CONT
+	saved=$(stty -g </dev/tty)
+	stty -echo </dev/tty
+	IFS= read -r line </dev/tty
+	stty "$saved" </dev/tty
+	printf '%s\n' "$line"
 	;;
 *) cat -- "$entry.gpg" ;;
 esac

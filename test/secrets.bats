@@ -149,7 +149,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	echo big >"$SB/store/env/K1.mode"
 	# The kernel refuses a 200 kB environment string at exec, so the read is timed on its own.
 	run lend-fn eval 'load_env; declare -A lend_env=([PATH]=$PATH [HOME]=$HOME [PASSWORD_STORE_DIR]=$PASSWORD_STORE_DIR) lend_values=()
-		lend_tmp=$(mktemp -d); TIMEFORMAT=%R; time backend_read K1; echo "${#lend_values[K1]}"' </dev/null
+		lend_tmp=$(mktemp -d) lend_gpg_tty=; TIMEFORMAT=%R; time read_values K1; echo "${#lend_values[K1]}"' </dev/null
 	assert_eq "${lines[1]}" 200000
 	[[ ${lines[0]%%.*} == 0 ]] || { echo "took ${lines[0]} s" >&2; return 1; }
 }

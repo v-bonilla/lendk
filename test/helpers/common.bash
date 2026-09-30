@@ -57,3 +57,26 @@ gone() {
 	stat=${stat##*) }
 	[[ ${stat%% *} == Z ]]
 }
+# family: live PIDs of lend's processes, which inherit LEND_TEST_FAMILY=$SENTINEL, and of the fake
+# pass calls and their children, which the fake records in $SB/log/pids.
+family() {
+	local p f
+	while IFS= read -r f; do
+		p=${f#/proc/}
+		p=${p%/environ}
+		gone "$p" || printf '%s\n' "$p"
+	done < <(grep -lF "LEND_TEST_FAMILY=$SENTINEL" /proc/[0-9]*/environ 2>/dev/null)
+	[[ -f $SB/log/pids ]] || return 0
+	while read -r p; do gone "$p" || printf '%s\n' "$p"; done <"$SB/log/pids"
+}
+# none_within SECONDS: family is empty within SECONDS.
+none_within() {
+	local i left
+	for ((i = 0; i <= $1 * 10; i++)); do
+		left=$(family)
+		[[ -z $left ]] && return 0
+		sleep 0.1
+	done
+	echo "still running: $left" >&2
+	return 1
+}

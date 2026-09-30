@@ -40,9 +40,10 @@ check_pass_env() {
 		[[ $n != PATH ]] || [[ :${e#*=}: != *":$LEND_SHIMS:"* ]] || { echo "shims on the backend PATH" >&2; return 1; }
 	done <"$1/env"
 	for n in HOME GNUPGHOME PINENTRY_USER_DATA GPG_TTY LC_ALL XDG_RUNTIME_DIR DISPLAY TMPDIR \
-		PASSWORD_STORE_DIR PASSWORD_STORE_GPG_OPTS PASSWORD_STORE_X; do
+		PASSWORD_STORE_DIR PASSWORD_STORE_X; do
 		tr '\0' '\n' <"$1/env" | grep -qxF -- "$n=${!n}" || { echo "missing in the backend: $n" >&2; return 1; }
 	done
+	tr '\0' '\n' <"$1/env" | grep -qxF -- "PASSWORD_STORE_GPG_OPTS=--opt --status-fd 9 --pinentry-mode error"
 }
 
 @test "FR8: a direct call's backend gets only the allowlisted environment" {
