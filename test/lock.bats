@@ -69,6 +69,50 @@ dead_pid() {
 	[[ -f $LEND_SHIMS/stub && ! -e $LOCK && ! -e $LOCK.break ]]
 }
 
+@test "FR26: a waiter killed while holding the break marker leaves a lock the next sync breaks" {
+	local pid i
+	mkdir "$LOCK"
+	dead_pid >"$LOCK/pid"
+	LEND_TEST_PAUSE=9 "$LEND" sync </dev/null 2>/dev/null &
+	pid=$!
+	for ((i = 0; i < 50; i++)); do
+		[[ $(cat "$LOCK.break/pid" 2>/dev/null) == "$pid" ]] && break
+		sleep 0.1
+	done
+	assert_eq "$(cat "$LOCK.break/pid")" "$pid"
+	kill -KILL "$pid"
+	wait "$pid" || true
+	local start=$SECONDS
+	run_lend sync
+	assert_eq "$status" 0
+	assert_eq "$stderr" ""
+	((SECONDS - start <= 3))
+	[[ -f $LEND_SHIMS/stub ]]
+	assert_eq "$(compgen -G "$LOCK*")" ""
+}
+
+@test "FR26: a break marker that never got a PID is taken over after 1 s" {
+	mkdir "$LOCK" "$LOCK.break"
+	dead_pid >"$LOCK/pid"
+	run_lend sync
+	assert_eq "$status" 0
+	assert_eq "$stderr" ""
+	[[ -f $LEND_SHIMS/stub ]]
+	assert_eq "$(compgen -G "$LOCK*")" ""
+}
+
+@test "FR26: a live waiter's break marker is left alone, so the lock stays until it is done" {
+	sleep 60 &
+	OWNER=$!
+	mkdir "$LOCK" "$LOCK.break"
+	dead_pid >"$LOCK/pid"
+	printf '%s\n' "$OWNER" >"$LOCK.break/pid"
+	run_lend sync
+	assert_class write 125
+	assert_eq "$(cat "$LOCK.break/pid")" "$OWNER"
+	[[ -f $LOCK/pid && ! -e $LOCK.break/break ]]
+}
+
 @test "FR26: runtime calls never lock" {
 	sleep 60 &
 	OWNER=$!

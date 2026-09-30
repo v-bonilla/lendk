@@ -1106,10 +1106,11 @@ check_shim_dir() {
 	return 0
 }
 
-# take_lock: hold SHIMS.lock (FR26), retrying for 10 s. A dead owner's lock is broken only while
-# holding SHIMS.lock.break and after rereading the owner, so no two waiters both break it.
+# take_lock: hold SHIMS.lock (FR26), retrying for 10 s. A dead owner's lock is broken only by the
+# holder of the break marker, after rereading the owner, so no two waiters both break it.
 take_lock() {
-	local lock=$shims.lock owner cur empty=0 i
+	local lock=$shims.lock owner empty=0 i
+	lend_bempty=
 	for ((i = 0; i < 100; i++)); do
 		if command -p mkdir -m 700 -- "$lock" 2>/dev/null; then
 			lend_lock=$lock
@@ -1125,20 +1126,57 @@ take_lock() {
 		# An owner between its mkdir and its PID write gets 1 s.
 		if [[ -z $owner ]]; then empty=$((empty + 1)); else empty=0; fi
 		if { [[ -n $owner ]] && ! builtin kill -0 "$owner" 2>/dev/null; } || ((empty > 10)); then
-			if command -p mkdir -- "$lock.break" 2>/dev/null; then
-				cur=
-				{ IFS= read -r cur <"$lock/pid"; } 2>/dev/null
-				if [[ $cur == "$owner" ]] && { [[ -z $cur ]] || ! builtin kill -0 "$cur" 2>/dev/null; }; then
-					command -p rm -rf -- "$lock"
-				fi
-				command -p rmdir -- "$lock.break"
-				empty=0
-				continue
-			fi
+			break_lock "$owner" && empty=0 && continue
 		fi
 		command -p sleep 0.1
 	done
 	fail write "$lock: held by PID ${owner:-unknown} for 10 s" PATH="$lock"
+}
+
+# break_lock OWNER: one attempt to remove SHIMS.lock while it still names the dead OWNER. The break
+# marker SHIMS.lock.break holds its taker's PID. A waiter takes over a dead taker's marker by creating
+# break inside it, and so on down, so one live waiter at most holds the deepest marker; it renames the
+# whole marker tree away when done. A marker without a PID gets 1 s, like the lock.
+break_lock() {
+	local lock=$shims.lock p=$shims.lock.break dead='' b cur i
+	while ! command -p mkdir -- "$p" 2>/dev/null; do
+		b=
+		{ IFS= read -r b <"$p/pid"; } 2>/dev/null
+		if [[ -n $b ]]; then
+			builtin kill -0 "$b" 2>/dev/null && return 1
+		else
+			[[ ${lend_bempty% *} == "$p" ]] || lend_bempty="$p 0"
+			lend_bempty="$p $((${lend_bempty##* } + 1))"
+			((${lend_bempty##* } > 10)) || return 1
+		fi
+		dead=$b
+		p=$p/break
+	done
+	lend_bempty=
+	printf '%s\n' "$$" >"$p/pid"
+	# Tests kill a waiter here, holding the marker.
+	if [[ ${LEND_TEST_PAUSE-} =~ ^[0-9]$ ]]; then
+		i=$((SECONDS + LEND_TEST_PAUSE))
+		while ((SECONDS < i)); do :; done
+	fi
+	if [[ $p != "$lock.break" ]]; then
+		cur=
+		{ IFS= read -r cur <"${p%/break}/pid"; } 2>/dev/null
+		if [[ $cur != "$dead" ]]; then
+			command -p rm -rf -- "$p"
+			return 1
+		fi
+	fi
+	cur=
+	{ IFS= read -r cur <"$lock/pid"; } 2>/dev/null
+	if [[ $cur == "$1" ]] && { [[ -z $cur ]] || ! builtin kill -0 "$cur" 2>/dev/null; }; then
+		command -p rm -rf -- "$lock"
+	fi
+	# A rename is atomic, so no waiter creates a marker inside a tree being removed.
+	command -p rm -rf -- "$lock.break.$$"
+	command -p mv -- "$lock.break" "$lock.break.$$" 2>/dev/null
+	command -p rm -rf -- "$lock.break.$$"
+	return 0
 }
 # shellcheck disable=SC2329 # called from traps
 release_lock() {
