@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # make bench: NFR1, shim overhead with keys preset and a 50-entry map, as paired, interleaved runs
-# after warmups (R13). Writes test/bench/out/nfr1.txt and exits 1 on a miss.
+# after warmups (R13); NFR2, a 3-key run with real GnuPG, a warm cache and a key at s2k-count 8388608.
+# Writes test/bench/out/nfr1.txt and nfr2.txt and exits 1 on a miss.
 set -u -o pipefail
 # A fixed, minimal environment keeps runs comparable and keeps the caller's variables out.
 [[ -n ${BENCH_CLEAN-} ]] || exec env -i BENCH_CLEAN=1 BENCH_RUNS="${BENCH_RUNS:-200}" PATH=/usr/bin:/bin \
@@ -13,7 +14,8 @@ real=$(command -v true) || exit 2
 ((BASH_VERSINFO[0] >= 5)) || { echo "bench: needs bash 5 for EPOCHREALTIME" >&2; exit 2; }
 
 dir=$(mktemp -d "${TMPDIR:-/tmp}/lend-bench.XXXXXX") || exit 2
-trap 'rm -rf "$dir"' EXIT
+gnupg=
+trap 'rm -rf "$dir"; [[ -z $gnupg ]] || { GNUPGHOME=$gnupg gpgconf --kill gpg-agent; rm -rf "$gnupg"; }' EXIT
 mkdir -m 700 "$dir/cfg" "$dir/shims"
 for ((i = 0; i < 49; i++)); do printf 'cmd%d K1 @g\n' "$i"; done >"$dir/cfg/map"
 printf '@g K2 K3\ntrue K1 @g\n' >>"$dir/cfg/map"
@@ -50,4 +52,35 @@ ms() { printf '%d.%01d' $(($1 / 1000)) $((($1 < 0 ? -$1 : $1) % 1000 / 100)); }
 line="NFR1: shim overhead over a direct exec, $runs runs: median $(ms "$median") ms (max 20), p95 $(ms "$p95") ms (max 40)"
 mkdir -p "$root/test/bench/out"
 printf '%s\n' "$line" | tee "$root/test/bench/out/nfr1.txt"
-((median <= 20000 && p95 <= 40000))
+miss=0
+((median <= 20000 && p95 <= 40000)) || miss=1
+
+# NFR2. The GnuPG home lives under /tmp for the agent's socket path (R11); nothing may prompt.
+unset K1 K2 K3
+if ! command -v gpg >/dev/null || ! command -v pass >/dev/null; then
+	echo "bench: NFR2 needs gpg and pass" >&2
+	exit 2
+fi
+gnupg=$(mktemp -d /tmp/lend-gpg.XXXXXX) || exit 2
+export GNUPGHOME=$gnupg HOME=$dir/home PASSWORD_STORE_DIR=$dir/store
+mkdir -m 700 "$HOME"
+printf 's2k-count 8388608\nallow-loopback-pinentry\npinentry-program /bin/false\n' >"$gnupg/gpg-agent.conf"
+pw=lend-bench-passphrase
+gpg --batch --quiet --pinentry-mode loopback --passphrase "$pw" \
+	--quick-gen-key 'lend bench key' future-default default never 2>/dev/null || exit 2
+fpr=$(gpg --batch --with-colons --list-secret-keys 2>/dev/null | awk -F: '$1 == "fpr" { print $10; exit }')
+pass init "$fpr" >/dev/null || exit 2
+for k in K1 K2 K3; do printf 'bench-%s\n' "$k" | pass insert -m "env/$k" >/dev/null || exit 2; done
+gpg --batch --quiet --pinentry-mode loopback --passphrase "$pw" -d "$PASSWORD_STORE_DIR/env/K1.gpg" >/dev/null || exit 2
+runs=50
+times=()
+for ((i = 0; i < 3 + runs; i++)); do
+	now; s=$t; "$dir/shims/true" || exit 2; now
+	((i < 3)) || times+=($((t - s)))
+done
+mapfile -t sorted < <(printf '%s\n' "${times[@]}" | sort -n)
+median=${sorted[runs / 2]}
+line="NFR2: 3-key run with a warm cache at s2k-count 8388608, $runs runs: median $(ms "$median") ms (max 500)"
+printf '%s\n' "$line" | tee "$root/test/bench/out/nfr2.txt"
+((median <= 500000)) || miss=1
+((!miss))
