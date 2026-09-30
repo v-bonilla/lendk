@@ -28,7 +28,7 @@ check-docker: images
 	@test -x $(BATS) || { echo 'bats-core is missing; run: make deps' >&2; exit 1; }
 	$(BATS) --filter-tags docker test/*.bats
 	$(DOCKER_RUN) --cap-add SYS_PTRACE \
-		-e TEST_REQUIRE="gpg pass zsh strace script python3 git environment-d" \
+		-e TEST_REQUIRE="gpg pass zsh strace script python3 git make environment-d" \
 		lend-test:ubuntu $(BATS) --filter-tags '!docker' test/*.bats
 	$(DOCKER_RUN) -e TEST_REQUIRE=script lend-test:bash44 $(BATS) --filter-tags '!docker' test/*.bats
 

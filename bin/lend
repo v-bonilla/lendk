@@ -119,7 +119,7 @@ lend_listing=
 
 set -u -o pipefail
 
-LEND_VERSION=0.0.0
+LEND_VERSION=1.0.0
 
 # lint: tables begin
 grammar=(

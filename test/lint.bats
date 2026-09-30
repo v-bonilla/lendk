@@ -67,21 +67,15 @@ lint_copy() {
 	lint_copy "LICENSE: not MIT held by v-bonilla"
 }
 
-@test "NFR9: lint-repo.bash flags a PRD ID found neither in a test nor in pending-ids" {
+@test "NFR9: lint-repo.bash flags a PRD ID found in no test name" {
 	scratch
 	printf -- '- %s%s Planted requirement.\n' FR 99 >>"$COPY/docs/prd.md"
-	lint_copy "FR99: in no test name and not in test/pending-ids"
+	lint_copy "FR99: in no test name"
 }
 
-@test "NFR9: lint-repo.bash flags an ID both in a test name and in pending-ids" {
+@test "NFR9: lint-repo.bash flags a test-name ID the PRD does not define" {
 	scratch
-	echo FR22 >>"$COPY/test/pending-ids"
-	lint_copy "FR22: in a test name and in test/pending-ids"
-}
-
-@test "NFR9: lint-repo.bash flags a pending ID the PRD does not define" {
-	scratch
-	printf '%s%s\n' NFR 99 >>"$COPY/test/pending-ids"
+	printf '@test "%s%s: planted" {\n\ttrue\n}\n' NFR 99 >>"$COPY/test/lint.bats"
 	lint_copy "NFR99: not in docs/prd.md"
 }
 

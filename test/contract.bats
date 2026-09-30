@@ -63,6 +63,15 @@ prd_list() {
 	assert_eq "$n" 10
 }
 
+@test "NFR8: the README's name lists and classes are the lines --help prints" {
+	local readme want got
+	readme=$(<"$ROOT/README.md")
+	want=$(sed -n '/^Name lists:/,/^$/p; /^Classes:/,/^$/p' <<<"$HELP" | grep -E '^  [a-z]' | grep -v '^  notice:')
+	got=$(grep -E '^  ((reserved|denied|guarded) [a-zA-Z ]+: |[a-z-]+ \([0-9]+\): )' <<<"$readme")
+	assert_eq "$(sort <<<"$got")" "$(sort <<<"$want")"
+	assert_eq "$(wc -l <<<"$want")" 28
+}
+
 @test "NFR8: sync writes FR29's shim text" {
 	local want
 	want=$(sed -n '/^- FR29 /,/^- FR30 /p' "$PRD" | sed -n '/^  ```$/,/^  ```$/p' | sed '1d;$d; s/^  //')

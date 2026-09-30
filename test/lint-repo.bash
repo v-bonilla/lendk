@@ -53,8 +53,8 @@ for f in "${files[@]}"; do
 	while IFS= read -r hit; do problem "$f:$hit: only test helpers may call script"; done < <(grep -nE -e "$(cmdpos script)" -- "$f")
 done
 
-# PRD ID coverage: each FR and NFR ID sits in a test name or in test/pending-ids, never both.
-declare -A in_prd=() in_test=() in_pending=()
+# PRD ID coverage: each FR and NFR ID sits in a test name, and each test-name ID is in the PRD.
+declare -A in_prd=() in_test=()
 while read -r _ id _; do in_prd[$id]=1; done < <(grep -E '^- N?FR[0-9]+ ' docs/prd.md 2>/dev/null)
 for f in test/*.bats; do
 	[[ -f $f ]] || continue
@@ -63,14 +63,10 @@ for f in test/*.bats; do
 		while read -r id; do in_test[$id]=1; done < <(grep -oE 'N?FR[0-9]+' <<<"${name%%:*}")
 	done < <(grep -E '^[[:space:]]*@test ["'\''](N?FR[0-9]+(, )?)+:' "$f")
 done
-if [[ -f test/pending-ids ]]; then
-	while read -r id; do [[ -n $id ]] && in_pending[$id]=1; done <test/pending-ids
-fi
 for id in "${!in_prd[@]}"; do
-	[[ -n ${in_test[$id]-} && -n ${in_pending[$id]-} ]] && problem "$id: in a test name and in test/pending-ids"
-	[[ -z ${in_test[$id]-} && -z ${in_pending[$id]-} ]] && problem "$id: in no test name and not in test/pending-ids"
+	[[ -n ${in_test[$id]-} ]] || problem "$id: in no test name"
 done
-for id in "${!in_test[@]}" "${!in_pending[@]}"; do
+for id in "${!in_test[@]}"; do
 	[[ -n ${in_prd[$id]-} ]] || problem "$id: not in docs/prd.md"
 done
 
