@@ -201,3 +201,18 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(<"$SB/log/stdin")" $'line one\nline two'
 	assert_eq "$(<"$(pass_logs)/stdin")" /dev/null
 }
+
+@test "FR20: LEND_TEST_PAUSE never changes a decrypt's output or class, and no value reaches stderr" {
+	local p
+	map 'stub K1 K2'
+	entry K1 "12$SENTINEL"
+	entry K2 "7 $SENTINEL"
+	for p in 1 x 10 -1 ''; do
+		rm -rf "$SB/log" && mkdir "$SB/log"
+		LEND_TEST_PAUSE=$p run_lend run -- stub
+		assert_eq "$stderr" ""
+		assert_eq "$status" 0
+		assert_eq "$(target_var K1)" "12$SENTINEL"
+		assert_eq "$(target_var K2)" "7 $SENTINEL"
+	done
+}

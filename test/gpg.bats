@@ -44,11 +44,11 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	local b start
 	for b in plain gpg2; do
 		branch "$b"
-		start=$SECONDS
+		start=$(date +%s%3N)
 		run_lend run -- stub
 		assert_class locked 120
 		assert_eq "$stderr" "lend: locked: env/K1 needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lend unlock K1' in a terminal, then retry."
-		((SECONDS - start <= 2))
+		(($(date +%s%3N) - start < 2000))
 		assert_eq "$(recorder_pids)" ""
 		assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	done
@@ -114,10 +114,10 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	for b in plain gpg2; do
 		branch "$b"
 		echo hang >"$GNUPGHOME/pinentry.mode"
-		start=$SECONDS
+		start=$(date +%s%3N)
 		LEND_PROMPT=allow LEND_TIMEOUT=2 run_lend run -- stub
 		assert_class timeout 120
-		((SECONDS - start <= 4))
+		(($(date +%s%3N) - start < 4000))
 		p=$(recorder_pids)
 		[[ -n $p ]]
 		gone_within 2 "$p"
@@ -154,6 +154,18 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	in_shell "$(printf %q "$LEND") run -- stub; st=\$?; echo; echo status=\$st" @3 "$GPG_PASS" @3 exit
 	assert_line "$output" "status=0"
 	target_got
+	assert_eq "$(recorder_pids)" ""
+}
+
+# bats test_tags=gpg
+@test "FR18: (i) with loopback in gpg.conf, a call in a command substitution gives locked and shows no prompt" {
+	branch plain
+	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
+	in_shell "x=\$($(printf %q "$LEND") run -- stub); echo rc=\$?" @3 exit
+	assert_line "$output" rc=120
+	[[ $output == *"lend: locked: env/K1 needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lend unlock K1' in a terminal, then retry."* ]]
+	refute_contains "$output" "Enter passphrase"
+	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	assert_eq "$(recorder_pids)" ""
 }
 

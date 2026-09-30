@@ -50,8 +50,8 @@ prd_list() {
 	while IFS= read -r fix; do
 		[[ $HELP == *"$fix"* ]] || { echo "missing FIX: $fix" >&2; return 1; }
 		n=$((n + 1))
-	done < <(sed -n '/^### 5.3/,/^## 6/p' "$PRD" | grep -oE '`(See|To map|Put|Upgrade|Run the|Retry;|Fix|Map it|Add it|Set it|Install|Ask the user|Stop and)[^`]*`' | tr -d '`')
-	assert_eq "$n" 18
+	done < <(sed -n '/^### 5.3/,/^## 6/p' "$PRD" | grep -oE '`(See|To map|Put|Upgrade|Run the|Retry;|Fix|Map it|Add it|Set it|Create it|Add a mapped|Install|Ask the user|Stop and)[^`]*`' | tr -d '`')
+	assert_eq "$n" 20
 }
 
 @test "NFR8: every variable of PRD section 8 is in --help" {

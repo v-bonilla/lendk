@@ -41,7 +41,13 @@ read_calls() {
 	rm "$SB/store/env/"K?.gpg
 	run_lend unlock
 	assert_class missing-key 125
-	assert_eq "$stderr" "lend: missing-key: no key named in $MAP is in the store. Stop and ask the user."
+	assert_eq "$stderr" "lend: missing-key: no key mapped in $MAP is in the store. Stop and ask the user."
+	LEND_PROMPT=allow run_lend unlock
+	assert_eq "$stderr" "lend: missing-key: no key mapped in $MAP is in the store. Add a mapped key with pass insert, then retry."
+	rm "$MAP"
+	LEND_PROMPT=allow run_lend unlock
+	assert_class missing-key 125
+	assert_eq "$stderr" "lend: missing-key: $MAP does not exist. Create it with lend add, or name the keys to unlock."
 	run_lend unlock K9
 	assert_eq "$stderr" "lend: missing-key: env/K9 is not in the store. Stop and ask the user."
 	assert_eq "$(compgen -G "$SB/log/pass.*")" ""

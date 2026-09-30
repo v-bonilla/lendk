@@ -177,6 +177,8 @@ classes=(
 	"map|125|Fix the line, then run: lend check|$stop_fix"
 	"unmapped|125|Map it: lend add CMD KEY..., or name keys: lend run KEY... -- CMD|$stop_fix"
 	"missing-key|125|Add it: pass insert env/KEY|$stop_fix"
+	"missing-key:nomap|125|Create it with lend add, or name the keys to unlock.|$stop_fix"
+	"missing-key:none|125|Add a mapped key with pass insert, then retry.|$stop_fix"
 	"missing-key:empty|125|Set it: pass edit env/KEY|$stop_fix"
 	"decrypt|125|See gpg's error: lend unlock KEY|$unlock_fix"
 	"unsafe|125|Fix it: chmod go-w PATH, or recreate it as your own|$stop_fix"
@@ -443,29 +445,12 @@ backend_has() {
 # environment built from scratch (FR8, FR14, FR15), then prints "COUNT STATUS KEY" and the first line
 # of each entry read through one forked writer, so the job never waits for its reader.
 backend_read() {
-	local n rest dir benv=() out k='' st=ok vals=() opts
+	local n out k='' st=ok vals=() opts benv=()
 	local -a lines
-	rest=$PATH:
-	n=
-	while [[ -n $rest ]]; do
-		dir=${rest%%:*}
-		rest=${rest#*:}
-		[[ $dir == "$shims" || ($dir == /* && $dir -ef $shims) ]] && continue
-		n+=${n:+:}$dir
-	done
-	benv=("PATH=$n")
-	for n in "${!lend_env[@]}"; do
-		case $n in
-		GPG_TTY | PASSWORD_STORE_GPG_OPTS) ;;
-		HOME | USER | LOGNAME | LANG | LC_* | TERM | TMPDIR | DISPLAY | WAYLAND_DISPLAY | XAUTHORITY | \
-			DBUS_SESSION_BUS_ADDRESS | XDG_RUNTIME_DIR | GNUPGHOME | PINENTRY_USER_DATA | PASSWORD_STORE_*)
-			benv+=("$n=${lend_env[$n]}")
-			;;
-		esac
-	done
+	allow_env
 	opts=${lend_env[PASSWORD_STORE_GPG_OPTS]-}
 	opts+="${opts:+ }--status-fd 9"
-	((interactive)) || opts+=' --pinentry-mode error'
+	((interactive && !lend_noloop)) || opts+=' --pinentry-mode error'
 	benv+=("PASSWORD_STORE_GPG_OPTS=$opts")
 	if [[ -n $lend_gpg_tty ]]; then
 		benv+=("GPG_TTY=$lend_gpg_tty")
@@ -490,6 +475,30 @@ backend_read() {
 		vals+=("${lines[0]}")
 	done
 	{ builtin printf '%s\n' "${#vals[@]} $st $k" "${vals[@]}"; } &
+}
+
+# allow_env: benv, the environment for backend helpers built from scratch (FR8): PATH without the
+# shim directory and the allowlisted caller variables.
+allow_env() {
+	local n rest dir
+	rest=$PATH:
+	n=
+	while [[ -n $rest ]]; do
+		dir=${rest%%:*}
+		rest=${rest#*:}
+		[[ $dir == "$shims" || ($dir == /* && $dir -ef $shims) ]] && continue
+		n+=${n:+:}$dir
+	done
+	benv=("PATH=$n")
+	for n in "${!lend_env[@]}"; do
+		case $n in
+		GPG_TTY | PASSWORD_STORE_GPG_OPTS) ;;
+		HOME | USER | LOGNAME | LANG | LC_* | TERM | TMPDIR | DISPLAY | WAYLAND_DISPLAY | XAUTHORITY | \
+			DBUS_SESSION_BUS_ADDRESS | XDG_RUNTIME_DIR | GNUPGHOME | PINENTRY_USER_DATA | PASSWORD_STORE_*)
+			benv+=("$n=${lend_env[$n]}")
+			;;
+		esac
+	done
 }
 
 # backend_job KEY...: J (R5), run as a coproc. A signal ends it with a status bash never reports
@@ -593,7 +602,7 @@ backend_fail() {
 # read_values KEY...: lend_values[KEY] for each KEY, read by the backend job J under the watchdog W
 # (R5): bounded by LEND_TIMEOUT (FR16), leaving no process behind (FR17), classified per PRD 5.2.
 read_values() {
-	local err out line wpid i st k ecode last
+	local err out line wpid jpid i st k ecode last
 	local -a f keys=("$@")
 	lend_jpid=
 	exec {err}>&2
@@ -610,10 +619,15 @@ read_values() {
 	watchdog </dev/null >/dev/null 2>&1 &
 	wpid=$!
 	coproc LEND_J { backend_job "$@"; }
-	# Tests widen the window before lend_jpid is set.
-	[[ -z ${LEND_TEST_PAUSE-} ]] || IFS= builtin read -r -t "$LEND_TEST_PAUSE" -u "${LEND_J[0]}" line
-	lend_jpid=$LEND_J_PID
+	jpid=$LEND_J_PID
 	exec {out}<&"${LEND_J[0]}"
+	# Tests widen the window before lend_jpid is set. A builtin loop, since an external sleep here
+	# would be a job of its own that a signal to lend's group misses.
+	if [[ ${LEND_TEST_PAUSE-} =~ ^[0-9]$ ]]; then
+		i=$((SECONDS + LEND_TEST_PAUSE))
+		while ((SECONDS < i)); do :; done
+	fi
+	lend_jpid=$jpid
 	while :; do
 		# Plain wait: bash 4.4 runs traps during wait only when wait is not called through builtin.
 		wait "$lend_jpid" 2>/dev/null
@@ -626,6 +640,7 @@ read_values() {
 		# touched the terminal meanwhile stopped; CONT to lend's group resumes it.
 		if [[ $line == "$lend_jpid" ]] && tty_owner; then
 			builtin fg %% >/dev/null
+			# This also resumes a sibling the caller stopped on purpose; lend cannot tell them apart.
 			builtin kill -CONT 0 2>/dev/null
 		fi
 	done
@@ -657,7 +672,7 @@ read_values() {
 			[[ ${f[3]-} =~ ^[0-9]+$ ]] && ecode=$((f[3] & 65535))
 			break
 		done <"$lend_tmp/status.$k"
-		if ((interactive == 0)) && [[ $ecode == 85 || $ecode == 99 ]]; then
+		if ((interactive == 0 || lend_noloop)) && [[ $ecode == 85 || $ecode == 99 ]]; then
 			backend_fail locked "$prefix/$k needs the gpg passphrase and this call cannot prompt" "$k"
 		elif ((interactive)) && [[ $ecode == 99 ]]; then
 			backend_fail canceled "passphrase entry for $prefix/$k was canceled" "$k"
@@ -679,14 +694,43 @@ read_values() {
 
 # check_gnupg: FR22 for the gpg pass uses, gpg2 when on PATH, else gpg. A missing gpg is left to pass.
 check_gnupg() {
-	local gpg out v
+	local gpg out v benv=()
 	gpg=$(type -P gpg2) || gpg=$(type -P gpg) || return 0
-	out=$("$gpg" --version 2>/dev/null </dev/null) || return 0
+	allow_env
+	out=$(command -p env -i "${benv[@]}" "$gpg" --version 2>/dev/null </dev/null)
 	out=${out%%$'\n'*}
-	v=${out##* }
-	[[ $v =~ ^([0-9]+)\.([0-9]+) ]] || return 0
-	((BASH_REMATCH[1] > 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] >= 4))) ||
-		fail unsupported:gnupg "GnuPG $v found; lend needs GnuPG 2.4 or later"
+	v=${out#gpg (GnuPG*) }
+	if [[ $v =~ ^([0-9]+)\.([0-9]+)\.[0-9]+(-[A-Za-z0-9.]+)?$ ]] &&
+		((BASH_REMATCH[1] > 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] >= 4))); then
+		return 0
+	fi
+	[[ -n $v ]] || v='no version'
+	fail unsupported:gnupg "GnuPG ${v//[![:print:]]/?} found; lend needs GnuPG 2.4 or later"
+}
+
+# check_loopback: lend_noloop=1 for an interactive call that cannot take the terminal, because job
+# control signals were ignored when lend started (a command substitution), while gpg is set to
+# prompt on the terminal itself. Such a prompt would only show and lose the typed passphrase to the
+# caller's shell, so the call fails fast instead; any other pinentry prompts as usual.
+check_loopback() {
+	local conf mode='' line w prev=''
+	local -a f
+	((interactive)) || return 0
+	[[ -n $(builtin trap -p TTOU) ]] || return 0
+	conf=${lend_env[GNUPGHOME]:-${HOME-}/.gnupg}/gpg.conf
+	if [[ -r $conf ]]; then
+		while IFS= read -r line; do
+			# shellcheck disable=SC2206
+			f=(${line%%#*})
+			[[ ${f[0]-} == pinentry-mode ]] && mode=${f[1]-}
+		done <"$conf"
+	fi
+	for w in ${lend_env[PASSWORD_STORE_GPG_OPTS]-}; do
+		[[ $prev == --pinentry-mode ]] && mode=$w
+		[[ $w == --pinentry-mode=* ]] && mode=${w#*=}
+		prev=$w
+	done
+	[[ $mode != loopback ]] || lend_noloop=1
 }
 
 # read_keys KEY...: FR3 from the existence check to the last decrypt; values stay unexported (FR4).
@@ -700,6 +744,7 @@ read_keys() {
 	done
 	((missing == 0)) || exit "$code"
 	check_gnupg
+	check_loopback
 	builtin set +x +v
 	lend_tmp=$(builtin umask 077 && command -p mktemp -d "${TMPDIR:-/tmp}/lend.XXXXXX") ||
 		fail write "${TMPDIR:-/tmp}: cannot create a temporary directory" PATH="${TMPDIR:-/tmp}"
@@ -770,7 +815,7 @@ restore_env() {
 # run_verb [WORD...] -- CMD [ARG...]: FR3 up to exec. Locals carry the lend_ prefix because they are
 # still in scope at exec, where a local would hide the caller's variable of the same name.
 run_verb() {
-	local lend_words=() lend_cmd lend_k lend_list=() lend_tmp lend_gpg_tty lend_jpid
+	local lend_words=() lend_cmd lend_k lend_list=() lend_tmp lend_gpg_tty lend_jpid lend_noloop=0
 	local -A lend_values=() lend_seen=()
 	while (($#)) && [[ $1 != -- ]]; do
 		lend_words+=("$1")
@@ -918,7 +963,7 @@ first_mapped_key() {
 
 # unlock_verb [WORD...]: FR34, decrypting under run's rules and discarding the values.
 unlock_verb() {
-	local k key lend_tmp lend_gpg_tty lend_jpid
+	local k key lend_tmp lend_gpg_tty lend_jpid lend_noloop=0
 	local -A lend_values=()
 	for k in "$@"; do
 		bad_word "$k" && fail usage "$problem"
@@ -928,7 +973,8 @@ unlock_verb() {
 		expand_keys '' "$@"
 	else
 		first_mapped_key
-		[[ -n $key ]] || fail missing-key "no key named in $map is in the store" KEY=KEY
+		[[ -e $map ]] || fail missing-key:nomap "$map does not exist"
+		[[ -n $key ]] || fail missing-key:none "no key mapped in $map is in the store"
 		keys=("$key")
 	fi
 	read_keys "${keys[@]}"

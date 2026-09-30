@@ -137,11 +137,18 @@ stop_lend() {
 	done
 }
 
-@test "FR17: a loopback prompt in a command substitution, which cannot take the terminal, gives decrypt" {
+@test "FR17: in a command substitution, which cannot take the terminal, a configured loopback prompt gives locked without prompting" {
 	echo tty >"$SB/store/env/K1.mode"
+	in_shell "export PASSWORD_STORE_GPG_OPTS='--pinentry-mode loopback'" "x=\$($LEND run -- stub); echo rc=\$?" @2 exit
+	assert_line "$output" rc=120
+	[[ $output == *"lend: locked: env/K1 needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lend unlock K1' in a terminal, then retry."* ]]
+	grep -qx -- '--pinentry-mode loopback --status-fd 9 --pinentry-mode error' < <(tr '\0' '\n' <"$(compgen -G "$SB/log/pass.*")/env" | sed -n 's/^PASSWORD_STORE_GPG_OPTS=//p')
+}
+
+@test "FR17: in a command substitution without loopback configured, the backend may still prompt through pinentry" {
 	in_shell "x=\$($LEND run -- stub); echo rc=\$?" @2 exit
-	assert_line "$output" rc=125
-	[[ $output == *"lend: decrypt: env/K1: gpg says: gpg: error reading the passphrase from the terminal."* ]]
+	assert_line "$output" rc=0
+	grep -qx -- '--status-fd 9' < <(tr '\0' '\n' <"$(compgen -G "$SB/log/pass.*")/env" | sed -n 's/^PASSWORD_STORE_GPG_OPTS=//p')
 }
 
 @test "FR17: a pipeline neighbor that reads the terminal during a loopback prompt resumes afterwards" {

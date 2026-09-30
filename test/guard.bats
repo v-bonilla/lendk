@@ -71,6 +71,31 @@ stub_gpg() {
 	assert_eq "$output" unlocked
 }
 
+@test "FR22: the GnuPG version parses strictly, and gpg --version runs under the allowlisted environment" {
+	local v
+	mkdir -p "$HOME/.config/lend" && chmod 700 "$HOME/.config/lend"
+	printf 'value\n' >"$SB/store/env/K1.gpg"
+	for v in 2.4.0 2.10.1 2.4.0-beta 2.5.12; do
+		stub_gpg gpg "$v"
+		run_lend unlock K1
+		assert_eq "$output" unlocked
+	done
+	for v in '2.2.27 ' 2.3.8 1.4.23 2.4 x.y.z ''; do
+		stub_gpg gpg "$v"
+		run_lend unlock K1
+		assert_class unsupported 125
+		[[ $stderr == "lend: unsupported: GnuPG "*" found; lend needs GnuPG 2.4 or later. Stop and ask the user." ]]
+	done
+	printf '#!/bin/sh\necho "gpg (GnuPG/MacGPG2) 2.2.41"\n' >"$SB/bin/gpg"
+	run_lend unlock K1
+	assert_eq "$stderr" "lend: unsupported: GnuPG 2.2.41 found; lend needs GnuPG 2.4 or later. Stop and ask the user."
+	printf '#!/bin/sh\nenv >"%s"\necho "gpg (GnuPG) 2.4.7"\n' "$SB/log/gpg-env" >"$SB/bin/gpg"
+	SECRET_X=$SENTINEL run_lend unlock K1
+	assert_eq "$output" unlocked
+	refute_contains "$(<"$SB/log/gpg-env")" "$SENTINEL"
+	assert_line "$(<"$SB/log/gpg-env")" "HOME=$HOME"
+}
+
 @test "FR22: gpg.bash aborts when HOME or GNUPGHOME lies outside the sandbox" {
 	load helpers/gpg
 	printf '#!/bin/sh\necho called >>"%s"\n' "$SB/log/gpg-calls" >"$SB/bin/gpg"
