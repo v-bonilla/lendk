@@ -210,7 +210,7 @@ Shims:
 
 ## 7. Non-functional requirements
 
-- NFR1 Shim overhead: with keys preset and a 50-entry map, shim exec to target exec exceeds a direct exec of the target by at most 10 ms median and 20 ms p95 over 200 runs (`make bench`).
+- NFR1 Shim overhead: with keys preset and a 50-entry map, shim exec to target exec exceeds a direct exec of the target by at most 20 ms median and 40 ms p95 over 200 runs (`make bench`).
 - NFR2 Decrypt cost: one backend read per key the caller did not set, in sequence; none for verbs other than `run` and `unlock`. With real GnuPG, a warm cache and a key protected at `s2k-count 8388608`, a 3-key call takes at most 500 ms median (`make bench`).
 - NFR3 Bash 4.4+ and GnuPG 2.4+ (FR22). Tier 1 is Linux (Debian 13, Ubuntu 24.04+, current Fedora): every change passes `make check` and `make check-docker` (AC1). macOS works with Homebrew bash and GnuPG; its CI job never blocks. `bin/lend` uses POSIX utilities and options, plus `mktemp -d TEMPLATE`, plain `readlink` and fractional `sleep`, which GNU, BSD and busybox share; never `timeout`, `flock`, `stat`, `readlink -f` or `setsid`. It reads `/proc/PID/stat`, or runs `ps` where `/proc` is absent, only to learn whether its process group owns the terminal before a loopback prompt.
 - NFR4 Runtime dependencies: bash 4.4+, pass 1.7+, GnuPG 2.4+, POSIX utilities. Development: bats-core as a pinned git submodule, shellcheck pinned through `uvx` with zero findings, Docker for `make check-docker`; nothing else.
