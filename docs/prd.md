@@ -24,13 +24,13 @@ AI coding agent running commands via `bash -c`, `zsh -c` or a login shell, with 
 
 Goals:
 - G1 Per-command least privilege with no prefix: every process that finds a mapped command through PATH gets its keys, whether or not it read an rc file (4.3).
-- G2 Bounded behavior without a terminal: no backend call outlives its timeout; every failure prints one `lend: CLASS:` line.
-- G3 Setup in at most five commands; no state beyond the map and the shims.
+- G2 Bounded behavior without a terminal: a call spends at most `LEND_TIMEOUT` + 2 s on backend work and cleanup, leaves no process behind, and reports every failure in one `lend: CLASS:` line.
+- G3 Setup in five commands (4.4); no state beyond the map and the shims.
 - G4 Install and uninstall without root, fully reversible.
 
-Non-goals for v1: sandboxing; writing to the store; other backends; store paths other than `PREFIX/KEY`; multi-line values; per-directory scoping; subshells holding keys; fish; Windows; daemons or value caches; packaging beyond `make install`.
+Non-goals for v1: sandboxing; writing to the store; other backends; store paths other than `PREFIX/KEY`; multi-line values; per-directory scoping; subshells holding keys; fish; Windows; daemons or value caches; packaging beyond `make install`; bash before 4.4 and GnuPG before 2.4, which get `unsupported` (FR22).
 
-Protects against: ambient exposure (keys reach only mapped commands, `run` targets and their descendants); plaintext keys in rc files; keys in argv or in the environment of lend's own helpers; agents waiting on prompts.
+Protects against: ambient exposure (keys reach only mapped commands, `run` targets and their descendants); plaintext keys in rc files; keys in argv, in files, or in the environment of lend's helpers; agents waiting on prompts.
 
 Does not protect against:
 - Same-user processes: while gpg-agent holds the passphrase, any of them, an AI agent included, can run `pass show`, read `/proc/PID/environ`, or edit the map, shims or PATH. lend keeps keys out of an agent's context; it does not stop an agent that fetches them.
@@ -68,29 +68,42 @@ terraform   @aws CLOUDFLARE_API_TOKEN    # trailing comment
 - One entry per line; fields split on blanks; `#` starts a comment anywhere; blank lines are ignored.
 - `@NAME KEY...` defines a group of keys; NAME matches `[A-Za-z0-9_-]+`.
 - `CMD WORD...` maps a command; WORD is a KEY or `@NAME`. CMD matches `[A-Za-z0-9_+][A-Za-z0-9._+-]*` and is not lend's own runtime: `lend bash pass gpg gpg2 gpg-agent gpgconf`.
-- KEY matches `[A-Za-z_][A-Za-z0-9_]*`; its value is the first line of store entry `PREFIX/KEY`. Denied, as they steer lend, pass, gpg, the shell or the loader, or bash rejects them: prefixes `BASH LEND_ PASSWORD_STORE_ GNUPG GPG_ LD_ DYLD_`; names `PATH HOME SHELL ENV IFS CDPATH PS4 PROMPT_COMMAND TMPDIR SHELLOPTS UID EUID PPID GROUPS RANDOM SRANDOM SECONDS LINENO HISTCMD EPOCHSECONDS EPOCHREALTIME FUNCNAME DIRSTACK PIPESTATUS OPTIND OPTARG`.
+- KEY matches `[A-Za-z_][A-Za-z0-9_]*`; its value is the first line of store entry `PREFIX/KEY`. Denied, as they steer lend, pass, gpg, the shell or the loader, reach the backend (FR8), or bash rejects them: prefixes `BASH LEND_ PASSWORD_STORE_ GNUPG GPG_ LD_ DYLD_ LC_ XDG_`; names `PATH HOME SHELL ENV IFS CDPATH PS4 PROMPT_COMMAND TMPDIR USER LOGNAME LANG TERM DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS PINENTRY_USER_DATA SHELLOPTS UID EUID PPID GROUPS RANDOM SRANDOM SECONDS LINENO HISTCMD EPOCHSECONDS EPOCHREALTIME FUNCNAME DIRSTACK PIPESTATUS OPTIND OPTARG`.
 - Each CMD and group appears once; a group may be used before its definition.
 - Expansion follows word order, inlines groups, and drops duplicates, keeping the first.
 - Guarded CMD, which `add` maps only with `--force`: shells `sh dash zsh ksh mksh fish csh tcsh busybox`; interpreters `python* pypy* node nodejs deno bun perl* ruby* php* lua* java`; launchers `env sudo doas su xargs nohup setsid timeout nice make tmux screen`; package tools `npm npx pnpm yarn pip pip3 pipx uv uvx`; agent CLIs `aider claude codex gemini goose opencode`.
 
 ### 4.3 PATH setup
 
-A shim works when PATH lists the shim directory before any other copy of the command. `bash -c` reads no rc file, `zsh -c` only `~/.zshenv`, and desktop apps and systemd user services inherit the login environment, so login-level PATH comes first:
+A shim works when PATH lists the shim directory before any other copy of the command. `bash -c` reads no rc file, `zsh -c` only `~/.zshenv`, and desktop apps and systemd user services inherit the login environment, so login-level PATH comes first. `lend init` prints a block of shell code holding the absolute shim directory, so the file that receives it needs no `lend` on PATH at startup:
 
 ```
-# ~/.profile (or ~/.bash_profile when it exists) and ~/.zshenv
-command -v lend >/dev/null && eval "$(lend init sh)"
-# ~/.bashrc or ~/.zshrc
-command -v lend >/dev/null && eval "$(lend init bash)"    # or: lend init zsh
-# systemd user services and sessions that read environment.d
+lend init sh >> ~/.profile     # bash logins and desktop sessions (~/.bash_profile when it exists)
+lend init sh >> ~/.zshenv      # every zsh, zsh -c included
+lend init bash >> ~/.bashrc    # optional prompt hook; zsh: lend init zsh >> ~/.zshrc
 lend init systemd > ~/.config/environment.d/50-lend.conf
 ```
 
 - `init sh` moves the shim directory to the front of PATH; in `~/.zshenv` that covers every `zsh -c`, even under a harness that prepended its own directory.
 - `init bash|zsh` repeats that before every prompt, against version managers and virtualenvs.
 - macOS: also `~/.zprofile`, since `path_helper` reorders PATH after `~/.zshenv`. Dock-launched apps read none of these files.
+- Blocks sit between `# >>> lend >>>` and `# <<< lend <<<`. Rerun `init` after changing `LEND_SHIMS`.
 
-Real binaries still resolve in PATH order, so a virtualenv's `llm` is the one that runs. Setup is `make install`, the lines above, `pass insert env/GH_TOKEN`, `lend add gh GH_TOKEN`, and a new login.
+Real binaries still resolve in PATH order, so a virtualenv's `llm` is the one that runs.
+
+### 4.4 Quick start
+
+Five commands, bash on Linux:
+
+```
+git clone https://github.com/v-bonilla/lend && make -C lend install
+~/.local/bin/lend init sh >> ~/.profile
+exec bash -l
+pass insert env/GH_TOKEN
+lend add gh GH_TOKEN
+```
+
+Command 2 names lend by path: Debian and Ubuntu put `~/.local/bin` on PATH only at a login after it exists, which command 3 starts. Use `~/.bash_profile` when it exists; desktop apps see the shims after the next desktop login.
 
 ## 5. Agent contract
 
@@ -102,73 +115,79 @@ Testing stderr keeps git credential helpers interactive (stdin a pipe, stderr th
 
 ### 5.2 Fail fast, never wait forever
 
-Every backend call appends `--status-fd` to `PASSWORD_STORE_GPG_OPTS`, after the user's value; non-interactive calls also append `--pinentry-mode error`. Measured with GnuPG 2.4, pass 1.7.4 and a recording `pinentry-program`:
+Every backend read appends `--status-fd` to `PASSWORD_STORE_GPG_OPTS`, after the user's value; non-interactive calls also append `--pinentry-mode error`. Measured with GnuPG 2.4.4, pass 1.7.4 and a recording `pinentry-program`:
 - `--pinentry-mode error`, cold cache: exit 2 in about 30 ms, status `ERROR pkdecrypt_failed 67108949` (code 85), no pinentry, in both pass branches; warm, it decrypts. `--batch` alone launches pinentry; `--pinentry-mode cancel` gives code 99, a user's Cancel.
-- With stdin piped, pass sends pinentry `ttyname=not a tty`; curses pinentry fails (FR13).
-- Killing gpg makes gpg-agent interrupt a waiting pinentry (FR14).
+- With stdin piped, pass sends pinentry `ttyname=not a tty`; curses pinentry fails (FR15).
+- Killing gpg makes gpg-agent interrupt a waiting pinentry, which stays a zombie until the agent reaps it.
+- With `pinentry-mode loopback`, gpg prompts on the terminal itself, so it must run in the terminal's foreground process group (FR17); pass's `--batch` branch refuses such prompts. Every other pinentry runs under gpg-agent and needs no terminal from lend.
 
-Classification reads the low 16 bits of the first `ERROR` status value, never translated text. Non-interactive, codes 85 and 99 are `locked`; interactive, 85 is `decrypt` and 99 is `canceled`; an expired `LEND_TIMEOUT` is `timeout`; any other failure is `decrypt`.
+Classification reads the low 16 bits of the first `ERROR` status value, never translated text. Non-interactive, codes 85 and 99 are `locked`; interactive, 85 is `decrypt`, and 99 or Ctrl-C at a loopback prompt is `canceled`; an expired `LEND_TIMEOUT` is `timeout`; any other failure is `decrypt`.
 
 ### 5.3 Stderr contract and exit codes
 
-Before exec, every stderr line is `lend: CLASS: TEXT. FIX`; `notice` lines are not errors; backend stderr never passes through; `env` stands for the prefix. A nested shim's line reaches the caller through the outer command's stderr.
+Before exec, every stderr line is `lend: CLASS: TEXT. FIX` or `lend: notice: TEXT.`; a notice reports a change or a risk, never a failure. Backend stderr never passes through raw; `env` stands for the prefix. A nested shim's line reaches the caller through the outer command's stderr.
 
 The CLASS is the contract. Exit codes are hints, not unique: after exec the target's codes pass through, CPython exits 120 when flushing stdout fails, and docker, coreutils `env` and `timeout`, and `git bisect run` give 125 to 127 their own meanings. 0 is success; 1 means `check` found a problem.
 
 CLASS (hint): TEXT. Interactive FIX.
 - `usage` (2): what is wrong. `See: lend --help`
 - `guarded` (2): `CMD runs other programs, so its keys reach all of them.` `To map it anyway: lend add --force CMD WORD...`
+- `unsupported` (125): `bash V found; lend needs bash 4.4 or later.` `Put a newer bash first on PATH.` Or: `GnuPG V found; lend needs GnuPG 2.4 or later.` `Upgrade GnuPG.`
 - `locked` (120, non-interactive only): `env/KEY needs the gpg passphrase and this call cannot prompt.`
 - `canceled` (120, interactive only): `passphrase entry for env/KEY was canceled.` `Run the command again to retry.`
 - `timeout` (120): `env/KEY: gpg did not finish within N s.` `Retry; a hardware token may need a touch, or raise LEND_TIMEOUT.`
 - `map` (125): `MAP:LINE: TEXT.` `Fix the line, then run: lend check`
 - `unmapped` (125): `CMD is not mapped.` `Map it: lend add CMD KEY..., or name keys: lend run KEY... -- CMD`
-- `missing-key` (125): `env/KEY is not in the store.` per missing key. `Add it: pass insert env/KEY`
-- `decrypt` (125): `env/KEY: GPG TEXT.` `See gpg's error: lend unlock KEY`
+- `missing-key` (125): `env/KEY is not in the store.` per missing key, `Add it: pass insert env/KEY`; or `env/KEY has an empty first line.` `Set it: pass edit env/KEY`
+- `decrypt` (125): `env/KEY: gpg says: TEXT.`, TEXT being gpg's last stderr line. `See gpg's error: lend unlock KEY`
 - `unsafe` (125): `PATH is writable by others.` or `PATH is owned by another user.` `Fix it: chmod go-w PATH, or recreate it as your own`
 - `write` (125): `PATH: TEXT.` `Fix it, then run: lend sync`
 - `exec` (126): `PATH is not executable.` `Fix it, or unmap it: lend rm CMD`
 - `not-found` (127): `CMD is not on PATH outside SHIMS.` `Install it, or unmap it: lend rm CMD`
-- `lend-missing` (127): printed by shims (FR25) for every caller.
+- `lend-missing` (127): printed by shims (FR29) for every caller.
 
 Non-interactive FIX: `usage` and `lend-missing` unchanged; `locked`, `timeout`, `decrypt`: `Ask the user to run 'lend unlock KEY' in a terminal, then retry.`; `not-found`: `Install CMD, or ask the user.`; the rest: `Stop and ask the user.` So no non-interactive message suggests `lend add`, `lend rm`, `lend run` with keys, `pass`, or printing the environment; no message suggests installing lend from a package registry.
 
 ## 6. Functional requirements
 
-Each FR has a bats test named with its ID; `pass` is a call-logging mock unless stated. Tests assert on the `lend: CLASS:` line, never on an exit code alone.
+Each FR has a bats test whose name starts with its ID; `pass` is a call-logging mock unless stated. Tests assert on the `lend: CLASS:` line, never on an exit code alone, and judge processes by state: a zombie counts as gone.
 
 Injection (`run` and shims):
-- FR1 The target's environment equals the caller's plus the injected keys and `LEND_INJECTED` (`env -0` diff).
+- FR1 The target's environment equals the caller's plus the injected keys and `LEND_INJECTED` (`env -0` diff), except `_`, `PWD` and `SHLVL`, which bash maintains.
 - FR2 A key with a non-empty value in the caller's environment is not decrypted and keeps its value.
-- FR3 Order: parse; check paths (FR24); read the map lines FR19 needs; resolve CMD; confirm every key exists; decrypt all; export; exec. Any failure exits before CMD starts; `missing-key` lists every missing key.
-- FR4 Values stay in unexported variables until every decrypt succeeds, then are exported just before exec. A mock backend recording its environment sees no injected name on the second of two keys; `strace -f -v -s 4096 -e trace=execve` shows the sentinel only in the target's execve.
+- FR3 Order: parse; check paths (FR28); read the map lines FR23 needs; resolve CMD; confirm every key exists; check GnuPG (FR22); decrypt all; export; exec. Any failure exits before CMD starts; `missing-key` lists every missing key.
+- FR4 Values stay in unexported variables until every decrypt succeeds, then are exported just before exec. A mock backend recording its environment sees no injected name on the second of two keys; `strace -f --seccomp-bpf -v -s 4096 -e trace=execve` shows the sentinel only in the target's execve.
 - FR5 CMD containing `/` is used as given; otherwise the first executable regular file named CMD on PATH, skipping entries that canonicalize to the shim directory and files canonically inside it.
-- FR6 lend `exec`s the target: argv0 as given, arguments unchanged, the target's own status and signals (status 7 propagates; SIGTERM reaches it).
-- FR7 The target gets the caller's PATH; lend's own children run with the shim directory removed.
-- FR8 A value is the entry's first line without its newline; an empty first line is `missing-key`.
-- FR9 Named keys replace the map entry. Without keys, `run -- CMD` uses the entry for CMD's basename; no entry is `unmapped`.
-- FR10 `LEND_INJECTED` holds the caller's `LEND_INJECTED` names, then the names this call exported, space-separated, deduplicated; never a value.
-- FR11 `run` without `--` is `usage`; if a word names an executable on PATH, the text says `'gh' is a command; put -- before it`.
+- FR6 lend `exec`s the target: argv0 as given, arguments unchanged, the target's own status and signals (status 7 propagates; SIGTERM reaches it). A failed exec gives `exec`, never bash's own message.
+- FR7 The target gets the caller's PATH, umask and open file descriptors; files lend creates are private under any umask (umask 000 and 022, an extra caller descriptor).
+- FR8 Backend processes (pass, gpg, and any gpg-agent gpg starts) get an environment built from scratch: shim-free PATH, `PASSWORD_STORE_GPG_OPTS` as 5.2 sets it, `GPG_TTY` (FR15), and the caller's `HOME USER LOGNAME LANG LC_* TERM TMPDIR DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR GNUPGHOME PINENTRY_USER_DATA` and other `PASSWORD_STORE_*` when set. Keys, exported functions, `BASH_ENV` and `ENV` never reach them (a mock `pass` records its environment, called directly and through a nested shim whose caller holds other keys).
+- FR9 lend discards every shell function it inherits before running any command, so exported functions named `pass`, `env`, `mktemp` or `printf` change nothing.
+- FR10 A value is the entry's first line without its newline; an empty first line is `missing-key`.
+- FR11 Named keys replace the map entry. Without keys, `run -- CMD` uses the entry for CMD's basename; no entry is `unmapped`.
+- FR12 `LEND_INJECTED` holds the caller's `LEND_INJECTED` names, then the names this call exported, space-separated, deduplicated; never a value.
+- FR13 `run` without `--` is `usage`; if a word names an executable on PATH, the text says `'gh' is a command; put -- before it`.
 
 Agent contract:
-- FR12 Interactivity, backend options and classification follow 5.1 and 5.2, the user's `PASSWORD_STORE_GPG_OPTS` otherwise preserved (matrix over terminal stdin and stderr via `script`, and each `LEND_PROMPT` value).
-- FR13 In interactive calls, when `GPG_TTY` is unset or not a character device, the backend, never the target, gets `GPG_TTY` naming stdin's terminal, else stderr's.
-- FR14 Each backend call ends within `LEND_TIMEOUT` seconds: default 60 interactive, 10 otherwise; a set value (1 to 3600, else `usage`) applies to both. On expiry lend kills the backend and its children, without `timeout(1)`: `timeout`, no process left behind.
-- FR15 Real `pass` and GnuPG, temporary `GNUPGHOME`, passphrase-protected key, recording `pinentry-program`, with and without a `gpg2` on PATH (pass's `--batch` branch): (a) cold non-interactive: `locked` within 2 s, recorder not launched; (b) primed via loopback: exit 0; (c) `LEND_PROMPT=allow`: recorder launched; (d) interactive, stdin piped, stderr a terminal: recorder gets stderr's terminal as `ttyname`; (e) recorder answers Cancel: `canceled`; (f) recorder never answers, `LEND_TIMEOUT=2`: `timeout` within 4 s, recorder interrupted.
-- FR16 Every stderr line before exec matches a 5.3 pattern; no non-interactive line in the suite makes a suggestion 5.3 forbids.
-- FR17 No verb writes a value to stdout, stderr, a file, any argv, or any environment but the target's: a sentinel value appears in no test output, file under the test HOME or TMPDIR, or argv. lend runs `set +x +v` before reading values, so `bash -x` and an exported `SHELLOPTS=xtrace` expose nothing.
-- FR18 lend never reads stdin and never prompts; in interactive calls only pinentry faces the user.
+- FR14 Interactivity, backend options and classification follow 5.1 and 5.2, the user's `PASSWORD_STORE_GPG_OPTS` otherwise preserved (matrix over terminal stdin and stderr via `script`, and each `LEND_PROMPT` value).
+- FR15 In interactive calls, when `GPG_TTY` is unset or not a character device, the backend, never the target, gets `GPG_TTY` naming stdin's terminal, else stderr's.
+- FR16 `LEND_TIMEOUT` bounds all backend work of a call, every key included: default 60 s interactive, 10 s otherwise; a set value (1 to 3600, else `usage`) applies to both. On expiry lend stops the backend without `timeout(1)` and exits with `timeout` no sooner than `LEND_TIMEOUT` s and no later than `LEND_TIMEOUT` + 2 s after it started, cleanup included, even when a backend child ignores TERM.
+- FR17 No process of a call outlives it: after expiry, TERM, INT or HUP to lend, or TERM or KILL to its process group, the backend, its children, lend's watchdog and the call's pinentry are gone within 2 s; after exec, within 1 s. When gpg prompts on the terminal itself (`pinentry-mode loopback`) and lend's process group owns the terminal, lend hands the terminal to the backend for the prompt and takes it back before exec; Ctrl-C there gives `canceled`. Otherwise the backend never takes the terminal, so a pipeline neighbor such as `less` keeps working, and a lend call in a background job gives `timeout` instead of stopping.
+- FR18 Real `pass` and GnuPG, temporary `GNUPGHOME`, passphrase-protected key, recording `pinentry-program`, with and without a `gpg2` on PATH (pass's `--batch` branch): (a) cold non-interactive: `locked` within 2 s, recorder not launched; (b) primed via loopback: exit 0; (c) `LEND_PROMPT=allow`: recorder launched; (d) interactive, stdin piped, stderr a terminal: recorder gets stderr's terminal as `ttyname`; (e) recorder answers Cancel: `canceled`; (f) recorder never answers, `LEND_TIMEOUT=2`: `timeout` within 4 s, recorder gone; (g) KILL to lend's process group while the recorder waits: recorder gone within 2 s; (h) without `gpg2`, `pinentry-mode loopback` in `gpg.conf`, passphrase typed into a pseudo-terminal: the target gets the value.
+- FR19 Every stderr line before exec matches a 5.3 pattern; no non-interactive line in the suite makes a suggestion 5.3 forbids.
+- FR20 No verb writes a value to stdout, stderr, a file, any argv, or any environment but the target's: a sentinel value appears in no test output, file under the test HOME or TMPDIR, or argv. lend runs `set +x +v` before reading values, so `bash -x` and an exported `SHELLOPTS=xtrace` expose nothing.
+- FR21 lend never reads stdin and never prompts; the backend's stdin is `/dev/null`; in interactive calls only pinentry or gpg's loopback prompt faces the user.
+- FR22 lend needs bash 4.4 and GnuPG 2.4. Its opening lines parse in bash 3.2 and give `unsupported` under an older bash (bash 3.2 and 4.3 images). Before the first decrypt, `run` and `unlock` give `unsupported` when the gpg pass uses (`gpg2` when on PATH, else `gpg`) reports a version below 2.4 (stub reporting 2.2.27).
 
 Map and shim directory:
-- FR19 `run` and `unlock` read only the lines for their CMD and its groups, and give `map` only when those are invalid; a bad line, another command's duplicate or a merge-conflict marker elsewhere leaves them working. `add` and `rm` need the whole map valid. `sync` writes shims for every line whose first field is a valid CMD, then reports each violation (exit 125).
-- FR20 `add NAME WORD...` creates the entry or appends absent words in order. `rm NAME` removes the entry and its shim; `rm NAME WORD...` removes those words, and the entry when none remain. A guarded CMD without `--force` is `guarded`; with it, a `notice` names the risk. Both verbs then sync and print the affected rows in `check` format.
-- FR21 `add` and `rm` validate first and change nothing on error: invalid, reserved or denied names, and groups inside groups, are `usage`; an unknown group, or removing a referenced group, is `map`. Removing an absent name or word exits 0 with a `notice`.
-- FR22 `add`, `rm` and `sync` hold a lock, an atomic `mkdir` of `SHIMS.lock` recording the owner's PID; a waiter retries for 10 s, breaking a lock whose owner is gone, then gives `write`. Twenty concurrent `add` calls leave twenty entries. Runtime calls never lock.
-- FR23 Map writes change only the affected line or append one, rename a temporary file from beside the target over it, follow a symlinked map, and create a new map 0600 in a 0700 directory.
-- FR24 The map, its directory (after following a symlink) and the shim directory must be owned by the user and not writable by group or others. `run` and `unlock` give `unsafe` when the map or its directory fails; `add`, `rm` and `sync` also when the shim directory fails, and `init` then leaves PATH unchanged. `sync` creates the shim directory 0700 under any umask.
+- FR23 `run` and `unlock` read only the lines for their CMD and its groups, and give `map` only when those are invalid; a bad line, another command's duplicate or a merge-conflict marker elsewhere leaves them working. `add` and `rm` need the whole map valid. `sync` writes shims for every line whose first field is a valid CMD, then reports each violation (exit 125).
+- FR24 `add NAME WORD...` creates the entry or appends absent words in order. `rm NAME` removes the entry and its shim; `rm NAME WORD...` removes those words, and the entry when none remain. A guarded CMD without `--force` is `guarded`; with it, a `notice` names the risk. Both verbs then sync and print the affected rows in `check` format (FR32).
+- FR25 `add` and `rm` validate first and change nothing on error: invalid, reserved or denied names, and groups inside groups, are `usage`; an unknown group, or removing a referenced group, is `map`. Removing an absent name or word exits 0 with a `notice`.
+- FR26 `add`, `rm` and `sync` hold a lock: an atomic `mkdir` of `SHIMS.lock` recording the owner's PID. A waiter retries for 10 s, then gives `write` naming the lock; it breaks a dead owner's lock only while holding `SHIMS.lock.break`, also an atomic `mkdir`, after rereading the owner, so no two waiters both break and hold it. Twenty concurrent `add` calls, started with a dead owner's lock present, leave twenty entries. Runtime calls never lock.
+- FR27 Map writes change only the affected line or append one, rename a temporary file from beside the target over it, follow a symlinked map, and leave the map mode 0600 under any umask, creating its directory 0700 when absent.
+- FR28 The map, its directory (after following a symlink) and the shim directory must be owned by the user and not writable by group or others. `run` and `unlock` give `unsafe` when the map or its directory fails; `add`, `rm` and `sync` also when the shim directory fails. `init` checks only the shim directory, when it exists, and then prints no code. `sync` creates the shim directory 0700 under any umask.
 
 Shims:
-- FR25 `sync` writes one shim per mapped command, mode 0755, holding the absolute path lend was invoked by, symlinks unresolved, so versioned upgrades behind a stable symlink keep working:
+- FR29 `sync` writes one shim per mapped command, mode 0755, holding the absolute path lend was invoked by, symlinks unresolved, so versioned upgrades behind a stable symlink keep working:
   ```
   #!/bin/sh
   # lend shim v1: generated by lend sync, edits are overwritten
@@ -176,45 +195,45 @@ Shims:
   [ -x "$lend" ] || { echo "lend: lend-missing: $lend is missing, so gh did not run. The user must reinstall lend from its project repository, then run: lend sync" >&2; exit 127; }
   exec "$lend" run -- 'gh' "$@"
   ```
-- FR26 `sync` deletes only files whose second line starts with `# lend shim `, removing those of unmapped commands. A foreign file named like a mapped command stays untouched and gives `write` after the other shims are written. A second `sync` changes no byte.
+- FR30 `sync` deletes only files whose second line starts with `# lend shim `, removing those of unmapped commands. A foreign file named like a mapped command stays untouched and gives `write` after the other shims are written. A second `sync` changes no byte.
 
 `check`:
-- FR27 `check` never calls the backend read (zero mock calls); it tests entries by file existence.
-- FR28 Stdout: `# map`, `# shims`, `# store` lines; `# problem: TEXT (FIX)` lines; then groups and commands, sorted, as `NAME<TAB>KEYS<TAB>STATUS`, STATUS being `ok` or `; `-joined problems with a FIX in parentheses; non-interactive FIXes are `ask the user`, except `lend sync` and `lend run -- CMD`. `check NAME...` keeps rows named NAME, holding key NAME, or using group NAME.
-- FR29 Detects: map violations; missing key; command not found; no shim; stale shim (differs from FR25 output); stray shim; foreign files in the shim directory; a shim whose lend path is not executable; `unsafe` paths; shim directory not on PATH; shadowed, naming the earlier path; a mapped key set in the environment and absent from `LEND_INJECTED`, so no such problem under a `run` target or nested shim. Exit 1 when anything shown has a problem.
+- FR31 `check` never calls the backend read (zero mock calls); it tests entries by file existence, so an empty value (FR10) shows as `ok`.
+- FR32 Stdout: `# map`, `# shims`, `# store` lines; `# problem: TEXT (FIX)` lines; then groups and commands, sorted, as `NAME<TAB>KEYS<TAB>STATUS`, STATUS being `ok` or `; `-joined problems with a FIX in parentheses; non-interactive FIXes are `ask the user`, except `lend sync` and `lend run -- CMD`. `check NAME...` keeps rows named NAME, holding key NAME, or using group NAME.
+- FR33 Detects: map violations; missing key; command not found; no shim; stale shim (differs from FR29 output); stray shim; foreign files in the shim directory; a shim whose lend path is not executable; `unsafe` paths; shim directory not on PATH; shadowed, naming the earlier path; a GnuPG below 2.4; a mapped key set in the environment and absent from `LEND_INJECTED`, so no such problem under a `run` target or nested shim. Exit 1 when anything shown has a problem.
 
 `unlock`, `init`, help, docs:
-- FR30 `unlock` decrypts each named key (default: the first mapped key present), discards values, prints `unlocked`, and follows `run`'s interactivity, timeout and class rules; no mapped key present is `missing-key`. Stores with per-folder `.gpg-id` recipients need `unlock KEY` per recipient.
-- FR31 `init` reads no map and prints 4.3's code: `sh` moves the shim directory to the front of PATH without duplicates; `bash` and `zsh` add a prompt hook repeating that plus `hash -r` or `rehash`, registered once even if sourced twice; `systemd` prints `PATH=` with the absolute shim path, then `${PATH}`, as systemd's environment.d generator accepts.
-- FR32 `--help` prints verbs, map grammar, name lists, classes and environment variables, exit 0; `--version` prints `lend X.Y.Z`; no arguments or an unknown verb is `usage`.
-- FR33 The README covers: installing only from the project repository; 4.3 for bash, zsh, systemd and macOS; the security model and `s2k-count` trade-off; cache TTLs and flushing; `lend run -- CMD` by absolute path in cron, systemd and MCP configs; the git credential helper `!lend run -- gh auth git-credential`, replacing the absolute path `gh auth setup-git` writes; PATH-bypassing launchers; an agent block: act on the `lend: CLASS:` line; on `locked`, `timeout` or `canceled`, stop and ask the user; never run `pass`, `lend add`, `lend rm` or `lend run` with keys, or print the environment.
+- FR34 `unlock` decrypts each named key (default: the first mapped key present), discards values, prints `unlocked`, and follows `run`'s interactivity, timeout and class rules; no mapped key present is `missing-key`. Stores with per-folder `.gpg-id` recipients need `unlock KEY` per recipient.
+- FR35 `init` reads no map and prints 4.3's block, holding the absolute shim directory: `sh` moves it to the front of PATH without duplicates; `bash` and `zsh` add a prompt hook repeating that plus `hash -r` or `rehash`, registered once even when the block runs twice; `systemd` prints `PATH=` with the absolute shim path, then `${PATH}`, as systemd's environment.d generator accepts.
+- FR36 `--help` prints verbs, map grammar, name lists, classes with exit hints and environment variables, exit 0; `--version` prints `lend X.Y.Z`; no arguments or an unknown verb is `usage`.
+- FR37 The README covers: the 4.4 quick start; installing only from the project repository; 4.3 for bash, zsh, systemd and macOS; the security model and `s2k-count` trade-off; cache TTLs and flushing; `lend run -- CMD` by absolute path in cron, systemd and MCP configs; the git credential helper `!lend run -- gh auth git-credential`, replacing the absolute path `gh auth setup-git` writes; PATH-bypassing launchers; the classes and name lists as `--help` prints them; an agent block: act on the `lend: CLASS:` line; on `locked`, `timeout` or `canceled`, stop and ask the user; never run `pass`, `lend add`, `lend rm` or `lend run` with keys, or print the environment.
 
 ## 7. Non-functional requirements
 
 - NFR1 Shim overhead: with keys preset and a 50-entry map, shim exec to target exec exceeds a direct exec of the target by at most 10 ms median and 20 ms p95 over 200 runs (`make bench`).
 - NFR2 Decrypt cost: one backend read per key the caller did not set, in sequence; none for verbs other than `run` and `unlock`. With real GnuPG, a warm cache and a key protected at `s2k-count 8388608`, a 3-key call takes at most 500 ms median (`make bench`).
-- NFR3 Bash 4.4+. Linux is tier 1: releases need green CI on Ubuntu 22.04 (GnuPG 2.2), Ubuntu 24.04 (GnuPG 2.4) and the mock suite in a bash 4.4 container. macOS is tier 2: the mock suite with Homebrew bash, not blocking merges. POSIX utility options only: no `timeout`, `flock`, `stat`, `readlink -f`, `setsid`.
-- NFR4 Runtime dependencies: bash, pass 1.7+, GnuPG 2.2+, POSIX utilities. Development: pinned bats-core, shellcheck with zero findings; CI adds zsh and strace.
-- NFR5 lend writes only the map (`add`, `rm`), the shim directory (`add`, `rm`, `sync`) and the lock: no caches or logs. Temporary files are mode 0600, hold no value, and are gone before exit or exec.
-- NFR6 No network, telemetry or auto-update: under `strace -f` the suite makes no AF_INET or AF_INET6 `connect`; the source has no `curl`, `wget`, `nc` or `/dev/tcp`. `check` is the self-report for drift, and a GnuPG status-code change fails FR15.
+- NFR3 Bash 4.4+ and GnuPG 2.4+ (FR22). Tier 1 is Linux (Debian 13, Ubuntu 24.04+, current Fedora): every change passes `make check` and `make check-docker` (AC1). macOS works with Homebrew bash and GnuPG; its CI job never blocks. `bin/lend` uses POSIX utilities and options, plus `mktemp -d TEMPLATE`, plain `readlink` and fractional `sleep`, which GNU, BSD and busybox share; never `timeout`, `flock`, `stat`, `readlink -f` or `setsid`. It reads `/proc/PID/stat`, or runs `ps` where `/proc` is absent, only to learn whether its process group owns the terminal before a loopback prompt.
+- NFR4 Runtime dependencies: bash 4.4+, pass 1.7+, GnuPG 2.4+, POSIX utilities. Development: bats-core as a pinned git submodule, shellcheck pinned through `uvx` with zero findings, Docker for `make check-docker`; nothing else.
+- NFR5 lend writes only the map (`add`, `rm`), the shim directory (`add`, `rm`, `sync`) and the lock: no caches or logs. Temporary files are mode 0600 in a 0700 directory, hold no value, and are gone before exit or exec, and within 2 s when lend is killed.
+- NFR6 No network, telemetry or auto-update: every verb run under `strace -f --seccomp-bpf -e trace=connect` makes no AF_INET or AF_INET6 `connect`; the source has no `curl`, `wget`, `nc` or `/dev/tcp`. `check` is the self-report for drift, and a GnuPG status-code change fails FR18.
 - NFR7 One executable bash file. The backend is `backend_has KEY` and `backend_read KEY`; nothing else touches pass or the store.
-- NFR8 Verbs, `--force`, classes, exit-code hints, map grammar, name lists, environment variables and the shim text are stable within 1.x; `test/contract.bats` pins them, and 1.x only adds entries.
+- NFR8 Verbs, `--force`, classes, exit-code hints, map grammar, name lists, environment variables and the shim text are stable within 1.x; 1.x only adds entries. `bin/lend` holds the only copy of the name lists and the class table, and `--help` prints them. `test/contract.bats` checks that `--help` holds every entry this document lists, that the README's lists match `--help`, and that `sync` writes FR29's text.
 - NFR9 Repo: MIT license held by `v-bonilla`; no em-dashes, real keys, email addresses, or home paths other than `/home/alice`.
 
 ## 8. Files and configuration
 
 - Map: `${XDG_CONFIG_HOME:-~/.config}/lend/map`, or `LEND_MAP`.
-- Shims: `${XDG_DATA_HOME:-~/.local/share}/lend/shims`, or `LEND_SHIMS` set before the 4.3 lines. Lock: `SHIMS.lock`.
+- Shims: `${XDG_DATA_HOME:-~/.local/share}/lend/shims`, or `LEND_SHIMS`, set wherever lend runs. Lock: `SHIMS.lock`.
 - Store: `~/.password-store`, or `PASSWORD_STORE_DIR`. Entry prefix: `env`, or `LEND_PREFIX`.
-- `LEND_PROMPT`: `auto` (default), `never`, `allow`. `LEND_TIMEOUT`: seconds (FR14).
+- `LEND_PROMPT`: `auto` (default), `never`, `allow`. `LEND_TIMEOUT`: seconds (FR16).
 
 Relative XDG values are ignored. lend sets `LEND_INJECTED` for targets and `GPG_TTY` for the backend only. Cron, systemd units and MCP configs skip rc files and need any overrides set too.
 
 ## 9. Install, upgrade, uninstall
 
-- Install only from the project repository; same-named npm and crates.io packages are unrelated. `make install` copies one file to `$PREFIX/bin/lend` (`PREFIX` defaults to `$HOME/.local`; `DESTDIR` honored).
-- Upgrade: replace the file in place. With versioned install directories, run `lend sync` once through the stable symlink.
-- Uninstall: delete the 4.3 lines and environment.d file, then `make uninstall`: it removes marker-bearing shims, the shim directory if empty, and the installed file, never the map, store or rc files.
+- Install only from the project repository; same-named npm and crates.io packages are unrelated. `make install` copies `bin/lend` to a temporary file in `$PREFIX/bin`, makes it executable and renames it over `lend`, so a running copy keeps reading the old file. `PREFIX` defaults to `$HOME/.local` and must be absolute; `DESTDIR` is honored.
+- Upgrade: `git pull`, then `make install`. With versioned install directories behind a stable symlink, run `lend sync` once through the symlink.
+- Uninstall: delete the `# >>> lend >>>` blocks and the environment.d file, then `make uninstall`: it removes marker-bearing shims, the shim directory if empty, and the installed file, never the map, store or rc files.
 
 ## 10. Alternatives considered
 
@@ -222,17 +241,17 @@ gopass `env` (a whole subtree), fnox and secretspec (manifests), CyberArk summon
 
 ## 11. Acceptance criteria for v1
 
-- [ ] AC1 CI green on Ubuntu 22.04, Ubuntu 24.04 and the bash 4.4 container; shellcheck clean; repo lint passes NFR9; `test/` has a test for each FR and NFR.
-- [ ] AC2 FR15 passes on GnuPG 2.2 and 2.4 in both pass branches; FR4 and FR17 pass under strace.
-- [ ] AC3 The Ubuntu 24.04 CI job runs `make bench` and fails when NFR1 or NFR2 is not met.
-- [ ] AC4 Fresh HOME, stub `gh` recording `GH_TOKEN`, `make install`, the 4.3 lines, `add gh GH_TOKEN`: the key reaches `gh` from interactive bash under `script`; `bash -lc`; `zsh -c` under a parent that prepended a directory holding another `gh`; Python `subprocess` without a shell, started from `sh -lc` like a desktop session; a nested shim, with one decrypt. The environment.d generator puts the shim directory first; the parent shell lacks `GH_TOKEN`; `make uninstall` leaves only the map.
-- [ ] AC5 G3: CI runs the README quick start, at most five commands, verbatim on a fresh HOME with a scratch GnuPG key, and a stub `gh` receives `GH_TOKEN`. The README has every FR33 topic.
-- [ ] AC6 One macOS CI run with Homebrew bash passes the mock suite before the v1 tag.
+- AC1 `make check` (shellcheck with zero findings, NFR9 repo lint, the suite on the host) and `make check-docker` (the suite in Ubuntu 24.04 with real GnuPG, and in bash 4.4 on busybox without GNU coreutils) pass; every FR and NFR ID names a test or bench case.
+- AC2 FR18 passes on GnuPG 2.4 in both pass branches; FR4 and FR20 pass under strace; FR22 passes under bash 3.2 and 4.3.
+- AC3 `make bench` meets NFR1 and NFR2 on the development host; CI reports it without gating.
+- AC4 Fresh HOME whose `.profile` and `.bashrc` mirror Debian's `/etc/skel` (`.bashrc` sourced before `~/.local/bin` joins PATH, and returning early when non-interactive), stub `gh` recording `GH_TOKEN`, `make install`, the 4.3 blocks, `add gh GH_TOKEN`: the key reaches `gh` from interactive bash under `script`; `bash -lc`; `zsh -c` under a parent that prepended a directory holding another `gh`; Python `subprocess` without a shell, started from `sh -lc` like a desktop session; a nested shim, with one decrypt. `/usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator` puts the shim directory first; the parent shell lacks `GH_TOKEN`; `make uninstall` leaves only the map.
+- AC5 G3: on the AC4 HOME with a scratch GnuPG key and store, the README's five quick-start commands run as written, except that command 1 clones a local copy of the working tree and command 4 reads the value from stdin; commands 4 and 5 run in `bash -l` shells, which command 3 starts. A stub `gh` run by `bash -lc gh` then receives `GH_TOKEN`. The README has every FR37 topic.
+- AC6 The GitHub Actions workflow passes on the private repository before it is made public; the macOS job informs and never blocks.
 
 ## 12. Failure signals
 
 Any of these reports means v1 failed, and the next release fixes it first:
-- An agent waiting in a lend call past `LEND_TIMEOUT`.
+- An agent waiting in a lend call past `LEND_TIMEOUT` + 2 s, or a backend, watchdog or pinentry outliving its call.
 - A mapped command running without its keys after an upgrade or PATH change while `check` says `ok`.
 - A false `check` problem.
 - A secret value in lend output, argv, a file, or a helper's environment.

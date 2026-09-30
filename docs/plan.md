@@ -1,203 +1,176 @@
 # lend implementation plan
 
-This plan takes lend from an empty repository to a v1.0.0 release that meets `docs/prd.md`. Stages `M1` to `M10` run in order; each fits one implementation pass and is checked independently against its done-criteria. The PRD wins any conflict.
+This plan takes lend from an empty repository to v1.0.0 as `docs/prd.md` specifies; the PRD wins any conflict. Stages M1 to M13 run in order, and each depends only on earlier ones. M13 deletes this file.
 
-Every stage is done only when its listed test files pass, all earlier tests still pass, `make check` passes (zero shellcheck findings, shfmt clean, repo lint clean), and each FR test is named `FRn: ...`.
+A stage is done when its Done line holds, all tests so far pass, `make check` and `make check-docker` exit 0, and the ID lint passes: each FR and NFR ID of the PRD sits in a test name (`@test "FRn: ..."`) or in `test/pending-ids`, never both, and the stage has moved its own IDs out. No Done line depends on remote CI.
 
-## 1. Repository layout
+## 1. Layout
 
 | Path | Purpose |
 |---|---|
-| `bin/lend` | The tool: one executable bash file (NFR7) with every verb, `init` code, `--help` and the version. |
-| `Makefile` | `deps`, `lint`, `test`, `test-mock`, `test-net`, `test-bash44`, `bench`, `check`, `install`, `uninstall`. |
-| `README.md` | Quick start, reference, security model, FR33 topics, "For AI agents". |
-| `CHANGELOG.md` | Keep a Changelog 1.1.0, SemVer. |
-| `LICENSE` | MIT, `v-bonilla`. |
-| `docs/prd.md`, `docs/plan.md`, `docs/release.md` | Requirements, this plan, release checklist. |
-| `.editorconfig` | UTF-8, LF, final newline; tabs for shell, bats, Makefile; 2 spaces for Markdown, YAML; shfmt keys `binary_next_line`, `switch_case_indent`. |
-| `.gitignore` | Bench output, editor files. |
-| `.gitmodules`, `test/lib/bats-{core,support,assert}` | Pinned test framework. |
-| `.shellcheckrc` | `shell=bash`, `external-sources=true`. |
-| `.github/workflows/ci.yml` | CI (section 4). |
-| `test/helpers/common.bash` | Sandbox, `run_lend`, `assert_class`, `require`. |
-| `test/helpers/pty.bash` | `in_pty`: pseudo-terminal via util-linux or BSD `script`. |
-| `test/helpers/gpg.bash` | Scratch GnuPG home, key, store, teardown. |
-| `test/fixtures/fake-pass` | Mock backend (3.1). |
-| `test/fixtures/stub-target` | Records argv0, arguments, `env -0`, `ls -A "$TMPDIR"`, PID, stdin; exits `STUB_EXIT`. |
-| `test/fixtures/pinentry-recorder` | Assuan pinentry recording options and PID; answers, cancels or hangs per a mode file. |
-| `test/fixtures/profile` | Minimal `~/.profile` adding `~/.local/bin` to PATH, like distribution defaults. |
-| `test/fixtures/contract.txt` | Pinned 1.x contract (NFR8). |
-| `test/*.bats` | Tests, flat, so `bats test/*.bats` never collects the submodules' own tests. |
-| `test/bench/bench.bash` | NFR1, NFR2 timing. |
-| `test/lint-repo.bash` | NFR9 plus static NFR3, NFR6, NFR7 checks; skips itself and `test/lib/`. |
+| `bin/lend` | The tool: one bash file (NFR7) holding every verb, the `init` code, and the tables `--help` prints (NFR8). |
+| `Makefile` | `deps lint test check check-docker bench install uninstall`. |
+| `README.md`, `CHANGELOG.md`, `LICENSE` | FR37; Keep a Changelog 1.1.0 with SemVer; MIT, `v-bonilla`. |
+| `docs/prd.md`, `docs/plan.md`, `docs/release.md` | Requirements; this plan, deleted in M13; release steps. |
+| `.editorconfig`, `.gitignore`, `.shellcheckrc` | LF and tabs for shell; bench output; `shell=bash`. |
+| `.gitmodules`, `test/lib/bats-core` | The one submodule. |
+| `.github/workflows/ci.yml`, `.github/dependabot.yml` | CI (2.3); weekly `github-actions` pin updates. |
+| `test/docker/ubuntu.Dockerfile`, `test/docker/bash44.Dockerfile` | `make check-docker` images (2.2). |
+| `test/helpers/common.bash` | Sandbox, `run_lend`, `assert_class`, `assert_eq`, `assert_line`, `refute_contains`, `require`, `gone`. |
+| `test/helpers/pty.bash`, `test/helpers/gpg.bash` | `in_pty`, `in_shell`; scratch GnuPG home, key and store. |
+| `test/fixtures/` | `fake-pass`, `stub-target`, `pinentry-recorder`, `profile` and `bashrc` mirroring Debian's `/etc/skel`. |
+| `test/pending-ids` | FR and NFR IDs without a test yet; M13 deletes it. |
+| `test/*.bats`, `test/bench/bench.bash`, `test/lint-repo.bash` | Tests, flat so `bats test/*.bats` skips the submodule's own; NFR1 and NFR2 timing; repo lint. |
 
-Reference documentation is `--help` only, no man page. Shell integration is `lend init` output, no extra files.
+## 2. Tooling and gates
 
-## 2. Tooling
+### 2.1 Pins
 
-| Tool | Pin | Invocation |
+| Tool | Pin | Use |
 |---|---|---|
-| bats-core | v1.14.0, commit `eb7f42f` | submodule, `test/lib/bats-core/bin/bats` |
-| bats-support | v0.3.0, `24a72e1` | submodule |
-| bats-assert | v2.2.4, `f1e9280` | submodule |
+| bats-core | v1.14.0, `eb7f42f` | submodule, `test/lib/bats-core/bin/bats` |
 | shellcheck | 0.11.0 | `uvx --from shellcheck-py==0.11.0.1 shellcheck` |
-| shfmt | 3.14.1 | `uvx --from shfmt-py==4.2.0 shfmt -d` |
-| actionlint | 1.7.12 | `uvx --from actionlint-py==1.7.12.25 actionlint` |
-| bash 4.4 | `bash:4.4.23-alpine3.22` | `make test-bash44` (Docker) |
+| images | `ubuntu:24.04`, `bash:4.4.23-alpine3.22`, `bash:4.3.48`, `bash:3.2.57` | `make check-docker` |
 | actions/checkout | v7.0.1, `3d3c42e` | full SHA in YAML |
 | astral-sh/setup-uv | v10.2.0, `c18668a` | full SHA in YAML |
 
-Submodules pin by commit and need no Node or network in the bash 4.4 container.
+There is no formatter, workflow linter or assertion library; the helpers in `common.bash` stay under 60 lines.
 
-Make targets, none needing root:
-- `deps`: `git submodule update --init` for the three submodules; `test` depends on `test/lib/bats-core/bin/bats`.
-- `lint`: shellcheck and shfmt on `bin/lend`, `test/**/*.bash`, shell fixtures, `test/*.bats`; actionlint; `test/lint-repo.bash`.
-- `test`: `bats test/*.bats`. `test-mock`: `bats --filter-tags '!gpg' test/*.bats`.
-- `test-net`: the suite under `strace -f -e trace=connect`; fails on any `AF_INET` or `AF_INET6` (NFR6).
-- `test-bash44`: `test-mock` in the pinned image as a non-root user.
-- `bench`: NFR1, NFR2; nonzero exit on a miss.
-- `check`: `lint`, then `test`. The one local command.
+### 2.2 Make targets
+
+- `deps`: `git submodule update --init`.
+- `lint`: shellcheck on `bin/lend`, `test/**/*.bash`, shell fixtures and `test/*.bats`; then `test/lint-repo.bash`.
+- `test`: `bats --filter-tags '!docker' test/*.bats` on the host. `check`: `lint`, then `test`.
+- `check-docker`: builds both images (cached); runs the `docker`-tagged files on the host, which start `bash:3.2.57` and `bash:4.3.48` for FR22; then, with the worktree mounted read-only and uid 1000, runs the suite in the Ubuntu image (`pass gnupg zsh strace python3 git make systemd`, `--cap-add SYS_PTRACE`, `TEST_REQUIRE="gpg pass zsh strace script python3 git environment-d"`) and the mock suite in the bash 4.4 image (busybox userland without GNU coreutils; `util-linux-misc` adds `script`; `TEST_REQUIRE=script`).
+- `bench`: NFR1 and NFR2; nonzero exit on a miss.
+- `install`, `uninstall`: PRD section 9.
+
+### 2.3 CI
+
+`ci.yml` runs on push and pull request with `permissions: contents: read`, checkout with submodules, runners `ubuntu-latest`: `check` (setup-uv, `make check`), `docker` (`make check-docker`), `bench` (`make bench`, `continue-on-error: true`), `macos` (`macos-latest`, `brew install bash gnupg pass`, `make test`, `continue-on-error: true`). Its first run is the release push to the private repository (AC6).
 
 ## 3. Test strategy
 
 ### 3.1 Harness
-- Sandbox per test under `BATS_TEST_TMPDIR`: `home/` (HOME), `tmp/` (TMPDIR), `store/` (PASSWORD_STORE_DIR), `log/` (backend and target records), `bin/` (stubs, fake `pass`). `XDG_*`, `LEND_*`, `PASSWORD_STORE_*` (except the dir), `GNUPGHOME` and test key names are unset; `PWD`, `SHLVL` stay set. Sentinels are random, prefixed `lend-sentinel-`.
-- `run_lend` runs lend with stdin from `/dev/null` and stderr captured, so calls are non-interactive whatever terminal runs `make`, and asserts every stderr line matches the 5.3 grammar (FR16 across the suite). `assert_class CLASS` checks the line; no test asserts an exit code alone.
-- `fake-pass` prints `store/env/KEY.gpg` (plaintext, so `backend_has` works unchanged); logs argv, `env -0` and PID per call to `log/`; writes `[GNUPG:] ERROR` lines to the `--status-fd` in `PASSWORD_STORE_GPG_OPTS`; obeys `store/env/KEY.mode`: `locked` (85), `cancel` (99), `fail` (other code), `hang` (spawns a child, records both PIDs, sleeps), `slow N`. FR4 and FR17 run on it without strace.
-- `in_pty` builds the FR12 matrix: stdin, stderr, both, or neither a terminal.
-- `gpg.bash`: per file, GNUPGHOME from `mktemp -d /tmp/lend-gpg.XXXXXX`, `gpg-agent.conf` naming the recorder and `allow-loopback-pinentry`, a passphrase-protected ed25519 key whose user ID has no email, `pass init` into `store/`; per test, `gpgconf --reload gpg-agent` for a cold cache; teardown `gpgconf --kill gpg-agent`. It refuses to run when HOME is not the sandbox. `with_gpg2` prepends a `gpg2` symlink (pass's `--batch` branch).
-- `require TOOL` skips when TOOL is absent and fails when TOOL is in `TEST_REQUIRE`, set per CI job. Real-GnuPG files carry `# bats file_tags=gpg`.
-- FR17 tests `grep -rF` for the sentinel over `home/`, `tmp/`, bats output and backend argv logs; `store/` and target records hold it by design.
+
+- Each test gets a sandbox under `BATS_TEST_TMPDIR`: `home/` (HOME), `tmp/` (TMPDIR), `store/`, `log/`, `bin/`. `XDG_*`, `LEND_*`, `PASSWORD_STORE_*` except the directory, `GNUPGHOME` and key names are unset; `PWD` and `SHLVL` stay. Sentinels are random, prefixed `lend-sentinel-`.
+- `run_lend` runs lend with stdin `/dev/null`, captures stderr and asserts every line matches PRD 5.3 (FR19 across the suite). No test asserts an exit code alone.
+- `gone PID` holds when `/proc/PID/stat` is absent or shows state `Z`: gpg-agent leaves an interrupted pinentry as a zombie, so `kill -0` misleads.
+- `fake-pass` prints `store/env/KEY.gpg` (plaintext); logs argv, `env -0` and PID per call; writes `[GNUPG:] ERROR` lines to the `--status-fd` descriptor; obeys `store/env/KEY.mode`: `locked` (85), `cancel` (99), `fail`, `hang` (records its PID and a child's, sleeps interruptibly), `stubborn` (a child ignoring TERM), `slow N`, `big` (a 200 kB first line), `tty` (loopback stand-in: `stty -echo`, then a line from `/dev/tty`).
+- `pinentry-recorder` speaks Assuan, records options and PID, and answers, cancels or hangs per a mode file; it hangs with `sleep & wait` and exits on INT, TERM or HUP, as real pinentries do.
+- `in_pty CMD` runs CMD under `script`, typing input on a schedule; `in_shell` types into `bash --norc -i` in a pty, for pipelines and background jobs.
+- `gpg.bash`: GNUPGHOME from `mktemp -d /tmp/lend-gpg.XXXXXX` (R11); `gpg-agent.conf` naming the recorder, with `allow-loopback-pinentry`; a passphrase-protected ed25519 key whose user ID has no email; `pass init` into `store/`. `gpgconf --kill gpg-agent` runs between tests, since an interrupted pinentry's zombie blocks the next prompt. It aborts unless HOME and GNUPGHOME are sandbox paths. `with_gpg2` prepends a `gpg2` symlink.
+- `require TOOL` skips when TOOL is absent and fails when TOOL is in `TEST_REQUIRE`. Tags: `gpg` for real GnuPG, `docker` for files that start containers.
+- strace runs as `strace -f --seccomp-bpf`, so FR16 and FR18 time bounds hold under it.
 
 ### 3.2 Traceability
 
 | Requirement | Test | Stage |
 |---|---|---|
-| 4.2 grammar, FR11, FR19 (`run`), FR32, 5.1 values | `test/map.bats`, `test/cli.bats` | M2 |
-| FR1 to FR3, FR5 to FR10 | `test/run.bats` | M2 |
-| FR24 (`run`) | `test/perms.bats` | M2 |
-| FR4, FR17, FR18 | `test/secrets.bats`, strace cases | M3, M9 |
-| FR12, FR13 | `test/interactivity.bats` | M3 |
-| FR14 | `test/timeout.bats` | M3 |
-| FR16 | `run_lend`; `test/messages.bats`, every class in both modes | M2 to M8 |
-| FR15; FR30 real | `test/gpg.bats` | M4 |
-| FR30 | `test/unlock.bats` | M4 |
-| FR19 (`sync`), FR22 lock, FR24 (`sync`), FR25, FR26 | `test/sync.bats`, `test/perms.bats` | M5 |
-| FR20, FR21, FR22 concurrency, FR23, FR24 (`add`, `rm`) | `test/add-rm.bats` | M6 |
-| FR27 to FR29 | `test/check.bats` | M7 |
-| FR24 (`init`), FR31, 4.3 | `test/init.bats`, `test/path.bats` | M8 |
-| NFR1, NFR2 timing | `make bench` | M9 |
-| NFR2 counts, NFR5 | `test/files.bats` | M9 |
-| NFR3 | `test/lint-repo.bash`; bash 4.4, Ubuntu, macOS jobs | M1, M9 |
-| NFR4 | CI installs only pass, gnupg, zsh, strace; `make lint` | M1 |
-| NFR6 | `make test-net`; `test/lint-repo.bash` | M9 |
-| NFR7 | `test/lint-repo.bash`: one file in `bin/`; pass and the store only in `backend_has`, `backend_read` | M1, M2 |
-| NFR8 | `test/contract.bats` | M2, M9 |
-| NFR9 | `test/lint-repo.bash` | M1 |
-| §9, AC4 | `test/install.bats`, `test/e2e.bats` | M10 |
-| FR33, AC5 | `test/readme.bats` | M10 |
-| AC1 to AC3 | CI jobs; `test/lint-repo.bash` ID coverage | M9, M10 |
-| AC6 | macOS job; `docs/release.md` | M10 |
+| FR22 (bash), NFR3 (static), NFR4, NFR7 (one file), NFR9 | `guard.bats`, `lint.bats` | M1 |
+| FR9, FR36, NFR8 (lists, classes), 5.1 values | `cli.bats`, `contract.bats` | M2 |
+| FR19 | `run_lend`; `messages.bats`, which each later stage extends with its classes | M2 |
+| FR1, FR2, FR5, FR6, FR11 to FR13, FR23 (`run`), FR28 (`run`), NFR1 | `map.bats`, `run.bats`, `perms.bats`, `make bench` | M3 |
+| FR3, FR4, FR7, FR8, FR10, FR20, FR21, NFR7 (backend functions) | `secrets.bats`, `backend-env.bats` | M4 |
+| FR14 to FR17 | `interactivity.bats`, `timeout.bats`, `signals.bats` | M5 |
+| FR18, FR22 (GnuPG), FR23 (`unlock`), FR28 (`unlock`), FR34 | `gpg.bats`, `unlock.bats`, `guard.bats` | M6 |
+| FR23 (`sync`), FR26 (lock), FR28 (`sync`), FR29, FR30, NFR8 (shim) | `sync.bats`, `lock.bats`, `contract.bats` | M7 |
+| FR31 to FR33 | `check.bats` | M8 |
+| FR23 (`add`, `rm`), FR24, FR25, FR26 (twenty `add`), FR27, FR28 (`add`, `rm`) | `add-rm.bats` | M9 |
+| FR28 (`init`), FR35, 4.3 | `init.bats`, `path.bats` | M10 |
+| Section 9, AC4 | `install.bats`, `e2e.bats` | M11 |
+| NFR2, NFR5, NFR6 | `files.bats`, `net.bats`, `make bench` | M12 |
+| FR37, NFR8 (README), 4.4, AC5 | `readme.bats`, `contract.bats` | M13 |
+| AC1, AC2, AC3 | `make check`, `make check-docker`, `make bench`, ID lint | M13 |
+| AC6 | `docs/release.md` | release |
 
-## 4. CI
+## 4. Stages
 
-`.github/workflows/ci.yml` runs on push and pull request, `permissions: contents: read`, checkout with `submodules: true`.
+Sizes: S fits a short pass, M a full one; no stage is larger.
 
-- `lint` (ubuntu-24.04): setup-uv; `make lint`.
-- `test`, matrix ubuntu-22.04 (GnuPG 2.2) and ubuntu-24.04 (GnuPG 2.4): `sudo apt-get install -y pass zsh strace`; `TEST_REQUIRE="gpg pass zsh strace script python3 systemd-environment-d-generator"`; `make test`; `make test-net`. Covers AC1, AC2, AC4, AC5.
-- `bash44` (ubuntu-24.04): `make test-bash44` runs `apk add --no-cache make coreutils util-linux` as root, then `make test-mock` as uid 1001.
-- `bench` (ubuntu-24.04), alone: installs pass; `make bench` (AC3).
-- `macos` (macos-15, `continue-on-error: true`): `brew install bash`; asserts PATH's `bash` is 4.4 or later; `make test-mock` (AC6).
+### M1 Skeleton and gates (M)
+- Files: the section 1 skeleton without README, CHANGELOG, `docs/release.md`, bench and install targets; `bin/lend` with the bash guard, `--version` and `usage`; `common.bash`; `fake-pass` (plain and logging) and `stub-target`; `test/lint-repo.bash`; `test/pending-ids`; `test/{harness,guard,lint}.bats`.
+- `lint-repo.bash`: NFR9; the R9 greps; one file in `bin/`; the ID lint.
+- Done: `guard.bats` gives `unsupported` with exit 125 under `bash:3.2.57` and `bash:4.3.48`; `lint.bats` shows `lint-repo.bash` failing on a scratch copy with a planted em-dash, email address, home path other than `/home/alice`, or PRD ID found neither in a test nor in `pending-ids`; the planted strings are assembled at run time, so the repository never holds them.
 
-strace, zsh and GnuPG cases skip in `bash44` and `macos`, whose `TEST_REQUIRE` omits them.
+### M2 CLI surface (S)
+- `main "$@"; exit $?`; inherited functions removed first (FR9); dispatch; the tables (verbs, classes with hints and both FIXes, name lists, variables) and `--help` printed from them; `fail CLASS TEXT` choosing the FIX by 5.1; `LEND_PROMPT` and `LEND_TIMEOUT` validation; section 8 paths.
+- Done: `contract.bats` extracts every list and class from the PRD and finds each in `--help`; exported functions `printf`, `env` and `mktemp` leave `--help` output byte-identical.
 
-## 5. Stages
+### M3 Map reader and `run` with preset keys (M)
+- Per-command map reader: grammar, deny, reserved and guarded lists, group expansion with ordered dedup; FR28 map checks; FR5 resolution; `run` with every key preset; export; `LEND_INJECTED`; `exec -a` under `shopt -s execfail`.
+- Done: the FR1 `env -0` diff holds exactly the keys, `LEND_INJECTED`, `_`, `PWD` and `SHLVL`; status 7 and SIGTERM reach the target; a failed exec gives `lend: exec:`; the NFR1 part of `make bench` exits 0 on the host.
 
-### M1 Skeleton, harness, CI (S)
-- Files: section 1 minus README body, CHANGELOG, `docs/release.md`, `test/bench/`, and the `bench`, `install`, `uninstall` targets. `bin/lend`: bash version guard, `--version`, placeholder `--help`, `usage` otherwise. `test/harness.bats` self-tests fake-pass, stub-target, `in_pty`, `run_lend`. `ci.yml` has every job but `bench`.
-- Covers: NFR3 guard, NFR4, NFR7 file count, NFR9.
-- Done: `make check` green; actionlint clean; `make test-bash44` green where Docker exists; CI green on the first push.
+### M4 Decrypt path (M)
+- `backend_has`, and `backend_read` without a bound: `exec env -i ALLOWLIST pass show` with stdin `/dev/null`; first line per R3; FR3 order; export after all decrypts; `set +x +v`; temporary directory per R6; `fake-pass` mode `big`; the NFR7 lint that only the two backend functions name pass or the store.
+- Done: the sentinel appears nowhere FR20 forbids, also under `bash -x` and `SHELLOPTS=xtrace`; the fake pass records exactly FR8's environment, directly and under a nested shim; the target sees the caller's umask and descriptors under umask 000; the strace halves of FR4 and FR20 pass in check-docker; `big` reads in under 1 s on bash 4.4.
 
-### M2 CLI core, map, `run` (L)
-- Files: `bin/lend`, `test/{cli,map,run,perms,messages,contract}.bats`, `test/fixtures/contract.txt`.
-- Build: `main "$@"; exit $?`; dispatch; full `--help`; 5.1 interactivity with `LEND_PROMPT`, `LEND_TIMEOUT` validation; `fail CLASS TEXT` choosing the interactive or non-interactive FIX; §8 paths; FR24 map checks; map reader in whole-map and per-CMD modes with grammar, deny and guarded lists, ordered dedup; FR5 resolution; `run` over an untimed `backend_has` and `backend_read`; `exec -a`.
-- Covers: FR1 to FR3, FR5 to FR11, FR19 (`run`), FR24 (`run`), FR32, NFR7.
-- Done: listed files green; FR1 compares `env -0` exactly; FR6 proves status 7 and SIGTERM delivery.
+### M5 Bounded backend (M)
+- R5 in full: status fd, `--pinentry-mode error` when non-interactive, classification, backend-only `GPG_TTY`, watchdog, `coproc` job, traps, terminal handoff; `fake-pass` modes `locked`, `cancel`, `fail`, `slow`, `hang`, `stubborn`, `tty`; `in_pty`, `in_shell`.
+- Done, on the host and in the bash 4.4 image:
+  - The FR14 matrix covers stdin, stderr, both or neither a terminal, times `auto`, `never`, `allow` and an invalid value.
+  - `hang` and `stubborn` with `LEND_TIMEOUT=2` give `timeout` after 2.0 s and before 4.0 s.
+  - After TERM, INT or HUP to lend, TERM or KILL to its group, and expiry, every recorded PID is gone within 2 s.
+  - Under `in_shell`: `tty` mode reads its typed line with one handoff, and Ctrl-C gives `canceled`.
+  - A pipeline neighbor running `stty` finishes with no `Stopped` line.
+  - `lend run ... &` gives `timeout` and leaves the shell's terminal alone.
 
-### M3 Backend contract (M)
-- Files: `bin/lend`, `test/{secrets,interactivity,timeout,messages}.bats`.
-- Build: `--status-fd=9`, plus `--pinentry-mode error` when non-interactive, appended to `PASSWORD_STORE_GPG_OPTS`; classification from the first `ERROR` code's low 16 bits; backend-only `GPG_TTY` (FR13); bounded call (R5); decrypt all, then export (FR4); `set +x +v` first (FR17).
-- Covers: FR4, FR12 to FR14, FR16 to FR18 on the mock.
-- Done: FR14 ends within `LEND_TIMEOUT` + 1 s and `kill -0` fails for both recorded PIDs; FR12 covers four terminal layouts times `auto`, `never`, `allow`, invalid; FR18 stub receives piped stdin intact.
+### M6 Real GnuPG and `unlock` (M)
+- `gpg.bash`, `pinentry-recorder`, the GnuPG version check, `unlock`.
+- Done: FR18 (a) to (h) pass in the Ubuntu image with and without `gpg2`; a stub gpg reporting 2.2.27 gives `unsupported`; `gpg.bash` aborts when HOME or GNUPGHOME lies outside the sandbox.
 
-### M4 Real GnuPG and `unlock` (M)
-- Files: `bin/lend`, `test/helpers/gpg.bash`, `test/fixtures/pinentry-recorder`, `test/{gpg,unlock}.bats`.
-- Covers: FR15 (a) to (f) with and without `gpg2`, FR30.
-- Done: `test/gpg.bats` green on local GnuPG 2.4 with FR15's time bounds asserted; the user's own GnuPG home and store untouched.
+### M7 `sync`, shims, lock (M)
+- Whole-map reader; FR29 text with the invoked path made absolute, symlinks unresolved, single quotes escaped; marker-only deletion; foreign files give `write`; 0700 shim directory; the lock per R15.
+- Done: a second `sync` leaves every shim's `cksum` unchanged; shims survive a versioned symlink swap; a removed lend gives `lend-missing` from the shim; `sync` breaks a dead owner's lock and gives `write` naming a live owner's lock after 10 s.
 
-### M5 `sync`, shims, lock, permissions (M)
-- Files: `bin/lend`, `test/{sync,perms}.bats`.
-- Build: FR25 text with the invoked path made absolute, symlinks unresolved, single quotes escaped; marker-only deletion; foreign files give `write`; 0700 shim directory under umask 000 and 022; `mkdir` lock with PID, 10 s retry, stale break.
-- Covers: FR19 (`sync`), FR22, FR24 (`sync`), FR25, FR26.
-- Done: a second `sync` changes no byte (`cksum`); shims survive a versioned symlink swap; a removed lend gives `lend-missing` from the shim.
+### M8 `check` (M)
+- FR31 to FR33, with a row formatter that M9 reuses.
+- Done: zero backend calls across the file; each FR33 detection has a test with its exact row or line; exit 1 only when a shown item has a problem, 0 for a healthy setup.
 
-### M6 `add` and `rm` (M)
-- Files: `bin/lend`, `test/add-rm.bats`.
-- Covers: FR20, FR21, FR22 (20 concurrent `add`), FR23, FR24.
-- Done: every FR21 error leaves map and shims byte-identical; symlinked map followed; new map 0600 in a 0700 directory.
+### M9 `add` and `rm` (M)
+- FR24, FR25, FR27, the guarded list with `--force` and its notice, sync after each edit, rows in `check` format.
+- Done: every FR25 error leaves map and shims byte-identical; twenty concurrent `add` calls started with a dead owner's lock leave twenty entries; the map is 0600 after writes under umask 000; a symlinked map is followed.
 
-### M7 `check` (M)
-- Files: `bin/lend`, `test/check.bats`.
-- Covers: FR27 to FR29: each FR29 detection, plus a healthy setup with no problem.
-- Done: zero backend calls across the file; rows match exact expected text; exit 1 only when something shown has a problem.
+### M10 `init` and PATH (S)
+- FR35 blocks between markers; FR28 for `init`.
+- Done: the hook registers once when its block runs twice, in bash and zsh; `bash -lc` with the skel fixtures and `zsh -c` behind a prepended `gh` both reach the shim; `init` prints no code and gives `unsafe` for a group-writable shim directory.
 
-### M8 `init` and PATH (M)
-- Files: `bin/lend`, `test/{init,path}.bats`.
-- Build: `init sh|bash|zsh|systemd`; `init` checks the shim directory (FR24) and prints no code when it is unsafe.
-- Tests: hook registered once when sourced twice, bash and zsh; `bash -lc` with `test/fixtures/profile`; `zsh -c` via `~/.zshenv` under a parent that prepended another `gh`; `check` reports shadowing after a virtualenv-style prepend; the environment.d generator lists the shim directory first.
-- Covers: FR24 (`init`), FR31, 4.3.
+### M11 Install and end-to-end (M)
+- `install` (temporary file in `$(DESTDIR)$(PREFIX)/bin`, mode 0755, rename; relative `PREFIX` rejected) and `uninstall`.
+- Done: `e2e.bats` passes AC4 in the Ubuntu image; `make install` over an existing lend gives the file a new inode; `make uninstall` leaves only the map.
 
-### M9 NFR gates (M)
-- Files: `test/bench/bench.bash`, `test/{files,contract,secrets}.bats`, `Makefile`, `ci.yml` (`bench` job).
-- NFR1: 50-entry map, keys preset, 20 warmups, then 200 interleaved shim and direct runs of a copied `true` timed with `EPOCHREALTIME`; median and p95 of the difference. NFR2: key protected at `s2k-count 8388608`, primed cache, 50 runs of a 3-key `run`, median.
-- `files.bats`: backend call counts per verb; filesystem snapshot around every verb; `tmp/` empty after exit and at exec.
-- Strace: `strace -f -v -s 4096 -e trace=execve` shows the sentinel only in the target's execve.
-- Covers: NFR1, NFR2, NFR5, NFR6, NFR8, strace halves of FR4 and FR17.
-- Done: `make bench` passes locally; `make test-net` clean where strace exists.
+### M12 NFR gates (S)
+- `files.bats`: backend call counts per verb, a filesystem snapshot around every verb, TMPDIR empty after exit and at exec. `net.bats`: every verb under `strace -f --seccomp-bpf -e trace=connect`. Bench NFR2: key at `s2k-count 8388608`, warm cache, 50 runs of a 3-key `run`.
+- Done: `net.bats` sees no AF_INET or AF_INET6 connect in the Ubuntu image; `make bench` exits 0 on the host.
 
-### M10 Docs, install, release (M)
-- Files: `README.md`, `CHANGELOG.md`, `docs/release.md`, `Makefile` (`install`, `uninstall`), `test/{install,e2e,readme}.bats`, `test/lint-repo.bash`.
-- README: quick start between `<!-- quickstart -->` markers, at most five commands, run verbatim by `readme.bats` in a fresh HOME seeded with `test/fixtures/profile` and a scratch key (`pass insert` fed on stdin); each FR33 topic under a heading `readme.bats` checks; the "For AI agents" block FR33 specifies.
-- `e2e.bats` (AC4): `make install PREFIX="$HOME/.local"`, 4.3 lines, `add gh GH_TOKEN`; stub `gh` gets the key from interactive bash under `in_pty`, `bash -lc`, `zsh -c` behind a prepended `gh`, Python `subprocess` without a shell started from `sh -lc`, and a nested shim with one backend call; the parent lacks `GH_TOKEN`; `make uninstall` leaves only the map.
-- `lint-repo.bash` gains the AC1 check: every FR and NFR ID in the PRD names a test or bench case.
-- `docs/release.md`: set the version in `bin/lend`; dated CHANGELOG entry; `make check`, `make bench`; every CI job green, one macOS pass included; tick AC1 to AC6; annotated tag `vX.Y.Z`; GitHub release from the CHANGELOG entry. Making the repository public needs the maintainer's approval.
-- Covers: FR33, §9, AC4 to AC6.
+### M13 README and release (M)
+- README per FR37, quick start between `<!-- quickstart -->` markers, lists and classes as `--help` prints them. CHANGELOG 1.0.0; `docs/release.md`; version 1.0.0. `readme.bats` (AC5) builds its clone source as a scratch repository from the working tree, so it runs from any checkout.
+- Done: `readme.bats` passes in the Ubuntu image; `contract.bats` matches the README's lists to `--help`; `lend --version` prints `lend 1.0.0`; `test/pending-ids` and `docs/plan.md` are deleted and no file names them; the PRD mentions no stage.
 
-## 6. End-user install
+`docs/release.md`: dated CHANGELOG entry; the three make gates; create the GitHub repository private, push, wait for green CI (AC6); annotated tag `v1.0.0`; GitHub release from the CHANGELOG entry. Making the repository public needs the maintainer's approval.
 
-```sh
-git clone https://github.com/v-bonilla/lend.git
-cd lend
-make install PREFIX="$HOME/.local"
-```
+## 5. Implementation rules
 
-- `install` writes one file: a temporary copy inside `$(DESTDIR)$(PREFIX)/bin`, `chmod 0755`, then `mv -f` onto `lend`. `PREFIX` defaults to `$(HOME)/.local`; `DESTDIR` is honored; a relative `PREFIX` is rejected.
-- Upgrade: `git pull && make install`. Versioned: install to `PREFIX="$HOME/.local/opt/lend-X.Y.Z"`, `ln -sfn` it to `~/.local/bin/lend`, run `lend sync` once through the symlink.
-- Uninstall: remove the 4.3 lines and `~/.config/environment.d/50-lend.conf`, then `make uninstall` with the install's `PREFIX`. It resolves the shim directory as lend does and deletes files whose second line starts with `# lend shim `, a lock whose owner is gone, the directory if empty, and `$(PREFIX)/bin/lend`; never the map, store or rc files.
-
-## 7. Implementation risks and rules
-
-- R1 No `set -e`; failures go through explicit checks and `fail`. `set -u -o pipefail` on; optional variables read as `${VAR-}`. Bash 4.4 accepts empty `"${arr[@]}"` under `set -u`. `IFS=$' \t\n'` and `set -f` first; map fields split with `read -ra`, so no word globs.
+- R1 No `set -e`; failures go through explicit checks and `fail`. `set -u -o pipefail`; optional variables read as `${VAR-}`; empty `"${arr[@]}"` is safe under `set -u` from bash 4.4. `IFS=$' \t\n'` and `set -f` first; map fields split with `read -ra`.
 - R2 `local x=$(cmd)` masks the status: declare, then assign (SC2155).
-- R3 Values live in an associative array: never exported until just before `exec -a`, never in argv, never in here-strings or here-docs (bash before 5.1 backs those with temp files).
-- R4 FR1: lend never alters a variable the target inherits; children get shim-free `PATH`, `GPG_TTY`, `PASSWORD_STORE_GPG_OPTS`, `LC_ALL=C` as per-command prefixes. Bash adds `PWD` and `SHLVL=0` only when the caller lacks them (measured); tests keep both set, as shells do. An exported `SHELLOPTS` carries lend's `set` changes to the target, so lend restores the caller's options after the exports, xtrace last, just before `exec`.
-- R5 Bounded call without `timeout` or `setsid`: inside the command substitution capturing the value, `set -m` gives the backend its own process group; a watchdog subshell, stdout and stderr on `/dev/null`, sleeps N seconds, marks the timeout, then sends the group TERM and, 1 s later, KILL; the parent waits, then kills the watchdog's group. The substitution's stderr goes to the call's temp file, so job notices never reach lend's stderr. Measured with and without a terminal: instant return on success; a hanging backend and its child are gone after a 1 s timeout.
-- R6 Status and backend stderr go to 0600 files in `mktemp -d "${TMPDIR:-/tmp}/lend.XXXXXX"`, removed by an EXIT trap and before exec. Backend stdin is `/dev/null` (FR18).
+- R3 Values live in an associative array in the main shell. They are never exported before exec, never in argv, never in here-strings or here-docs, which bash before 5.1 backs with temp files. The first line comes from `IFS=$'\n'` splitting under `set -f`, after an empty-first-line test, never `${v%%$'\n'*}`. That pattern is quadratic: a 200 kB value took 10.8 s on bash 4.4 and 0.97 s on 5.2, against 0.01 s for splitting (measured).
+- R4 lend changes nothing the target inherits. The umask changes only in subshells or in verbs that never exec; descriptors opened for the backend close before exec; bash adds `PWD` and `SHLVL` only when missing. An exported `SHELLOPTS` carries lend's `set` changes, so lend restores the caller's options just before exec, xtrace last. Before exec it resets every trap it set, so the target gets default dispositions.
+- R5 Bounded backend (FR16, FR17), measured with mock backends on bash 4.4.23 (busybox) and 5.2, and with pass 1.7.4 and GnuPG 2.4.4 on bash 5.2. The main shell L runs the phase with two helper jobs:
+  - L saves stderr (`exec {err}>&2`) and, when stdin is a terminal, points fd 2 at it (`2<&0`): bash finds and hands over the terminal through fd 2, reading it when job control starts. Then `set -m`. While job control is on, L runs builtins only, since a foreground external command would become a job and take the terminal. Afterwards: `set +m`, fd 2 restored.
+  - W, the watchdog, starts as `( ... ) </dev/null >/dev/null 2>&1 &`: a background job in its own process group, which signals aimed at lend's group miss. After each `sleep 0.1` it sends L `USR1` (interactive calls only), then checks. L gone (`kill -0`) means abandon. `SECONDS` ≥ N + 1 or 10·N ticks means timeout, never early and at most 1 s late. To act, W ignores TERM, writes a `timeout` mark (timeout) or deletes the temp directory (abandon), sends TERM and CONT to J's group, waits up to 0.5 s, then sends KILL.
+  - J, the backend job, starts as a `coproc`: a background job in its own group whose stdout is a pipe. L dups the read end at once, because bash closes coproc descriptors when it reaps the job. J records its PID for W and L, traps TERM, INT and HUP to exit 143, 130 and 129 (so bash never reports a killed job), ignores TSTP, sets umask 077, and sends its own stderr to the temp directory. It reads each key with `v=$(exec env -i ALLOWLIST pass show PREFIX/KEY 9>STATUS 2>ERR </dev/null)` and keeps the values in memory. It then prints them and a status line through one forked writer (`{ printf ...; } &`) and exits, so J never waits for L, whatever the sizes.
+  - L waits with `wait "$jpid"`, which returns when J exits and whenever a trapped signal arrives. Its TERM, INT and HUP traps kill J's and W's groups, delete the temp directory and re-raise the signal. Its USR1 trap does nothing.
+  - When `wait` returns with J alive, L reads `jobs -sp`. The handoff needs two facts. First, J has stopped on the terminal: a loopback prompt calls tcsetattr from a background group and gets SIGTTOU. Second, lend's group owns the terminal: field 8 of `/proc/$$/stat` equals field 5, or, where `/proc` is absent, `ps -o tpgid= -o pgid=` read through a process substitution, which job control leaves in lend's group. Then L runs `fg`: bash gives J the terminal, continues it, and takes the terminal back when J exits.
+  - Once J is gone, L ignores USR1, kills an idle W with KILL and waits for it (a W that is acting finishes first), drains the pipe with blocking reads, and resets USR1 before exec. Values exist only in that pipe and in shell memory.
+  - Why this shape, measured: bash runs a trap only after a command substitution returns (a TERM trap ran at 4 s under `v=$(sleep 4)`, at 1 s under `read`). A job-control shell inside a command substitution never sees its job stop (`jobs -sp` stayed empty with the job in state T), and `wait` never returns on a stop. A backend holding the terminal from the start stops pipeline neighbors (`lend ... | less` showed `Stopped`). `fg` from a background job steals the terminal, then stops lend.
+  - Results: N = 2 timed out at 2.14 to 2.16 s (2.6 s with a TERM-ignoring child); every kill case left no backend, W or real pinentry after 1 s; a real loopback prompt took one handoff; M5's other Done cases held.
+- R6 The temporary directory comes from `mktemp -d "${TMPDIR:-/tmp}/lend.XXXXXX"` and holds per-key status and stderr files and J's PID. The status descriptor exists only inside J's read (`9>FILE`), so neither L nor the target ever holds it. L removes the directory before exit or exec; W removes it when L dies.
 - R7 Bash reads scripts incrementally: `install` renames instead of rewriting, and the file ends in `main "$@"; exit $?` on one line.
-- R8 NFR1 budget: on the preset-keys path, no subshell or external command per PATH entry or map line; canonicalize (`cd -P`, `pwd -P`, bounded `readlink` loop) only candidate hits; one `ls -ldn` covers the map and its directory; `[[ -O ]]` tests ownership.
-- R9 Portability: `bin/lend` uses no `stat`, `readlink -f`, `timeout`, `flock`, `setsid`, `sed -i`, `date +%N`, `EPOCHREALTIME`, `SRANDOM` or `/proc`, enforced by command-position greps in `test/lint-repo.bash`. Allowed, as GNU, BSD and busybox share them: `mktemp -d TEMPLATE`, plain `readlink`, `sleep 0.1` for lock retries. Only `in_pty` calls `script`.
-- R10 macOS `/bin/bash` 3.2 first on a caller's PATH: the opening lines parse in 3.2, test `BASH_VERSINFO`, and print a `usage` line naming bash 4.4.
+- R8 NFR1 budget: on the preset-keys path, no subshell or external command per PATH entry or map line; canonicalize (`cd -P`, `pwd -P`, bounded `readlink` loop) only candidate hits; one `ls -ldn` covers the map and its directory; `[[ -O ]]` tests ownership; the function purge (`declare -F`) is the one fork.
+- R9 Portability greps in `lint-repo.bash` flag `stat`, `readlink -f`, `timeout`, `flock`, `setsid`, `sed -i`, `date +%N`, `EPOCHREALTIME` and `SRANDOM` only in command position (`(^|[;&|(]|\$\()[[:space:]]*WORD\b`) and outside the name-list tables, which hold several of these words as data. `/proc` and `ps` may appear only in the foreground test of R5. Only test helpers call `script`.
+- R10 The opening lines of `bin/lend` parse in bash 3.2, test `BASH_VERSINFO`, and give `unsupported` with exit 125.
 - R11 Unix socket paths are length-limited, so test GnuPG homes live under `/tmp`.
-- R12 Root bypasses permission checks: the bash 4.4 job tests as non-root; foreign-owner cases use root-owned `/etc` paths and skip as root.
-- R13 CI timing noise: paired interleaved runs after warmups, in a job of its own.
-- R14 zsh hands `PREFIX=~/.local` to make unexpanded: the Makefile rejects relative `PREFIX`; docs write `"$HOME/.local"`.
+- R12 Root bypasses permission checks: `check-docker` runs as uid 1000; foreign-owner cases use root-owned paths and skip as root.
+- R13 Bench timing uses paired, interleaved runs after warmups; CI only reports it.
+- R14 zsh hands `PREFIX=~/.local` to make unexpanded: the Makefile rejects a relative `PREFIX`; docs write `"$HOME/.local"`.
+- R15 Lock: `mkdir SHIMS.lock`, then write the PID inside; a lock without a PID file counts as live. A waiter that finds the owner dead takes `mkdir SHIMS.lock.break`, rereads the owner and, if it is still the same dead PID, removes the lock, then removes `SHIMS.lock.break` and retries. Owners remove only their own lock.
