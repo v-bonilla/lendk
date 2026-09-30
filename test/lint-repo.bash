@@ -34,9 +34,14 @@ if [[ -f bin/lend ]]; then
 	body=$(awk '
 		/# lint: tables begin/ { t = 1 } /# lint: tables end/ { t = 0; next }
 		/# lint: tty-owner begin/ { o = 1 } /# lint: tty-owner end/ { o = 0; next }
-		{ print (t ? "#" : (o ? "O" : " ")) NR ":" $0 }' bin/lend)
+		/^backend_(has|read)\(\) \{/ { b = 1 }
+		{ print (t ? "#" : (o ? "O" : (b ? "B" : " "))) NR ":" $0 }
+		b && /^\}/ { b = 0 }' bin/lend)
 	code=$(grep -v '^#' <<<"$body")
-	start='^[ O][0-9]+:'
+	start='^[ OB][0-9]+:'
+	# NFR7: only the backend functions name pass or the store.
+	while IFS= read -r hit; do problem "bin/lend:${hit:1}: pass or the store outside backend_has and backend_read"; done < <(
+		grep -E -e "$(cmdpos pass '^[ O][0-9]+:')|[\$][{]?store([^A-Za-z0-9_]|\$)" <<<"$code" | grep -v '^B')
 	for word in stat 'readlink[[:space:]]+-f' timeout flock setsid 'sed[[:space:]]+-i' 'date[[:space:]]+[+]%N'; do
 		while IFS= read -r hit; do problem "bin/lend:${hit:1}: non-portable command"; done < <(grep -E -e "$(cmdpos "$word" "$start")" <<<"$code")
 	done

@@ -1,13 +1,26 @@
 #!/usr/bin/env bash
 # Stand-in for pass: `pass show PREFIX/KEY` prints $PASSWORD_STORE_DIR/PREFIX/KEY.gpg, which holds plaintext.
-# Each call logs argv, its environment and its PID under $PASSWORD_STORE_DIR/../log/pass.PID/.
+# Each call logs argv, its environment, its PID, where its stdin points and the modes of its stderr
+# file and that file's directory under $PASSWORD_STORE_DIR/../log/pass.PID/.
+# PREFIX/KEY.mode holding `big` makes the entry a 200 kB first line and a second line.
 log=$PASSWORD_STORE_DIR/../log/pass.$$
 mkdir -p "$log"
 printf '%s\0' "$@" >"$log/argv"
 env -0 >"$log/env"
 printf '%s\n' "$$" >"$log/pid"
+readlink "/proc/$$/fd/0" >"$log/stdin" 2>/dev/null
+err=$(readlink "/proc/$$/fd/2" 2>/dev/null)
+[[ $err != /* ]] || ls -ldn "${err%/*}" "$err" >"$log/stderr-modes" 2>/dev/null
 
 [[ ${1-} == show && $# -eq 2 ]] || { echo "fake-pass: unsupported call: $*" >&2; exit 1; }
-entry=$PASSWORD_STORE_DIR/$2.gpg
-[[ -f $entry ]] || { echo "Error: $2 is not in the password store." >&2; exit 1; }
-cat -- "$entry"
+entry=$PASSWORD_STORE_DIR/$2
+[[ -f $entry.gpg ]] || { echo "Error: $2 is not in the password store." >&2; exit 1; }
+mode=
+[[ -f $entry.mode ]] && mode=$(<"$entry.mode")
+case $mode in
+big)
+	printf '%*s' 200000 '' | tr ' ' x
+	printf '\nsecond\n'
+	;;
+*) cat -- "$entry.gpg" ;;
+esac

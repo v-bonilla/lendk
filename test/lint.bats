@@ -91,6 +91,17 @@ lint_copy() {
 	lint_copy "bin/: holds"
 }
 
+@test "NFR7: lint-repo.bash flags pass or the store named outside the two backend functions" {
+	scratch
+	local line
+	# shellcheck disable=SC2016
+	for line in 'x=$(pass show env/K)' 'ls "$store"' 'f=${store}/env'; do
+		cp "$ROOT/bin/lend" "$COPY/bin/lend"
+		printf '%s\n' "$line" >>"$COPY/bin/lend"
+		lint_copy "pass or the store outside backend_has and backend_read"
+	done
+}
+
 @test "NFR3: lint-repo.bash flags non-portable commands in bin/lend, except in the name-list tables" {
 	scratch
 	local w
