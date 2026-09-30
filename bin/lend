@@ -24,6 +24,9 @@ esac
 # FR9: discard inherited functions. POSIX mode makes the special builtins (set, unset) win over
 # functions of the same name until builtin is safe; it leaves before the purge, since bash 4.4
 # refuses names like [ in POSIX mode.
+lend_dash=$-
+lend_pipefail=
+case :${SHELLOPTS-}: in *:pipefail:*) lend_pipefail=y ;; esac
 lend_posix=${POSIXLY_CORRECT+set}
 lend_posix_value=${POSIXLY_CORRECT-}
 POSIXLY_CORRECT=y
@@ -34,15 +37,53 @@ case $lend_posix in
 set) POSIXLY_CORRECT=$lend_posix_value ;;
 *) unset POSIXLY_CORRECT ;;
 esac
-# declare -F prints "declare -f NAME" per function: every third word is a name.
-lend_i=0
-for lend_f in $(builtin declare -F); do
+# One fork lists the exported names, then --, then "declare -f[x] NAME" per function. lend_env keeps
+# the caller's environment, which lend's own variables may shadow, for FR2 and for the target (R4).
+# Exported functions are part of that environment: their definitions wait in lend_fdefs for exec.
+builtin declare -A lend_env
+lend_funcs=()
+lend_xfuncs=()
+lend_fdefs=
+lend_i=-1
+for lend_f in $(builtin compgen -e; builtin echo --; builtin declare -F); do
+	if ((lend_i < 0)); then
+		case $lend_f in --) lend_i=0 ;; *) lend_env[$lend_f]=${!lend_f-} ;; esac
+		continue
+	fi
 	lend_i=$((lend_i + 1))
-	case $((lend_i % 3)) in 0) builtin unset -f "$lend_f" ;; esac
+	case $((lend_i % 3)) in
+	2) lend_old=$lend_f ;;
+	0)
+		lend_funcs+=("$lend_f")
+		case $lend_old in -*x*) lend_xfuncs+=("$lend_f") ;; esac
+		;;
+	esac
 done
-builtin unset lend_old lend_f lend_i lend_posix lend_posix_value
+if ((${#lend_xfuncs[@]})); then lend_fdefs=$(builtin declare -f -- "${lend_xfuncs[@]}"); fi
+for lend_f in "${lend_funcs[@]}"; do builtin unset -f "$lend_f"; done
+builtin unset lend_old lend_f lend_i lend_posix lend_posix_value lend_funcs
 
 set -u -o pipefail
+
+# set_paths: PRD section 8 paths.
+# shellcheck disable=SC2034
+set_paths() {
+	local config=${HOME-}/.config data=${HOME-}/.local/share
+	[[ ${XDG_CONFIG_HOME-} == /* ]] && config=$XDG_CONFIG_HOME
+	[[ ${XDG_DATA_HOME-} == /* ]] && data=$XDG_DATA_HOME
+	map=${LEND_MAP:-$config/lend/map}
+	shims=${LEND_SHIMS:-$data/lend/shims}
+	store=${PASSWORD_STORE_DIR:-${HOME-}/.password-store}
+	prefix=${LEND_PREFIX:-env}
+}
+
+# R8: the FR28 listing of a plain map and its directory runs while bash parses the rest of this
+# file; check_map_paths reads it. exec skips any function named ls.
+set_paths
+map_listing=
+if [[ ${1-} == run && $map == /?*/* && -f $map && ! -L $map ]]; then
+	exec {map_listing}< <(exec ls -ldnL -- "${map%/*}" "$map" 2>/dev/null)
+fi
 
 LEND_VERSION=0.0.0
 
@@ -170,13 +211,7 @@ fail() {
 # load_env: PRD section 8 paths and the LEND_PROMPT and LEND_TIMEOUT checks; the verbs read the globals.
 # shellcheck disable=SC2034
 load_env() {
-	local config=${HOME-}/.config data=${HOME-}/.local/share
-	[[ ${XDG_CONFIG_HOME-} == /* ]] && config=$XDG_CONFIG_HOME
-	[[ ${XDG_DATA_HOME-} == /* ]] && data=$XDG_DATA_HOME
-	map=${LEND_MAP:-$config/lend/map}
-	shims=${LEND_SHIMS:-$data/lend/shims}
-	store=${PASSWORD_STORE_DIR:-${HOME-}/.password-store}
-	prefix=${LEND_PREFIX:-env}
+	set_paths
 	set_interactive
 	case ${LEND_PROMPT-auto} in
 	auto | never | allow) ;;
@@ -189,6 +224,273 @@ load_env() {
 		fi
 		timeout=$LEND_TIMEOUT
 	fi
+}
+
+# bad_word WORD [GROUP]: true, with the reason in problem, when WORD is no valid KEY or @NAME; a
+# word of GROUP's line must be a KEY.
+bad_word() {
+	local az=ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_ p
+	problem=
+	case $1 in
+	@*)
+		if [[ -n ${2-} ]]; then
+			problem="group @$2 holds $1; groups hold keys only"
+		elif [[ $1 == @ || ${1#@} == *[!${az}0123456789-]* ]]; then
+			problem="'$1' is not a valid group name"
+		fi
+		;;
+	*)
+		if [[ $1 != [${az}]* || $1 == *[!${az}0123456789]* ]]; then
+			problem="'$1' is not a valid key name"
+		elif [[ " ${denied_names[*]} " == *" $1 "* ]]; then
+			problem="key '$1' is denied"
+		else
+			for p in "${denied_prefixes[@]}"; do
+				[[ $1 == "$p"* ]] && problem="key '$1' is denied"
+			done
+		fi
+		;;
+	esac
+	[[ -n $problem ]]
+}
+
+# resolve_links PATH: set resolved to PATH with its symlinks followed, at most 40.
+resolve_links() {
+	local n=0 link
+	resolved=$1
+	while [[ -L $resolved ]] && ((n++ < 40)); do
+		link=$(readlink -- "$resolved") || return 0
+		if [[ $link != /* && $resolved == */* ]]; then link=${resolved%/*}/$link; fi
+		resolved=$link
+	done
+}
+
+# check_map_paths: FR28 for the map and its directory, after following a symlinked map.
+check_map_paths() {
+	local file dir modes='' mdir='' mfile='' mode p
+	resolve_links "$map"
+	file=$resolved
+	[[ -e $file ]] || return 0
+	dir=.
+	[[ $file == */* ]] && dir=${file%/*}
+	[[ -n $dir ]] || dir=/
+	for p in "$dir" "$file"; do
+		[[ -O $p ]] || fail unsafe "$p is owned by another user" PATH="$p"
+	done
+	# ls sorts its operands, and a directory sorts before the paths it prefixes.
+	if [[ -n $map_listing && $file == "$map" ]]; then
+		IFS= read -r -u "$map_listing" mdir
+		IFS= read -r -u "$map_listing" mfile
+		exec {map_listing}<&-
+		map_listing=
+	else
+		modes=$(ls -ldnL -- "$dir" "$file")
+		mdir=${modes%%$'\n'*}
+		mfile=${modes#*$'\n'}
+	fi
+	[[ -n $mdir && -n $mfile ]] || fail unsafe "$file cannot be inspected" PATH="$file"
+	for p in "$dir" "$file"; do
+		mode=${mdir%%[[:space:]]*}
+		mdir=$mfile
+		[[ ${mode:5:1} == w || ${mode:8:1} == w ]] && fail unsafe "$p is writable by others" PATH="$p"
+	done
+	return 0
+}
+
+# expand_keys CMD WORD...: set keys to WORD..., or to CMD's map entry when no WORD is given, with
+# groups inlined and duplicates dropped. Only the lines CMD and its groups need are checked (FR23).
+expand_keys() {
+	local cmd=$1 lines=() fields=() words=() gwords=() line word key g i=0 src=0 cmdline=0 cmddup=0
+	local -A gline=() gdup=() seen=()
+	shift
+	keys=()
+	words=("$@")
+	if (($# == 0)) || [[ " $* " == *" @"* ]]; then
+		if [[ -e $map ]]; then
+			[[ -r $map ]] || fail map "$map: cannot be read"
+			mapfile -t lines <"$map"
+		fi
+		for line in "${lines[@]}"; do
+			((++i))
+			# Pattern tests on the raw line; no line is split (R8).
+			[[ $line == [[:blank:]]* ]] && line=${line#"${line%%[![:blank:]]*}"}
+			case $line in
+			"$cmd" | "$cmd"[[:blank:]#]*)
+				if ((cmdline == 0)); then cmdline=$i; elif ((cmddup == 0)); then cmddup=$i; fi
+				;;
+			@[!#[:blank:]]*)
+				g=${line%%[[:blank:]#]*}
+				g=${g#@}
+				if [[ -n ${gline[$g]-} ]]; then
+					[[ -n ${gdup[$g]-} ]] || gdup[$g]=$i
+				else
+					gline[$g]=$i
+				fi
+				;;
+			esac
+		done
+	fi
+	if (($# == 0)); then
+		((cmdline)) || fail unmapped "$cmd is not mapped" CMD="$cmd"
+		((cmddup == 0)) || fail map "$map:$cmddup: $cmd is mapped twice"
+		for g in "${reserved_cmds[@]}"; do
+			[[ $cmd == "$g" ]] && fail map "$map:$cmdline: $cmd is lend's own runtime and cannot be mapped"
+		done
+		# shellcheck disable=SC2206
+		fields=(${lines[cmdline - 1]%%#*})
+		words=("${fields[@]:1}")
+		((${#words[@]})) || fail map "$map:$cmdline: $cmd maps no keys"
+		for word in "${words[@]}"; do
+			bad_word "$word" && fail map "$map:$cmdline: $problem"
+		done
+		src=$cmdline
+	fi
+	for word in "${words[@]}"; do
+		if [[ $word != @* ]]; then
+			[[ -n ${seen[$word]-} ]] || keys+=("$word")
+			seen[$word]=1
+			continue
+		fi
+		g=${word#@}
+		if [[ -z ${gline[$g]-} ]]; then
+			((src)) && fail map "$map:$src: group $word is not defined"
+			fail map "$map: group $word is not defined"
+		fi
+		[[ -z ${gdup[$g]-} ]] || fail map "$map:${gdup[$g]}: group $word is defined twice"
+		# shellcheck disable=SC2206
+		fields=(${lines[gline[$g] - 1]%%#*})
+		gwords=("${fields[@]:1}")
+		((${#gwords[@]})) || fail map "$map:${gline[$g]}: group $word holds no keys"
+		for key in "${gwords[@]}"; do
+			bad_word "$key" "$g" && fail map "$map:${gline[$g]}: $problem"
+			[[ -n ${seen[$key]-} ]] || keys+=("$key")
+			seen[$key]=1
+		done
+	done
+}
+
+# resolve CMD: set target to the file CMD names (FR5), and check that exec can run it.
+resolve() {
+	local cmd=$1 rest dir file line
+	local -a fields
+	if [[ $cmd == */* ]]; then
+		target=$cmd
+	else
+		target=
+		rest=$PATH:
+		while [[ -n $rest ]]; do
+			dir=${rest%%:*}
+			rest=${rest#*:}
+			file=${dir:-.}/$cmd
+			[[ -f $file && -x $file && $dir != "$shims" ]] || continue
+			[[ ${dir:-.} -ef $shims ]] && continue
+			if [[ -L $file ]]; then
+				resolve_links "$file"
+				dir=.
+				[[ $resolved == */* ]] && dir=${resolved%/*}
+				[[ ${dir:-/} -ef $shims ]] && continue
+			fi
+			target=$file
+			break
+		done
+		[[ -n $target ]] || fail not-found "$cmd is not on PATH outside $shims" CMD="$cmd"
+	fi
+	[[ -f $target && -x $target ]] || fail exec "$target is not executable" PATH="$target" CMD="${cmd##*/}"
+	# A missing interpreter would fail the exec after the point where lend can still speak for it.
+	line=
+	{ IFS= read -r -n 256 line <"$target"; } 2>/dev/null
+	if [[ $line == '#!'* ]]; then
+		# shellcheck disable=SC2206
+		fields=(${line#??})
+		if [[ ${fields[0]-} == /* && ! (-f ${fields[0]} && -x ${fields[0]}) ]]; then
+			fail exec "${fields[0]} is not executable" PATH="${fields[0]}" CMD="${cmd##*/}"
+		fi
+	fi
+	return 0
+}
+
+# backend_read KEY: set lend_values[KEY] from the store.
+backend_read() {
+	fail decrypt "$prefix/$1: reading the store is not available in this build" KEY="$1"
+}
+
+# restore_env: give every caller variable its value back, and its export, where lend's own shadow it.
+restore_env() {
+	local lend_n lend_a
+	for lend_n in "${!lend_env[@]}"; do
+		case $lend_n in _ | SHELLOPTS | BASHOPTS) continue ;; esac
+		lend_a=
+		[[ -v $lend_n ]] && lend_a=${!lend_n@a}
+		[[ $lend_a == *r* ]] && continue
+		if [[ $lend_a == *[aA]* ]]; then
+			unset -v "$lend_n"
+		elif [[ $lend_a == *x* && ${!lend_n} == "${lend_env[$lend_n]}" ]]; then
+			continue
+		fi
+		export "$lend_n=${lend_env[$lend_n]}"
+	done
+}
+
+# run_verb [WORD...] -- CMD [ARG...]: FR3 up to exec. Locals carry the lend_ prefix because they are
+# still in scope at exec, where a local would hide the caller's variable of the same name.
+run_verb() {
+	local lend_words=() lend_cmd lend_k lend_list=() lend_keys=() lend_target
+	local -A lend_values=() lend_seen=()
+	while (($#)) && [[ $1 != -- ]]; do
+		lend_words+=("$1")
+		shift
+	done
+	if (($# == 0)); then
+		for lend_k in "${lend_words[@]}"; do
+			[[ $lend_k != @* ]] && type -P -- "$lend_k" >/dev/null && fail usage "'$lend_k' is a command; put -- before it"
+		done
+		fail usage "run needs -- before the command"
+	fi
+	shift
+	(($#)) || fail usage "run needs a command after --"
+	lend_cmd=$1
+	shift
+	for lend_k in "${lend_words[@]}"; do
+		bad_word "$lend_k" && fail usage "$problem"
+	done
+	check_map_paths
+	expand_keys "${lend_cmd##*/}" "${lend_words[@]}"
+	resolve "$lend_cmd"
+	for lend_k in "${keys[@]}"; do
+		[[ -n ${lend_env[$lend_k]-} ]] || backend_read "$lend_k"
+	done
+	[[ -z $map_listing ]] || exec {map_listing}<&-
+	# From here on, caller variables may hold the names of lend's globals: only lend_ names are used.
+	lend_target=$target
+	lend_keys=("${keys[@]}")
+	restore_env
+	for lend_k in ${lend_env[LEND_INJECTED]-}; do
+		[[ -n ${lend_seen[$lend_k]-} ]] || lend_list+=("$lend_k")
+		lend_seen[$lend_k]=1
+	done
+	for lend_k in "${lend_keys[@]}"; do
+		[[ -n ${lend_values[$lend_k]+set} ]] || continue
+		export "$lend_k=${lend_values[$lend_k]}"
+		[[ -n ${lend_seen[$lend_k]-} ]] || lend_list+=("$lend_k")
+		lend_seen[$lend_k]=1
+	done
+	export LEND_INJECTED="${lend_list[*]}"
+	shopt -s execfail
+	[[ -n ${lend_env[BASHOPTS]+set} && :${lend_env[BASHOPTS]}: != *:execfail:* ]] && shopt -u execfail
+	# R4: the caller's shell options, in case an exported SHELLOPTS carries them to the target.
+	[[ $lend_dash == *f* ]] || set +f
+	[[ -n $lend_pipefail ]] || set +o pipefail
+	[[ $lend_dash == *u* ]] || set +u
+	if [[ -n $lend_fdefs ]]; then
+		eval "$lend_fdefs"
+		builtin export -f -- "${lend_xfuncs[@]}"
+	fi
+	builtin exec -a "$lend_cmd" "$lend_target" "$@"
+	builtin set -u
+	[[ -z $lend_fdefs ]] || builtin unset -f -- "${lend_xfuncs[@]}"
+	set_paths
+	interactive=
+	fail exec "$lend_target is not executable" PATH="$lend_target" CMD="${lend_cmd##*/}"
 }
 
 print_help() {
@@ -228,6 +530,7 @@ main() {
 	*)
 		load_env
 		[[ -n ${1-} ]] || fail usage "no verb given"
+		[[ $1 == run ]] && shift && run_verb "$@"
 		fail usage "unknown verb '$1'"
 		;;
 	esac

@@ -3,7 +3,7 @@ BATS := test/lib/bats-core/bin/bats
 SHELLCHECK := uvx --from shellcheck-py==0.11.0.1 shellcheck
 DOCKER_RUN := docker run --rm -u 1000:1000 -e HOME=/tmp -v "$(CURDIR):/src:ro" -w /src
 
-.PHONY: deps lint test check check-docker images
+.PHONY: deps lint test check check-docker images bench
 
 deps:
 	git submodule update --init
@@ -29,3 +29,6 @@ check-docker: images
 		-e TEST_REQUIRE="gpg pass zsh strace script python3 git environment-d" \
 		lend-test:ubuntu $(BATS) --filter-tags '!docker' test/*.bats
 	$(DOCKER_RUN) -e TEST_REQUIRE=script lend-test:bash44 $(BATS) --filter-tags '!docker' test/*.bats
+
+bench:
+	bash test/bench/bench.bash
