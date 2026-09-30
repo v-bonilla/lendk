@@ -1050,6 +1050,7 @@ scan_map() {
 		done
 		m_keys[$name]=${m_keys[$name]# }
 	done
+	((${#m_bad[@]} < 2)) || mapfile -t m_bad < <(printf '%s\n' "${m_bad[@]}" | command -p sort -t '|' -k 1,1n)
 }
 
 # set_self: self, the path lend was invoked by, made absolute with symlinks unresolved (FR29).
@@ -1190,7 +1191,7 @@ sync_verb() {
 		[[ -n $row ]] || continue
 		if ((row)); then class_line map "$map:$row: $f"; else class_line map "$map: $f"; fi
 		maplines+=("$line")
-	done < <(((${#m_bad[@]} == 0)) || printf '%s\n' "${m_bad[@]}" | command -p sort -t '|' -k 1,1n)
+	done < <(((${#m_bad[@]} == 0)) || printf '%s\n' "${m_bad[@]}")
 	lines=("${maplines[@]}" "${lines[@]}")
 	for f in "${foreign[@]}"; do
 		class_line write "$f: is not a lend shim, so sync leaves it" PATH="$f"
@@ -1200,6 +1201,147 @@ sync_verb() {
 	((${#lines[@]} == 0)) && exit 0
 	printf '%s\n' "${lines[@]}" >&2
 	exit 125
+}
+
+# failure_text FUNCTION ARG...: true, with text set to the TEXT of its class line, when FUNCTION fails.
+failure_text() {
+	text=$( ("$@") 2>&1 >/dev/null) && return 1
+	text=${text#lend: *: }
+	text=${text%%. *}
+	[[ -n $text ]]
+}
+
+# check_add ROW TEXT FIX [NFIX]: record a problem for ROW, or a global one for an empty ROW. NFIX
+# replaces FIX in non-interactive calls; it defaults to "ask the user" (FR32).
+check_add() {
+	local fix=$3
+	((interactive)) || fix=${4:-ask the user}
+	if [[ -z $1 ]]; then
+		c_global+=("$2 ($fix)")
+	else
+		c_status[$1]+="${c_status[$1]:+; }$2 ($fix)"
+	fi
+}
+
+# check_scan: every FR33 detection over the whole setup, into c_global and c_status. It reads file
+# existence only, never a value (FR31).
+check_scan() {
+	local name f k row text dir rest onpath=0 path files injected=" ${lend_env[LEND_INJECTED]-} "
+	local -A mapped=()
+	c_global=()
+	declare -gA c_status=()
+	scan_map
+	set_self
+	if [[ ! -e $map ]]; then
+		check_add '' "$map does not exist" "map a command: lend add CMD KEY..."
+	elif failure_text check_map_paths; then
+		check_add '' "$text" "chmod go-w it, or recreate it as your own"
+	fi
+	failure_text check_shim_dir && check_add '' "$text" "chmod go-w $shims, or recreate it as your own"
+	for row in "${m_bad[@]}"; do
+		IFS='|' read -r k name text <<<"$row"
+		if [[ -n $name ]]; then
+			check_add "$name" "line $k: $text" "fix the line"
+		elif ((k)); then
+			check_add '' "$map:$k: $text" "fix the line"
+		else
+			check_add '' "$map: $text" "fix its permissions"
+		fi
+	done
+	rest=$PATH:
+	while [[ -n $rest ]]; do
+		dir=${rest%%:*}
+		rest=${rest#*:}
+		[[ $dir == "$shims" || (-d ${dir:-.} && ${dir:-.} -ef $shims) ]] && onpath=1 && break
+	done
+	((onpath)) || check_add '' "$shims is not on PATH" "set up PATH: lend init sh >> ~/.profile, then log in again"
+	failure_text check_gnupg && check_add '' "$text" "upgrade GnuPG"
+	for name in "${m_cmds[@]}"; do mapped[$name]=1; done
+	shim_files
+	for f in "${files[@]}"; do
+		name=${f##*/}
+		if is_shim "$f"; then
+			[[ -n ${mapped[$name]-} ]] || check_add '' "$f is a stray shim" "lend sync" "lend sync"
+		elif [[ -n ${mapped[$name]-} ]]; then
+			check_add "$name" "$f is not a lend shim" "move it out of $shims"
+		else
+			check_add '' "$f is not a lend shim" "move it out of $shims"
+		fi
+	done
+	for name in "${m_groups[@]}" "${m_cmds[@]}"; do
+		for k in ${m_keys[$name]}; do
+			backend_has "$k" || check_add "$name" "$prefix/$k is not in the store" "pass insert $prefix/$k"
+			if [[ -n ${lend_env[$k]-} && $injected != *" $k "* ]]; then
+				check_add "$name" "$k is set in the environment, which overrides the store" "unset it where it is exported"
+			fi
+		done
+		[[ $name == @* ]] && continue
+		f=$shims/$name
+		if [[ ! -e $f && ! -L $f ]]; then
+			check_add "$name" "no shim" "lend sync" "lend sync"
+		elif is_shim "$f"; then
+			shim_text "$name"
+			read_file "$f"
+			if [[ $content != "$shim" ]]; then
+				path=${content#*$'\n'*$'\n'}
+				path=${path%%$'\n'*}
+				path=${path#lend=\'}
+				path=${path%\'}
+				path=${path//\'\\\'\'/\'}
+				if [[ -f $path && -x $path ]]; then
+					check_add "$name" "stale shim" "lend sync" "lend sync"
+				else
+					check_add "$name" "the shim runs $path, which is not executable" "lend sync" "lend sync"
+				fi
+			fi
+		fi
+		failure_text resolve "$name" && check_add "$name" "$text" "install it, or unmap it: lend rm $name"
+		((onpath)) || continue
+		rest=$PATH:
+		while [[ -n $rest ]]; do
+			dir=${rest%%:*}
+			rest=${rest#*:}
+			[[ $dir == "$shims" || (-d ${dir:-.} && ${dir:-.} -ef $shims) ]] && break
+			f=${dir:-.}/$name
+			if [[ -f $f && -x $f ]]; then
+				check_add "$name" "shadowed by $f" "put $shims first on PATH, or call: lend run -- $name" "lend run -- $name"
+				break
+			fi
+		done
+	done
+}
+
+# check_rows [NAME...]: print the groups and commands, sorted, as NAME<TAB>KEYS<TAB>STATUS, keeping
+# those named NAME, holding key NAME or using group NAME. Sets bad when a printed row has a problem.
+check_rows() {
+	local name n keep
+	local -a names
+	mapfile -t names < <({
+		((${#m_groups[@]} == 0)) || printf '%s\n' "${m_groups[@]}" | LC_ALL=C command -p sort
+		((${#m_cmds[@]} == 0)) || printf '%s\n' "${m_cmds[@]}" | LC_ALL=C command -p sort
+	})
+	for name in "${names[@]}"; do
+		keep=$(($# == 0))
+		for n in "$@"; do
+			[[ $n == "$name" || " ${m_keys[$name]} " == *" $n "* || " ${m_words[$name]} " == *" @${n#@} "* ]] && keep=1
+		done
+		((keep)) || continue
+		printf '%s\t%s\t%s\n' "$name" "${m_words[$name]}" "${c_status[$name]:-ok}"
+		[[ -z ${c_status[$name]-} ]] || bad=1
+	done
+}
+
+# check_verb [NAME...]: FR31 to FR33; exit 1 when anything shown has a problem.
+check_verb() {
+	local p bad=0
+	check_scan
+	printf '# map: %s\n# shims: %s\n# store: %s\n' "$map" "$shims" "${PASSWORD_STORE_DIR:-${HOME-}/.password-store}/$prefix"
+	for p in "${c_global[@]}"; do
+		printf '# problem: %s\n' "$p"
+		bad=1
+	done
+	check_rows "$@"
+	exit "$bad"
 }
 
 main() {
@@ -1212,6 +1354,7 @@ main() {
 		[[ $1 == run ]] && shift && run_verb "$@"
 		[[ $1 == unlock ]] && shift && unlock_verb "$@"
 		[[ $1 == sync ]] && shift && sync_verb "$@"
+		[[ $1 == check ]] && shift && check_verb "$@"
 		fail usage "unknown verb '$1'"
 		;;
 	esac
