@@ -985,16 +985,17 @@ unlock_verb() {
 
 # scan_map: read the whole map (FR23) without failing. m_cmds and m_groups list the valid names in
 # line order, m_words and m_keys hold each one's words and expanded keys, and m_bad holds every
-# violation as "LINE|ROW|TEXT", ROW being the command or @group it belongs to, or empty.
+# violation as "LINE|ROW|TEXT", ROW being the command or @group it belongs to, or empty. m_raw holds the lines.
 scan_map() {
 	local line name w k i=0
 	local -a f lines=()
 	local -A seen=()
-	m_cmds=() m_groups=() m_bad=()
+	m_cmds=() m_groups=() m_bad=() m_raw=()
 	declare -gA m_line=() m_words=() m_keys=()
 	if [[ -e $map ]]; then
 		[[ -r $map ]] || { m_bad+=("0||cannot be read") && return 0; }
 		mapfile -t lines <"$map"
+		m_raw=("${lines[@]}")
 	fi
 	for line in "${lines[@]}"; do
 		((++i))
@@ -1097,12 +1098,17 @@ shim_files() {
 
 # check_shim_dir: FR28 for an existing shim directory.
 check_shim_dir() {
+	check_dir "$shims"
+}
+
+# check_dir DIR: FR28 for DIR when it exists.
+check_dir() {
 	local modes
-	[[ -e $shims || -L $shims ]] || return 0
-	[[ -d $shims ]] || fail write "$shims: not a directory" PATH="$shims"
-	[[ -O $shims ]] || fail unsafe "$shims is owned by another user" PATH="$shims"
-	modes=$(command -p ls -ldnL -- "$shims")
-	[[ ${modes:5:1} == w || ${modes:8:1} == w ]] && fail unsafe "$shims is writable by others" PATH="$shims"
+	[[ -e $1 || -L $1 ]] || return 0
+	[[ -d $1 ]] || fail write "$1: not a directory" PATH="$1"
+	[[ -O $1 ]] || fail unsafe "$1 is owned by another user" PATH="$1"
+	modes=$(command -p ls -ldnL -- "$1")
+	[[ ${modes:5:1} == w || ${modes:8:1} == w ]] && fail unsafe "$1 is writable by others" PATH="$1"
 	return 0
 }
 
@@ -1182,21 +1188,48 @@ break_lock() {
 release_lock() {
 	local owner=
 	[[ -z ${lend_synctmp-} ]] || command -p rm -f -- "$lend_synctmp"
+	[[ -z ${lend_maptmp-} ]] || command -p rm -f -- "$lend_maptmp"
 	{ IFS= read -r owner <"$lend_lock/pid"; } 2>/dev/null
 	[[ $owner != "$$" ]] || command -p rm -rf -- "$lend_lock"
 }
 
-# sync_verb: write shims to match the map (FR29, FR30), then report map violations and foreign files.
-sync_verb() {
-	local name f row lines=() maplines=() notices=() foreign=() files
-	local -A mapped=()
-	(($# == 0)) || fail usage "sync takes no arguments"
-	check_map_paths
-	check_shim_dir
+# lock_shims: create the shim directory 0700 under any umask (FR28), then hold its lock.
+lock_shims() {
 	(builtin umask 077 && command -p mkdir -p -- "$shims") 2>/dev/null ||
 		fail write "$shims: cannot be created" PATH="$shims"
 	take_lock
+}
+
+# map_lines: lines, one map class line per violation scan_map found.
+map_lines() {
+	local row name text
+	lines=()
+	while IFS='|' read -r row name text; do
+		[[ -n $row ]] || continue
+		if ((row)); then class_line map "$map:$row: $text"; else class_line map "$map: $text"; fi
+		lines+=("$line")
+	done < <(((${#m_bad[@]} == 0)) || printf '%s\n' "${m_bad[@]}")
+}
+
+# sync_verb: write shims to match the map (FR29, FR30), then report map violations and foreign files.
+sync_verb() {
+	local lines=()
+	(($# == 0)) || fail usage "sync takes no arguments"
+	check_map_paths
+	check_shim_dir
+	lock_shims
 	scan_map
+	write_shims
+	((${#lines[@]} == 0)) && exit 0
+	printf '%s\n' "${lines[@]}" >&2
+	exit 125
+}
+
+# write_shims: the shims for scan_map's commands. Prints notices; sets lines to the map violations,
+# then the write failures and foreign files.
+write_shims() {
+	local name f wlines=() notices=() foreign=() files
+	local -A mapped=()
 	set_self
 	lend_synctmp=$shims/.lend-sync.$$
 	for name in "${m_cmds[@]}"; do
@@ -1212,7 +1245,7 @@ sync_verb() {
 			command -p chmod 755 -- "$lend_synctmp" && command -p mv -f -- "$lend_synctmp" "$f"; } 2>/dev/null; then
 			command -p rm -f -- "$lend_synctmp"
 			class_line write "$f: cannot be written" PATH="$f"
-			lines+=("$line")
+			wlines+=("$line")
 		fi
 	done
 	shim_files
@@ -1220,25 +1253,19 @@ sync_verb() {
 		name=${f##*/}
 		[[ -z ${mapped[$name]-} ]] || continue
 		if is_shim "$f"; then
-			command -p rm -f -- "$f" 2>/dev/null || { class_line write "$f: cannot be removed" PATH="$f" && lines+=("$line"); }
+			command -p rm -f -- "$f" 2>/dev/null || { class_line write "$f: cannot be removed" PATH="$f" && wlines+=("$line"); }
 		else
 			notices+=("lend: notice: $f is not a lend shim, so sync leaves it.")
 		fi
 	done
-	while IFS='|' read -r row name f; do
-		[[ -n $row ]] || continue
-		if ((row)); then class_line map "$map:$row: $f"; else class_line map "$map: $f"; fi
-		maplines+=("$line")
-	done < <(((${#m_bad[@]} == 0)) || printf '%s\n' "${m_bad[@]}")
-	lines=("${maplines[@]}" "${lines[@]}")
+	map_lines
+	lines+=("${wlines[@]}")
 	for f in "${foreign[@]}"; do
 		class_line write "$f: is not a lend shim, so sync leaves it" PATH="$f"
 		lines+=("$line")
 	done
 	((${#notices[@]} == 0)) || printf '%s\n' "${notices[@]}" >&2
-	((${#lines[@]} == 0)) && exit 0
-	printf '%s\n' "${lines[@]}" >&2
-	exit 125
+	return 0
 }
 
 # failure_text FUNCTION ARG...: true, with text set to the TEXT of its class line, when FUNCTION fails.
@@ -1382,6 +1409,170 @@ check_verb() {
 	exit "$bad"
 }
 
+# check_name NAME: FR25 for the CMD or @GROUP that add and rm edit.
+check_name() {
+	if [[ $1 == @* ]]; then
+		bad_word "$1" && fail usage "$problem"
+	elif [[ $1 != [A-Za-z0-9_+]* || $1 == *[!A-Za-z0-9._+-]* ]]; then
+		fail usage "'$1' is not a valid command name"
+	elif [[ " ${reserved_cmds[*]} " == *" $1 "* ]]; then
+		fail usage "$1 is lend's own runtime and cannot be mapped"
+	fi
+	return 0
+}
+
+# is_guarded CMD: CMD is on a guarded list (PRD 4.2).
+is_guarded() {
+	local p
+	for p in "${guarded_shells[@]}" "${guarded_interpreters[@]}" "${guarded_launchers[@]}" \
+		"${guarded_package_tools[@]}" "${guarded_agent_clis[@]}"; do
+		# shellcheck disable=SC2053 # the lists hold patterns
+		[[ $1 == $p ]] && return 0
+	done
+	return 1
+}
+
+# edit_begin: for add and rm, FR28 paths, the lock and a whole valid map (FR23), read into m_*.
+edit_begin() {
+	local lines
+	check_map_paths
+	resolve_links "$map"
+	[[ -e $resolved || $resolved != */* ]] || check_dir "${resolved%/*}"
+	check_shim_dir
+	lock_shims
+	scan_map
+	((${#m_bad[@]} == 0)) && return 0
+	map_lines
+	printf '%s\n' "${lines[@]}" >&2
+	exit 125
+}
+
+# edit_map N [TEXT]: FR27. Replace map line N with TEXT, delete it without TEXT, or append TEXT when
+# N is 0. The new map is a private file beside the map, after following a symlink, renamed over it.
+edit_map() {
+	local file dir out='' i
+	resolve_links "$map"
+	file=$resolved
+	dir=.
+	[[ $file == */* ]] && dir=${file%/*}
+	[[ -n $dir ]] || dir=/
+	(builtin umask 077 && command -p mkdir -p -- "$dir") 2>/dev/null || fail write "$dir: cannot be created" PATH="$dir"
+	for ((i = 0; i < ${#m_raw[@]}; i++)); do
+		if ((i + 1 != $1)); then
+			out+=${m_raw[i]}$'\n'
+		elif (($# > 1)); then
+			out+=$2$'\n'
+		fi
+	done
+	(($1)) || out+=$2$'\n'
+	lend_maptmp=$dir/.lend-map.$$
+	if ! { (builtin umask 077 && builtin printf '%s' "$out" >"$lend_maptmp") &&
+		command -p mv -f -- "$lend_maptmp" "$file"; } 2>/dev/null; then
+		command -p rm -f -- "$lend_maptmp"
+		fail write "$file: cannot be written" PATH="$file"
+	fi
+	lend_maptmp=
+}
+
+# edit_end NAME: sync under the lock, release it, then print NAME's rows in check format (FR24).
+edit_end() {
+	local lines=() bad=0
+	scan_map
+	write_shims
+	release_lock
+	builtin trap - EXIT HUP INT TERM
+	((${#lines[@]} == 0)) || printf '%s\n' "${lines[@]}" >&2
+	check_scan
+	check_rows "$1"
+	((${#lines[@]} == 0)) || exit 125
+	exit 0
+}
+
+# add_verb [--force] NAME WORD...: FR24 and FR25 for add.
+add_verb() {
+	local force=0 name g='' w have line code trim n new=()
+	[[ ${1-} == --force ]] && force=1 && shift
+	(($# >= 2)) || fail usage "add needs a command or @group and at least one key or @group"
+	name=$1
+	shift
+	check_name "$name"
+	[[ $name == @* ]] && g=${name#@}
+	for w in "$@"; do
+		bad_word "$w" "$g" && fail usage "$problem"
+	done
+	if [[ -z $g ]] && is_guarded "$name" && ((force == 0)); then
+		fail guarded "$name runs other programs, so its keys reach all of them" CMD="$name"
+	fi
+	edit_begin
+	for w in "$@"; do
+		[[ $w != @* || -n ${m_line[$w]-} ]] || fail map "$map: group $w is not defined"
+	done
+	have=" ${m_words[$name]-} "
+	for w in "$@"; do
+		[[ $have == *" $w "* ]] && continue
+		have+="$w "
+		new+=("$w")
+	done
+	n=${m_line[$name]-}
+	if [[ -z $n ]]; then
+		edit_map 0 "$name ${new[*]}"
+	elif ((${#new[@]})); then
+		# The words go after the last one, before any trailing blanks and comment.
+		line=${m_raw[n - 1]}
+		code=${line%%#*}
+		trim=${code%"${code##*[![:blank:]]}"}
+		edit_map "$n" "$trim ${new[*]}${line:${#trim}}"
+	fi
+	if [[ -z $g ]] && is_guarded "$name"; then
+		printf 'lend: notice: %s runs other programs, so its keys reach all of them.\n' "$name" >&2
+	fi
+	edit_end "$name"
+}
+
+# rm_verb NAME [WORD...]: FR24 and FR25 for rm.
+rm_verb() {
+	local name g='' w n c line rest kept=()
+	(($#)) || fail usage "rm needs a command or @group"
+	name=$1
+	shift
+	check_name "$name"
+	[[ $name == @* ]] && g=${name#@}
+	for w in "$@"; do
+		bad_word "$w" "$g" && fail usage "$problem"
+	done
+	edit_begin
+	n=${m_line[$name]-}
+	if [[ -z $n ]]; then
+		printf 'lend: notice: %s is not in %s, so nothing changed.\n' "$name" "$map" >&2
+		edit_end "$name"
+	fi
+	for w in "$@"; do
+		[[ " ${m_words[$name]} " == *" $w "* ]] ||
+			printf 'lend: notice: %s does not hold %s, so nothing changed for it.\n' "$name" "$w" >&2
+	done
+	if (($#)); then
+		for w in ${m_words[$name]}; do
+			[[ " $* " == *" $w "* ]] || kept+=("$w")
+		done
+	fi
+	if ((${#kept[@]})); then
+		if [[ ${kept[*]} != "${m_words[$name]}" ]]; then
+			line=${m_raw[n - 1]}
+			rest=${line#"${line%%#*}"}
+			edit_map "$n" "$name ${kept[*]}${rest:+ $rest}"
+		fi
+	else
+		if [[ -n $g ]]; then
+			for c in "${m_cmds[@]}"; do
+				[[ " ${m_words[$c]} " != *" $name "* ]] ||
+					fail map "$map:${m_line[$c]}: $c uses group $name, so it cannot be removed"
+			done
+		fi
+		edit_map "$n"
+	fi
+	edit_end "$name"
+}
+
 main() {
 	case ${1-} in
 	--version) (($# == 1)) || fail usage "--version takes no arguments"; printf 'lend %s\n' "$LEND_VERSION" ;;
@@ -1393,6 +1584,8 @@ main() {
 		[[ $1 == unlock ]] && shift && unlock_verb "$@"
 		[[ $1 == sync ]] && shift && sync_verb "$@"
 		[[ $1 == check ]] && shift && check_verb "$@"
+		[[ $1 == add ]] && shift && add_verb "$@"
+		[[ $1 == rm ]] && shift && rm_verb "$@"
 		fail usage "unknown verb '$1'"
 		;;
 	esac
