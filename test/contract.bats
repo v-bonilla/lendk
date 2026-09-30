@@ -62,3 +62,17 @@ prd_list() {
 	done < <(sed -n '/^## 8\./,/^## 9\./p' "$PRD" | grep -oE 'LEND_[A-Z_]+|PASSWORD_STORE_DIR|XDG_[A-Z_]+_HOME|GPG_TTY' | sort -u)
 	assert_eq "$n" 10
 }
+
+@test "NFR8: sync writes FR29's shim text" {
+	local want
+	want=$(sed -n '/^- FR29 /,/^- FR30 /p' "$PRD" | sed -n '/^  ```$/,/^  ```$/p' | sed '1d;$d; s/^  //')
+	[[ $want == '#!/bin/sh'* ]]
+	want=${want//\/home\/alice\/.local\/bin\/lend/$LEND}
+	want=${want//so gh did/so stub did}
+	want=${want//"'gh'"/"'stub'"}
+	mkdir -p "$HOME/.config/lend" && chmod 700 "$HOME/.config/lend"
+	printf 'stub K1\n' >"$HOME/.config/lend/map" && chmod 600 "$HOME/.config/lend/map"
+	LEND_SHIMS=$SB/shims run_lend sync
+	assert_eq "$status" 0
+	assert_eq "$(cat "$SB/shims/stub")" "$want"
+}
