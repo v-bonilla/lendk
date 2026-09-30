@@ -60,3 +60,8 @@ fail_line() {
 	assert_eq "$stderr" "lend: map: m:1: bad line. Stop and ask the user."
 	assert_class map 125
 }
+
+@test "FR19: a substituted value is never rewritten again, by the prefix or by another token" {
+	LEND=$SB/bin/lend-fn LEND_PROMPT=allow LEND_PREFIX=api run_lend eval 'load_env; fail unsafe "p is writable by others" PATH=/home/alice/.env/KEY'
+	assert_eq "$stderr" "lend: unsafe: p is writable by others. Fix it: chmod go-w /home/alice/.env/KEY, or recreate it as your own"
+}

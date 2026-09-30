@@ -23,10 +23,10 @@ esac
 
 # FR9: discard inherited functions. POSIX mode makes the special builtins (set, unset) win over
 # functions of the same name until builtin is safe; it leaves before the purge, since bash 4.4
-# refuses names like [ in POSIX mode.
-lend_dash=$-
-lend_pipefail=
-case :${SHELLOPTS-}: in *:pipefail:*) lend_pipefail=y ;; esac
+# refuses names like [ in POSIX mode. An exported POSIXLY_CORRECT keeps its value for the target
+# but not POSIX mode, in which bash 4.4 cannot parse process substitution.
+lend_shellopts=$SHELLOPTS
+lend_bashopts=$BASHOPTS
 lend_posix=${POSIXLY_CORRECT+set}
 lend_posix_value=${POSIXLY_CORRECT-}
 POSIXLY_CORRECT=y
@@ -37,33 +37,58 @@ case $lend_posix in
 set) POSIXLY_CORRECT=$lend_posix_value ;;
 *) unset POSIXLY_CORRECT ;;
 esac
-# One fork lists the exported names, then --, then "declare -f[x] NAME" per function. lend_env keeps
-# the caller's environment, which lend's own variables may shadow, for FR2 and for the target (R4).
-# Exported functions are part of that environment: their definitions wait in lend_fdefs for exec.
+# lend runs under bash's default options; restore_options gives the target the caller's.
+for lend_f in ${lend_shellopts//:/ }; do
+	case $lend_f in braceexpand | hashall | interactive-comments | noglob | posix) ;; *) builtin set +o "$lend_f" ;; esac
+done
+for lend_f in ${lend_bashopts//:/ }; do
+	case $lend_f in
+	checkwinsize | cmdhist | complete_fullquote | extquote | force_fignore | globasciiranges | globskipdots | \
+		hostcomplete | interactive_comments | patsub_replacement | progcomp | promptvars | sourcepath) ;;
+	*) builtin shopt -u "$lend_f" ;;
+	esac
+done
+# lend_env keeps the caller's environment, which lend's own variables may shadow, for FR2 and for
+# the target (R4). The names come from expansions, not a fork (R8).
+lend_i=
+case ${lend_env@a} in *x*) lend_i=$lend_env ;; esac
+builtin unset -v lend_env
 builtin declare -A lend_env
+for lend_f in ${!A*} ${!B*} ${!C*} ${!D*} ${!E*} ${!F*} ${!G*} ${!H*} ${!I*} ${!J*} ${!K*} ${!L*} ${!M*} \
+	${!N*} ${!O*} ${!P*} ${!Q*} ${!R*} ${!S*} ${!T*} ${!U*} ${!V*} ${!W*} ${!X*} ${!Y*} ${!Z*} \
+	${!a*} ${!b*} ${!c*} ${!d*} ${!e*} ${!f*} ${!g*} ${!h*} ${!i*} ${!j*} ${!k*} ${!l*} ${!m*} \
+	${!n*} ${!o*} ${!p*} ${!q*} ${!r*} ${!s*} ${!t*} ${!u*} ${!v*} ${!w*} ${!x*} ${!y*} ${!z*} \
+	${!_*}; do
+	case ${!lend_f@a} in *[aA]*) ;; *x*) lend_env[$lend_f]=${!lend_f} ;; esac
+done
+[[ -z $lend_i ]] || lend_env[lend_env]=$lend_i
+
+builtin set +o posix
+# Only a call that inherits functions forks, for "declare -f[x] NAME" per function. Exported ones are
+# part of the environment: their definitions wait in lend_fdefs for exec.
 lend_funcs=()
 lend_xfuncs=()
 lend_fdefs=
-lend_i=-1
-for lend_f in $(builtin compgen -e; builtin echo --; builtin declare -F); do
-	if ((lend_i < 0)); then
-		case $lend_f in --) lend_i=0 ;; *) lend_env[$lend_f]=${!lend_f-} ;; esac
-		continue
-	fi
-	lend_i=$((lend_i + 1))
-	case $((lend_i % 3)) in
-	2) lend_old=$lend_f ;;
-	0)
-		lend_funcs+=("$lend_f")
-		case $lend_old in -*x*) lend_xfuncs+=("$lend_f") ;; esac
-		;;
-	esac
-done
-if ((${#lend_xfuncs[@]})); then lend_fdefs=$(builtin declare -f -- "${lend_xfuncs[@]}"); fi
+if builtin compgen -A function >/dev/null; then
+	lend_i=0
+	for lend_f in $(builtin declare -F); do
+		lend_i=$((lend_i + 1))
+		case $((lend_i % 3)) in
+		2) lend_old=$lend_f ;;
+		0)
+			lend_funcs+=("$lend_f")
+			case $lend_old in -*x*) lend_xfuncs+=("$lend_f") ;; esac
+			;;
+		esac
+	done
+fi
+if ((${#lend_xfuncs[@]})); then
+	lend_fdefs=$(builtin declare -f -- "${lend_xfuncs[@]}")
+	builtin printf -v lend_f ' %q' "${lend_xfuncs[@]}"
+	lend_fdefs+=$'\n'"builtin export -f --$lend_f"
+fi
 for lend_f in "${lend_funcs[@]}"; do builtin unset -f "$lend_f"; done
-builtin unset lend_old lend_f lend_i lend_posix lend_posix_value lend_funcs
-
-set -u -o pipefail
+builtin unset lend_old lend_f lend_i lend_posix lend_posix_value lend_funcs lend_xfuncs
 
 # set_paths: PRD section 8 paths.
 # shellcheck disable=SC2034
@@ -77,33 +102,31 @@ set_paths() {
 	prefix=${LEND_PREFIX:-env}
 }
 
-# R8: the FR28 listing of a plain map and its directory runs while bash parses the rest of this
-# file; check_map_paths reads it. exec skips any function named ls.
-set_paths
-map_listing=
-if [[ ${1-} == run && $map == /?*/* && -f $map && ! -L $map ]]; then
-	exec {map_listing}< <(exec ls -ldnL -- "${map%/*}" "$map" 2>/dev/null)
-fi
+# R8: the FR28 listing of a plain map and its directory starts first and runs while bash does the
+# rest; check_map_paths reads it. Helpers come from the system path, never from the shims. The
+# paths stay local here, so the snapshot below still sees any caller variables of their names.
+# shellcheck disable=SC2034
+start_listing() {
+	local map shims store prefix
+	set_paths
+	if [[ $map == /?*/* && -f $map && ! -L $map ]]; then
+		exec {lend_listing}< <(command -p ls -ldnL -- "${map%/*}" "$map" 2>/dev/null)
+	fi
+}
+lend_listing=
+[[ ${1-} != run ]] || start_listing
+
+set -u -o pipefail
 
 LEND_VERSION=0.0.0
 
 # lint: tables begin
-verbs=(
-	'lend run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys'
-	'lend add [--force] CMD|@GROUP KEY|@GROUP...   # map, then sync'
-	'lend rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync'
-	'lend check [NAME...]                          # diagnose without decrypting'
-	'lend sync                                     # write shims to match the map'
-	'lend unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere'
-	'lend init sh|bash|zsh|systemd                 # print PATH setup'
-	'lend --help | --version'
-)
-
 grammar=(
 	'One entry per line; fields split on blanks; # starts a comment anywhere; blank lines are ignored.'
 	'@NAME KEY...   defines a group of keys; NAME matches [A-Za-z0-9_-]+'
 	'CMD WORD...    maps a command; WORD is a KEY or @NAME; CMD matches [A-Za-z0-9_+][A-Za-z0-9._+-]*'
 	'KEY matches [A-Za-z_][A-Za-z0-9_]*; its value is the first line of store entry PREFIX/KEY.'
+	'Denied keys: the prefixes and names below; LEND_ in any case.'
 	'Each CMD and group appears once; a group may be used before its definition.'
 	'Expansion follows word order, inlines groups, and drops duplicates, keeping the first.'
 	'Guarded commands are mapped only with add --force: their keys reach every program they run.'
@@ -163,19 +186,6 @@ classes=(
 	"lend-missing|127|The user must reinstall lend from its project repository, then run: lend sync|The user must reinstall lend from its project repository, then run: lend sync"
 )
 
-# shellcheck disable=SC2016
-variables=(
-	'LEND_MAP|map file; default ${XDG_CONFIG_HOME:-~/.config}/lend/map'
-	'LEND_SHIMS|shim directory, set wherever lend runs; default ${XDG_DATA_HOME:-~/.local/share}/lend/shims; lock: SHIMS.lock'
-	'LEND_PREFIX|store entry prefix; default env'
-	'LEND_PROMPT|auto (default), never or allow'
-	'LEND_TIMEOUT|seconds of backend work per call, 1 to 3600; default 60 interactive, 10 otherwise'
-	'LEND_INJECTED|set by lend for targets: the names injected, space-separated'
-	'PASSWORD_STORE_DIR|store; default ~/.password-store'
-	'XDG_CONFIG_HOME|base of the default map; relative values are ignored'
-	'XDG_DATA_HOME|base of the default shim directory; relative values are ignored'
-	'GPG_TTY|set by lend for the backend only'
-)
 # lint: tables end
 
 # set_interactive: PRD 5.1. An invalid LEND_PROMPT counts as non-interactive until validated.
@@ -188,24 +198,39 @@ set_interactive() {
 	return 0
 }
 
-# fail CLASS[:FORM] TEXT [TOKEN=VALUE...]: print the class line with the FIX for this call, and exit.
-# Each TOKEN (KEY, CMD, PATH, WORD...) in the FIX becomes VALUE; env/ becomes the entry prefix.
-fail() {
-	local id=$1 text=$2 row='' fix sub
+# class_line CLASS[:FORM] TEXT [TOKEN=VALUE...]: set line to the class line with the FIX for this
+# call, and code to its exit hint. Each TOKEN (KEY, CMD, PATH, WORD...) in the FIX becomes VALUE,
+# and env/ the entry prefix; markers stand in first, so no value is rewritten in turn.
+class_line() {
+	local id=$1 text=$2 row='' fix sub i=0
 	shift 2
 	[[ -n ${interactive-} ]] || set_interactive
 	for row in "${classes[@]}"; do
 		[[ ${row%%|*} == "$id" ]] && break
 	done
 	row=${row#*|}
+	code=${row%%|*}
 	fix=${row#*|}
 	if ((interactive)); then fix=${fix%%|*}; else fix=${fix#*|}; fi
+	fix=${fix//env\//$'\1p\2'}
 	for sub in "$@"; do
-		fix=${fix//"${sub%%=*}"/"${sub#*=}"}
+		fix=${fix//"${sub%%=*}"/$'\1'$i$'\2'}
+		i=$((i + 1))
 	done
-	fix=${fix//env\//"${prefix:-env}/"}
-	printf 'lend: %s: %s. %s\n' "${id%%:*}" "$text" "$fix" >&2
-	exit "${row%%|*}"
+	fix=${fix//$'\1p\2'/"${prefix:-env}/"}
+	i=0
+	for sub in "$@"; do
+		fix=${fix//$'\1'$i$'\2'/"${sub#*=}"}
+		i=$((i + 1))
+	done
+	line="lend: ${id%%:*}: $text. $fix"
+}
+
+# fail CLASS[:FORM] TEXT [TOKEN=VALUE...]: print class_line's line and exit with its code.
+fail() {
+	class_line "$@"
+	printf '%s\n' "$line" >&2
+	exit "$code"
 }
 
 # load_env: PRD section 8 paths and the LEND_PROMPT and LEND_TIMEOUT checks; the verbs read the globals.
@@ -242,7 +267,7 @@ bad_word() {
 	*)
 		if [[ $1 != [${az}]* || $1 == *[!${az}0123456789]* ]]; then
 			problem="'$1' is not a valid key name"
-		elif [[ " ${denied_names[*]} " == *" $1 "* ]]; then
+		elif [[ " ${denied_names[*]} " == *" $1 "* || ${1^^} == LEND_* ]]; then
 			problem="key '$1' is denied"
 		else
 			for p in "${denied_prefixes[@]}"; do
@@ -259,7 +284,7 @@ resolve_links() {
 	local n=0 link
 	resolved=$1
 	while [[ -L $resolved ]] && ((n++ < 40)); do
-		link=$(readlink -- "$resolved") || return 0
+		link=$(command -p readlink -- "$resolved") || return 0
 		if [[ $link != /* && $resolved == */* ]]; then link=${resolved%/*}/$link; fi
 		resolved=$link
 	done
@@ -278,13 +303,13 @@ check_map_paths() {
 		[[ -O $p ]] || fail unsafe "$p is owned by another user" PATH="$p"
 	done
 	# ls sorts its operands, and a directory sorts before the paths it prefixes.
-	if [[ -n $map_listing && $file == "$map" ]]; then
-		IFS= read -r -u "$map_listing" mdir
-		IFS= read -r -u "$map_listing" mfile
-		exec {map_listing}<&-
-		map_listing=
+	if [[ -n $lend_listing && $file == "$map" ]]; then
+		IFS= read -r -u "$lend_listing" mdir
+		IFS= read -r -u "$lend_listing" mfile
+		exec {lend_listing}<&-
+		lend_listing=
 	else
-		modes=$(ls -ldnL -- "$dir" "$file")
+		modes=$(command -p ls -ldnL -- "$dir" "$file")
 		mdir=${modes%%$'\n'*}
 		mfile=${modes#*$'\n'}
 	fi
@@ -414,27 +439,61 @@ backend_read() {
 	fail decrypt "$prefix/$1: reading the store is not available in this build" KEY="$1"
 }
 
-# restore_env: give every caller variable its value back, and its export, where lend's own shadow it.
+# restore_options: the caller's shell options, which an exported SHELLOPTS or BASHOPTS carries to
+# the target (R4), with execfail kept so a failed exec returns to lend.
+restore_options() {
+	local o
+	for o in ${SHELLOPTS//:/ }; do
+		[[ :$lend_shellopts: == *:"$o":* ]] || builtin set +o "$o"
+	done
+	for o in ${lend_shellopts//:/ }; do
+		[[ :$SHELLOPTS: == *:"$o":* || $o == noexec ]] || builtin set -o "$o"
+	done
+	for o in ${lend_bashopts//:/ }; do
+		[[ :$BASHOPTS: == *:"$o":* ]] || builtin shopt -s "$o"
+	done
+	builtin shopt -s execfail
+}
+
+# restore_env: give every caller variable its value and export back where lend's own shadow it,
+# except the keys this call exported and LEND_INJECTED. Names lend uses come last, lend_env at the end.
 restore_env() {
-	local lend_n lend_a
+	local lend_n lend_a lend_late=()
 	for lend_n in "${!lend_env[@]}"; do
-		case $lend_n in _ | SHELLOPTS | BASHOPTS) continue ;; esac
+		case $lend_n in
+		_ | SHELLOPTS | BASHOPTS | LEND_INJECTED | lend_env) continue ;;
+		lend_*) lend_late+=("$lend_n") && continue ;;
+		esac
+		[[ -z ${lend_values[$lend_n]+set} ]] || continue
 		lend_a=
 		[[ -v $lend_n ]] && lend_a=${!lend_n@a}
+		[[ $lend_a == *x* && $lend_a != *[aAr]* && ${!lend_n} == "${lend_env[$lend_n]}" ]] && continue
 		[[ $lend_a == *r* ]] && continue
-		if [[ $lend_a == *[aA]* ]]; then
-			unset -v "$lend_n"
-		elif [[ $lend_a == *x* && ${!lend_n} == "${lend_env[$lend_n]}" ]]; then
-			continue
-		fi
-		export "$lend_n=${lend_env[$lend_n]}"
+		[[ $lend_a == *[aA]* ]] && builtin unset -v "$lend_n"
+		builtin export "$lend_n=${lend_env[$lend_n]}"
 	done
+	for lend_n in "${lend_late[@]}"; do
+		[[ $lend_n == lend_late ]] && continue
+		[[ -v $lend_n && ${!lend_n@a} == *[aA]* ]] && builtin unset -v "$lend_n"
+		builtin export "$lend_n=${lend_env[$lend_n]}"
+	done
+	if [[ -n ${lend_env[lend_late]+set} ]]; then
+		lend_a=${lend_env[lend_late]}
+		builtin unset -v lend_late
+		# shellcheck disable=SC2178 # the caller's variable, no longer the local array
+		builtin export lend_late="$lend_a"
+	fi
+	if [[ -n ${lend_env[lend_env]+set} ]]; then
+		lend_a=${lend_env[lend_env]}
+		builtin unset -v lend_env
+		builtin export lend_env="$lend_a"
+	fi
 }
 
 # run_verb [WORD...] -- CMD [ARG...]: FR3 up to exec. Locals carry the lend_ prefix because they are
 # still in scope at exec, where a local would hide the caller's variable of the same name.
 run_verb() {
-	local lend_words=() lend_cmd lend_k lend_list=() lend_keys=() lend_target
+	local lend_words=() lend_cmd lend_k lend_list=()
 	local -A lend_values=() lend_seen=()
 	while (($#)) && [[ $1 != -- ]]; do
 		lend_words+=("$1")
@@ -454,44 +513,75 @@ run_verb() {
 		bad_word "$lend_k" && fail usage "$problem"
 	done
 	check_map_paths
+	if ((${#lend_words[@]} == 0)); then
+		lend_k=${lend_cmd##*/}
+		if [[ $lend_k != [A-Za-z0-9_+]* || $lend_k == *[!A-Za-z0-9._+-]* ]]; then
+			fail usage "'$lend_cmd' names no valid command"
+		fi
+	fi
 	expand_keys "${lend_cmd##*/}" "${lend_words[@]}"
 	resolve "$lend_cmd"
 	for lend_k in "${keys[@]}"; do
 		[[ -n ${lend_env[$lend_k]-} ]] || backend_read "$lend_k"
 	done
-	[[ -z $map_listing ]] || exec {map_listing}<&-
-	# From here on, caller variables may hold the names of lend's globals: only lend_ names are used.
-	lend_target=$target
-	lend_keys=("${keys[@]}")
-	restore_env
+	[[ -z $lend_listing ]] || exec {lend_listing}<&-
 	for lend_k in ${lend_env[LEND_INJECTED]-}; do
 		[[ -n ${lend_seen[$lend_k]-} ]] || lend_list+=("$lend_k")
 		lend_seen[$lend_k]=1
 	done
-	for lend_k in "${lend_keys[@]}"; do
+	for lend_k in "${keys[@]}"; do
 		[[ -n ${lend_values[$lend_k]+set} ]] || continue
 		export "$lend_k=${lend_values[$lend_k]}"
 		[[ -n ${lend_seen[$lend_k]-} ]] || lend_list+=("$lend_k")
 		lend_seen[$lend_k]=1
 	done
 	export LEND_INJECTED="${lend_list[*]}"
-	shopt -s execfail
-	[[ -n ${lend_env[BASHOPTS]+set} && :${lend_env[BASHOPTS]}: != *:execfail:* ]] && shopt -u execfail
-	# R4: the caller's shell options, in case an exported SHELLOPTS carries them to the target.
-	[[ $lend_dash == *f* ]] || set +f
-	[[ -n $lend_pipefail ]] || set +o pipefail
-	[[ $lend_dash == *u* ]] || set +u
-	if [[ -n $lend_fdefs ]]; then
-		eval "$lend_fdefs"
-		builtin export -f -- "${lend_xfuncs[@]}"
-	fi
-	builtin exec -a "$lend_cmd" "$lend_target" "$@"
-	builtin set -u
-	[[ -z $lend_fdefs ]] || builtin unset -f -- "${lend_xfuncs[@]}"
-	set_paths
-	interactive=
-	fail exec "$lend_target is not executable" PATH="$lend_target" CMD="${lend_cmd##*/}"
+	# The error line is made while lend's functions stand; the caller's may replace them below.
+	class_line exec "$target is not executable" PATH="$target" CMD="${lend_cmd##*/}"
+	# From here on only positional parameters and builtins: caller variables may take lend's names.
+	set -- "$line" "$code" "$lend_fdefs" "$target" "$lend_cmd" "$@"
+	restore_options
+	restore_env
+	[[ -z $3 ]] || eval "$3"
+	builtin exec -a "$5" "$4" "${@:6}" || {
+		builtin printf '%s\n' "$1" >&2
+		builtin exit "$2"
+	}
 }
+
+# R8: run, which every shim calls, starts before bash parses the rest of the file.
+if [[ ${1-} == run ]]; then
+	shift
+	load_env
+	run_verb "$@"
+fi
+
+# lint: tables begin
+verbs=(
+	'lend run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys'
+	'lend add [--force] CMD|@GROUP KEY|@GROUP...   # map, then sync'
+	'lend rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync'
+	'lend check [NAME...]                          # diagnose without decrypting'
+	'lend sync                                     # write shims to match the map'
+	'lend unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere'
+	'lend init sh|bash|zsh|systemd                 # print PATH setup'
+	'lend --help | --version'
+)
+
+# shellcheck disable=SC2016
+variables=(
+	'LEND_MAP|map file; default ${XDG_CONFIG_HOME:-~/.config}/lend/map'
+	'LEND_SHIMS|shim directory, set wherever lend runs; default ${XDG_DATA_HOME:-~/.local/share}/lend/shims; lock: SHIMS.lock'
+	'LEND_PREFIX|store entry prefix; default env'
+	'LEND_PROMPT|auto (default), never or allow'
+	'LEND_TIMEOUT|seconds of backend work per call, 1 to 3600; default 60 interactive, 10 otherwise'
+	'LEND_INJECTED|set by lend for targets: the names injected, space-separated'
+	'PASSWORD_STORE_DIR|store; default ~/.password-store'
+	'XDG_CONFIG_HOME|base of the default map; relative values are ignored'
+	'XDG_DATA_HOME|base of the default shim directory; relative values are ignored'
+	'GPG_TTY|set by lend for the backend only'
+)
+# lint: tables end
 
 print_help() {
 	local line name i

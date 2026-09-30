@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # lend run: injection, resolution, exec and LEND_INJECTED.
-# shellcheck disable=SC2016,SC2030,SC2031
+# shellcheck disable=SC2016,SC2030,SC2031,SC2329
 
 setup() {
 	load helpers/common
@@ -216,4 +216,114 @@ env_diff() {
 	count2=$(grep -cE '^[0-9]+ +(fork|vfork|clone|clone3)\(' "$SB/long")
 	((count1 > 0))
 	assert_eq "$count2" "$count1"
+}
+
+# run_raw ARG...: lend ARG... without run_lend's contract check; sets status and stderr.
+run_raw() {
+	status=0
+	"$LEND" "$@" </dev/null 2>"$SB/stderr" || status=$?
+	stderr=$(<"$SB/stderr")
+}
+
+# junk: an executable file the kernel refuses to run.
+junk() {
+	printf 'junk\0\1binary' >"$SB/junk"
+	chmod 755 "$SB/junk"
+}
+
+@test "FR6: when the kernel refuses the file, lend's exec line ends stderr, also under a caller BASHOPTS without execfail" {
+	map 'junk K1' 'busy K1'
+	export K1=one
+	junk
+	run_raw run -- "$SB/junk"
+	assert_eq "${stderr##*$'\n'}" "lend: exec: $SB/junk is not executable. Stop and ask the user."
+	assert_eq "$status" 126
+	status=0
+	env BASHOPTS=cmdhist "$LEND" run -- "$SB/junk" </dev/null 2>"$SB/stderr" || status=$?
+	stderr=$(<"$SB/stderr")
+	assert_eq "${stderr##*$'\n'}" "lend: exec: $SB/junk is not executable. Stop and ask the user."
+	assert_eq "$status" 126
+	cp -L "$(type -P env)" "$SB/busy"
+	exec 7>>"$SB/busy"
+	run_raw run -- "$SB/busy"
+	exec 7>&-
+	assert_eq "${stderr##*$'\n'}" "lend: exec: $SB/busy is not executable. Stop and ask the user."
+	assert_eq "$status" 126
+}
+
+@test "FR6: caller functions named like lend's own leave the exec error path intact" {
+	map 'junk K1'
+	export K1=one
+	junk
+	fail() { echo caller-fail; }
+	set_paths() { echo caller-set_paths; }
+	class_line() { echo caller-class_line; }
+	export -f fail set_paths class_line
+	run_raw run -- "$SB/junk"
+	assert_eq "${stderr##*$'\n'}" "lend: exec: $SB/junk is not executable. Stop and ask the user."
+	assert_eq "$status" 126
+}
+
+@test "FR1: an exported POSIXLY_CORRECT reaches the target unchanged, and lend runs" {
+	map 'stub K1'
+	export K1=one
+	env POSIXLY_CORRECT=1 env -0 >"$SB/caller"
+	env POSIXLY_CORRECT=1 "$LEND" run -- stub </dev/null 2>"$SB/stderr"
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LEND_INJECTED "
+}
+
+@test "FR1: caller variables named like lend's internals change nothing" {
+	map 'stub K1'
+	export K1=one lend_target=/bin/false lend_env=x lend_k=y lend_late=z lend_listing=w
+	env -0 >"$SB/caller"
+	run_lend run -- stub
+	assert_eq "$status" 0
+	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LEND_INJECTED "
+}
+
+@test "FR13: keys named lend_ in any case are denied" {
+	local word
+	for word in lend_target Lend_x lend_k; do
+		run_lend run "$word" -- stub
+		assert_eq "$stderr" "lend: usage: key '$word' is denied. See: lend --help"
+		assert_class usage 2
+	done
+}
+
+@test "FR11: a CMD whose basename breaks the CMD grammar is usage" {
+	local cmd
+	map 'stub K1' '@g K1'
+	for cmd in /tmp/ 'a b' @g; do
+		run_lend run -- "$cmd"
+		assert_eq "$stderr" "lend: usage: '$cmd' names no valid command. See: lend --help"
+		assert_class usage 2
+	done
+}
+
+@test "FR11: a caller BASHOPTS with nocasematch does not make STUB match stub" {
+	map 'stub K1'
+	export K1=one
+	env BASHOPTS=nocasematch "$LEND" run -- STUB </dev/null 2>"$SB/stderr" || true
+	assert_eq "$(<"$SB/stderr")" "lend: unmapped: STUB is not mapped. Stop and ask the user."
+}
+
+@test "FR5: lend's own helpers come from the system path, never from PATH or the shims" {
+	map 'ls K1'
+	export K1=one
+	printf '#!/bin/sh\necho fake >&2\nexit 1\n' >"$SB/bin/readlink"
+	chmod 755 "$SB/bin/readlink"
+	printf '#!/bin/sh\nexec %q run -- ls "$@"\n' "$LEND" >"$LEND_SHIMS/ls"
+	chmod 755 "$LEND_SHIMS/ls"
+	mkdir "$SB/real" && chmod 700 "$SB/real"
+	mv "$HOME/.config/lend/map" "$SB/real/map"
+	ln -s "$SB/real/map" "$HOME/.config/lend/map"
+	PATH=$LEND_SHIMS:$PATH run timeout 10 "$LEND" run -- ls -d / </dev/null
+	assert_eq "$status" 0
+	assert_eq "$output" /
+	rm "$HOME/.config/lend/map"
+	mv "$SB/real/map" "$HOME/.config/lend/map"
+	PATH=$LEND_SHIMS:$PATH run timeout 10 "$LEND" run -- ls -d / </dev/null
+	assert_eq "$status" 0
+	assert_eq "$output" /
 }
