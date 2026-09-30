@@ -677,6 +677,18 @@ read_values() {
 	backend_fail decrypt "$prefix/$k: gpg says: the backend stopped" "$k"
 }
 
+# check_gnupg: FR22 for the gpg pass uses, gpg2 when on PATH, else gpg. A missing gpg is left to pass.
+check_gnupg() {
+	local gpg out v
+	gpg=$(type -P gpg2) || gpg=$(type -P gpg) || return 0
+	out=$("$gpg" --version 2>/dev/null </dev/null) || return 0
+	out=${out%%$'\n'*}
+	v=${out##* }
+	[[ $v =~ ^([0-9]+)\.([0-9]+) ]] || return 0
+	((BASH_REMATCH[1] > 2 || (BASH_REMATCH[1] == 2 && BASH_REMATCH[2] >= 4))) ||
+		fail unsupported:gnupg "GnuPG $v found; lend needs GnuPG 2.4 or later"
+}
+
 # read_keys KEY...: FR3 from the existence check to the last decrypt; values stay unexported (FR4).
 read_keys() {
 	local k missing=0
@@ -687,6 +699,7 @@ read_keys() {
 		missing=1
 	done
 	((missing == 0)) || exit "$code"
+	check_gnupg
 	builtin set +x +v
 	lend_tmp=$(builtin umask 077 && command -p mktemp -d "${TMPDIR:-/tmp}/lend.XXXXXX") ||
 		fail write "${TMPDIR:-/tmp}: cannot create a temporary directory" PATH="${TMPDIR:-/tmp}"
@@ -884,6 +897,46 @@ print_help() {
 	done
 }
 
+# first_mapped_key: set key to the first KEY word of the map, in line order, whose entry exists.
+first_mapped_key() {
+	local lines=() fields=() line word
+	key=
+	[[ -e $map ]] || return 0
+	[[ -r $map ]] || fail map "$map: cannot be read"
+	mapfile -t lines <"$map"
+	for line in "${lines[@]}"; do
+		# shellcheck disable=SC2206
+		fields=(${line%%#*})
+		for word in "${fields[@]:1}"; do
+			[[ $word == @* ]] && continue
+			bad_word "$word" && continue
+			backend_has "$word" && key=$word && return 0
+		done
+	done
+	return 0
+}
+
+# unlock_verb [WORD...]: FR34, decrypting under run's rules and discarding the values.
+unlock_verb() {
+	local k key lend_tmp lend_gpg_tty lend_jpid
+	local -A lend_values=()
+	for k in "$@"; do
+		bad_word "$k" && fail usage "$problem"
+	done
+	check_map_paths
+	if (($#)); then
+		expand_keys '' "$@"
+	else
+		first_mapped_key
+		[[ -n $key ]] || fail missing-key "no key named in $map is in the store" KEY=KEY
+		keys=("$key")
+	fi
+	read_keys "${keys[@]}"
+	lend_values=()
+	printf 'unlocked\n'
+	exit 0
+}
+
 main() {
 	case ${1-} in
 	--version) (($# == 1)) || fail usage "--version takes no arguments"; printf 'lend %s\n' "$LEND_VERSION" ;;
@@ -892,6 +945,7 @@ main() {
 		load_env
 		[[ -n ${1-} ]] || fail usage "no verb given"
 		[[ $1 == run ]] && shift && run_verb "$@"
+		[[ $1 == unlock ]] && shift && unlock_verb "$@"
 		fail usage "unknown verb '$1'"
 		;;
 	esac

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Stand-in pinentry speaking Assuan: pinentry-recorder DIR. It appends its PID to DIR/pinentry.pids and
+# each OPTION line to DIR/pinentry.options, then answers GETPIN per DIR/pinentry.mode:
+#   answer (default)  the passphrase in DIR/pinentry.pass
+#   cancel            the user's Cancel
+#   hang              no answer; exits on INT, TERM or HUP, as real pinentries do
+dir=$1
+printf '%s\n' "$$" >>"$dir/pinentry.pids"
+mode=answer
+[[ -f $dir/pinentry.mode ]] && mode=$(<"$dir/pinentry.mode")
+child=
+trap '[[ -z $child ]] || kill "$child" 2>/dev/null; exit 1' INT TERM HUP
+echo 'OK Pleased to meet you'
+while IFS= read -r line; do
+	case $line in
+	'OPTION '*)
+		printf '%s\n' "${line#OPTION }" >>"$dir/pinentry.options"
+		echo OK
+		;;
+	'GETINFO pid') printf 'D %s\nOK\n' "$$" ;;
+	GETPIN)
+		case $mode in
+		cancel) echo 'ERR 83886179 Operation cancelled <Pinentry>' ;;
+		hang)
+			sleep 3600 &
+			child=$!
+			wait
+			exit 1
+			;;
+		*) printf 'D %s\nOK\n' "$(<"$dir/pinentry.pass")" ;;
+		esac
+		;;
+	BYE)
+		echo OK
+		exit 0
+		;;
+	*) echo OK ;;
+	esac
+done

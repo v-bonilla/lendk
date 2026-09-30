@@ -39,3 +39,52 @@ old_bash() {
 	[[ $output == "lend "[0-9]*.[0-9]*.[0-9]* ]]
 	assert_eq "$stderr" ""
 }
+
+# stub_gpg NAME VERSION: a NAME on PATH reporting GnuPG VERSION.
+stub_gpg() {
+	printf '#!/bin/sh\necho "gpg (GnuPG) %s"\necho "libgcrypt 1.8.0"\n' "$2" >"$SB/bin/$1"
+	chmod +x "$SB/bin/$1"
+}
+
+@test "FR22: run and unlock give unsupported for a gpg below 2.4, before any decrypt" {
+	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
+	mkdir -p "$HOME/.config/lend" && chmod 700 "$HOME/.config/lend"
+	printf 'stub K1\n' >"$HOME/.config/lend/map"
+	chmod 600 "$HOME/.config/lend/map"
+	printf 'value\n' >"$SB/store/env/K1.gpg"
+	stub_gpg gpg 2.2.27
+	run_lend run -- stub
+	assert_eq "$stderr" "lend: unsupported: GnuPG 2.2.27 found; lend needs GnuPG 2.4 or later. Stop and ask the user."
+	assert_class unsupported 125
+	LEND_PROMPT=allow run_lend unlock K1
+	assert_eq "$stderr" "lend: unsupported: GnuPG 2.2.27 found; lend needs GnuPG 2.4 or later. Upgrade GnuPG."
+	assert_eq "$(compgen -G "$SB/log/pass.*")" ""
+	assert_eq "$(compgen -G "$SB/log/target.*")" ""
+	K1=preset run_lend run -- stub
+	assert_eq "$status" 0
+	stub_gpg gpg 2.4.0
+	stub_gpg gpg2 2.2.27
+	run_lend unlock K1
+	assert_class unsupported 125
+	stub_gpg gpg2 2.4.4
+	run_lend unlock K1
+	assert_eq "$output" unlocked
+}
+
+@test "FR22: gpg.bash aborts when HOME or GNUPGHOME lies outside the sandbox" {
+	load helpers/gpg
+	printf '#!/bin/sh\necho called >>"%s"\n' "$SB/log/gpg-calls" >"$SB/bin/gpg"
+	printf '#!/bin/sh\necho called >>"%s"\n' "$SB/log/gpg-calls" >"$SB/bin/gpgconf"
+	chmod +x "$SB/bin/gpg" "$SB/bin/gpgconf"
+	HOME=/home/alice run gpg_setup
+	assert_eq "$status" 1
+	assert_line "$output" "gpg.bash: HOME '/home/alice' is outside the sandbox"
+	GNUPGHOME=/home/alice/.gnupg run gpg_guard
+	assert_eq "$status" 1
+	assert_line "$output" "gpg.bash: GNUPGHOME '/home/alice/.gnupg' is outside the sandbox"
+	GNUPGHOME=/home/alice/.gnupg run gpg_cold
+	assert_eq "$status" 1
+	GNUPGHOME=/tmp/lend-gpg.x/../../home/alice run gpg_guard
+	assert_eq "$status" 1
+	assert_eq "$(compgen -G "$SB/log/gpg-calls")" ""
+}
