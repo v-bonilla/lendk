@@ -1125,9 +1125,10 @@ check_dir() {
 # take_lock: hold SHIMS.lock (FR26), retrying for 10 s. A dead owner's lock is broken only by the
 # holder of the break marker, after rereading the owner, so no two waiters both break it.
 take_lock() {
-	local lock=$shims.lock owner empty=0 i
+	local lock=$shims.lock owner empty=0 i end=$((SECONDS + 11))
 	lendk_bempty=
-	for ((i = 0; i < 100; i++)); do
+	# Slow forks stretch 100 sleeps of 0.1 s; whole seconds put the deadline 10 to 11 s away.
+	for ((i = 0; i < 100 && SECONDS < end; i++)); do
 		if command -p mkdir -m 700 -- "$lock" 2>/dev/null; then
 			lendk_lock=$lock
 			builtin trap release_lock EXIT
