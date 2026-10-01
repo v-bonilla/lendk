@@ -53,9 +53,8 @@ jobs:
         env:
           BATS_TEST_TIMEOUT: 40
         run: |
-          ( for i in $(seq 1 60); do echo "== $i"; ps -A -o pid,ppid,pgid,tpgid,stat,command | grep -E 'lendk|fake-pass|stub|read -r|bash --norc' | grep -v grep | cut -c1-160; sleep 0.25; done ) >/tmp/ps.log 2>&1 &
-          test/lib/bats-core/bin/bats --filter 'pipeline neighbor that reads' test/signals.bats || true
-          cat /tmp/ps.log
+          b=$(command -v bash)
+          { sleep 1; printf '%s\r' "{ sleep 1; kill -CONT 0; sleep 1; echo A-done; } | { kill -STOP \$BASHPID; sleep 2; echo B-done; }"; sleep 7; printf 'echo rc=$?\r'; sleep 1; printf 'exit\r'; } | script -qeF /dev/null "$b" --norc --noprofile -i || true
       - run: make test
         timeout-minutes: 20
         env:
