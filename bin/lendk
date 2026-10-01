@@ -454,7 +454,7 @@ backend_has() {
 # environment built from scratch (FR8, FR14, FR15), then prints "COUNT STATUS KEY" and the first line
 # of each entry read through one forked writer, so the job never waits for its reader.
 backend_read() {
-	local n out k='' st=ok vals=() opts benv=()
+	local n out k='' st=ok vals=() opts benv=() try
 	local -a lines
 	allow_env
 	opts=${lendk_env[PASSWORD_STORE_GPG_OPTS]-}
@@ -468,10 +468,15 @@ backend_read() {
 	fi
 	for k in "$@"; do
 		builtin printf '%s\n' "$k" >"$lendk_tmp/key"
-		if ! out=$(builtin command -p env -i "${benv[@]}" pass show "$prefix/$k" 9>"$lendk_tmp/status.$k" 2>"$lendk_tmp/err.$k" </dev/null); then
+		# macOS fails a tcsetattr that the terminal handoff stopped with EINTR, where Linux restarts it.
+		# gpg gives up before reading a passphrase, and J holds the terminal now, so one retry is safe.
+		for try in 1 2; do
+			out=$(builtin command -p env -i "${benv[@]}" pass show "$prefix/$k" 9>"$lendk_tmp/status.$k" 2>"$lendk_tmp/err.$k" </dev/null) && break
 			st=fail
-			break
-		fi
+			((try == 1)) && [[ $(<"$lendk_tmp/err.$k") == *tcsetattr*'Interrupted system call'* ]] || break
+			st=ok
+		done
+		[[ $st == ok ]] || break
 		if [[ -z $out || $out == $'\n'* ]]; then
 			st=empty
 			break

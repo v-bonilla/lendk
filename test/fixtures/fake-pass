@@ -13,8 +13,8 @@
 #   stubborn  like hang, with TERM ignored by pass and its child
 #   tty       a loopback prompt: reads a line from the terminal with echo off and prints it (under
 #             --pinentry-mode error, gpg's status for a passphrase it cannot ask for instead), and
-#             fails like gpg when it cannot read; each SIGCONT, one per terminal handoff, adds a
-#             line to its conts log
+#             fails like gpg when it cannot set the terminal or read; each SIGCONT, one per
+#             terminal handoff, adds a line to its conts log
 # In modes stubborn and tty, a lister appends listings of lendk's temporary directory, which holds
 # the call's stderr file, to tmp-modes while the call runs.
 log=$PASSWORD_STORE_DIR/../log/pass.$$
@@ -93,7 +93,11 @@ tty)
 	fi
 	trap 'echo cont >>"$log/conts"' CONT
 	saved=$(stty -g </dev/tty)
-	stty -echo </dev/tty
+	# Like gpg, give up when the terminal cannot be set, as on macOS after a stop for the handoff.
+	if ! e=$(stty -echo </dev/tty 2>&1); then
+		echo "gpg: Fatal: tcsetattr() failed: ${e##*: }" >&2
+		exit 2
+	fi
 	IFS= read -r line </dev/tty || { echo 'gpg: error reading the passphrase from the terminal' >&2; exit 2; }
 	stty "$saved" </dev/tty
 	printf '%s\n' "$line"
