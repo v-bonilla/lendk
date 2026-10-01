@@ -48,3 +48,6 @@ jobs:
           submodules: true
       - run: brew install bash gnupg pass
       - run: make test
+        timeout-minutes: 20
+        env:
+          BATS_TEST_TIMEOUT: 60
