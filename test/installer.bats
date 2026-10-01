@@ -178,7 +178,7 @@ login() {
 		stub "$pm" 'exit 0'
 		case $pm in
 		dnf) want='sudo dnf install -y --setopt=install_weak_deps=False pass' ;;
-		pacman) want='sudo pacman -Sy --needed --noconfirm pass' ;;
+		pacman) want='sudo pacman -S --needed --noconfirm pass' ;;
 		zypper) want='sudo zypper --non-interactive install --no-recommends password-store' ;;
 		apk) want='sudo apk add --no-cache pass' ;;
 		esac
@@ -186,6 +186,16 @@ login() {
 		assert_eq "$final" "lendk-install: missing-deps: missing: pass; run: $want (or rerun with --install-deps)"
 		rm "$STUB/$pm"
 	done
+}
+
+@test "FR41: pacman never runs a partial upgrade; on failure the line says to run pacman -Syu first" {
+	[[ $(uname -s) == Linux ]] || skip "Linux package managers"
+	rm "$STUB/pass"
+	stub sudo 'echo "sudo $*" >>"$HOME/pm.log"; [ "$1" = -n ] && shift; exec "$@"'
+	stub pacman 'echo "error: target not found: pass" >&2; exit 1'
+	inst --install-deps
+	assert_eq "$final" "lendk-install: missing-deps: 'sudo -n pacman -S --needed --noconfirm pass' failed; missing: pass; run it by hand in a terminal (sudo -v first if sudo asks for a password): sudo pacman -S --needed --noconfirm pass; if pacman cannot find a package, run sudo pacman -Syu first, then rerun the installer"
+	assert_eq "$(<"$HOME/pm.log")" 'sudo -n pacman -S --needed --noconfirm pass'
 }
 
 @test "FR39: installer: piped into bash -s and sh -s, as curl | bash runs it, with a package manager that reads stdin" {

@@ -204,7 +204,7 @@ pm_cmd() {
 	case $pm in
 	apt-get) say "${1}apt-get update && ${1}apt-get install -y --no-install-recommends$pkgs" ;;
 	dnf) say "${1}dnf install -y --setopt=install_weak_deps=False$pkgs" ;;
-	pacman) say "${1}pacman -Sy --needed --noconfirm$pkgs" ;;
+	pacman) say "${1}pacman -S --needed --noconfirm$pkgs" ;;
 	zypper) say "${1}zypper --non-interactive install --no-recommends$pkgs" ;;
 	apk) say "${1}apk add --no-cache$pkgs" ;;
 	brew) say "brew install$pkgs" ;;
@@ -239,8 +239,11 @@ deps() {
 	fi
 	say "running: $cmd"
 	# Under curl | sh the script arrives on stdin, so the command must not read it.
+	# pacman -Sy without -u is a partial upgrade, which Arch does not support, so syncing is the user's step.
+	sync_hint=
+	[ "$pm" != pacman ] || sync_hint="; if pacman cannot find a package, run ${sudo}pacman -Syu first, then rerun the installer"
 	if [ -t 0 ]; then sh -c "$cmd"; else sh -c "$cmd" </dev/null; fi ||
-		finish missing-deps "'$cmd' failed; missing:$missing; run it by hand in a terminal${sudo:+ (sudo -v first if sudo asks for a password)}: $hint"
+		finish missing-deps "'$cmd' failed; missing:$missing; run it by hand in a terminal${sudo:+ (sudo -v first if sudo asks for a password)}: $hint$sync_hint"
 	detect
 	[ -z "$missing" ] || finish missing-deps "still missing after '$cmd':$missing"
 	say "found bash 4.4 or later at $good_bash"
