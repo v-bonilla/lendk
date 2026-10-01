@@ -83,13 +83,19 @@ setup() {
 	sh -c 'sleep 0.1 & exec sleep 30' &
 	local parent=$! zombie ppid
 	sleep 0.5
-	local stat f
-	for f in /proc/[0-9]*/stat; do
-		read -r stat 2>/dev/null <"$f" || continue
-		stat=${stat##*) }
-		read -r _ ppid _ <<<"$stat"
-		[[ $ppid == "$parent" ]] && zombie=${f#/proc/} && zombie=${zombie%/stat}
-	done
+	local p stat f
+	if [[ -d /proc/self ]]; then
+		for f in /proc/[0-9]*/stat; do
+			read -r stat 2>/dev/null <"$f" || continue
+			stat=${stat##*) }
+			read -r _ ppid _ <<<"$stat"
+			[[ $ppid == "$parent" ]] && zombie=${f#/proc/} && zombie=${zombie%/stat}
+		done
+	else
+		while read -r p ppid; do
+			[[ $ppid == "$parent" ]] && zombie=$p
+		done < <(ps -A -o pid= -o ppid=)
+	fi
 	[[ -n ${zombie-} ]]
 	gone "$zombie"
 	kill "$parent"

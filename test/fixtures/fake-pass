@@ -23,8 +23,16 @@ printf '%s\0' "$@" >"$log/argv"
 env -0 >"$log/env"
 printf '%s\n' "$$" >"$log/pid"
 printf '%s\n' "$$" >>"$PASSWORD_STORE_DIR/../log/pids"
-readlink "/proc/$$/fd/0" >"$log/stdin" 2>/dev/null
-err=$(readlink "/proc/$$/fd/2" 2>/dev/null)
+# fd_path FD: the path FD points at, from /proc, else from lsof (macOS).
+fd_path() {
+	if [[ -d /proc/self ]]; then
+		readlink "/proc/$$/fd/$1"
+	else
+		lsof -a -p "$$" -d "$1" -Fn 2>/dev/null | sed -n 's/^n//p'
+	fi
+}
+fd_path 0 >"$log/stdin" 2>/dev/null
+err=$(fd_path 2 2>/dev/null)
 [[ $err != /* ]] || ls -ldn "${err%/*}" "$err" >"$log/stderr-modes" 2>/dev/null
 
 [[ ${1-} == show && $# -eq 2 ]] || { echo "fake-pass: unsupported call: $*" >&2; exit 1; }

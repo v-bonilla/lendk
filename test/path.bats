@@ -13,7 +13,7 @@ setup() {
 		printf '#!/bin/sh\necho "gpg (GnuPG) 2.4.4"\n' >"$HOME/.local/bin/$g"
 		chmod +x "$HOME/.local/bin/$g"
 	done
-	cp "$FIXTURES/profile" "$HOME/.profile"
+	skel_profile >"$HOME/.profile"
 	cp "$FIXTURES/bashrc" "$HOME/.bashrc"
 	printf '%s\n' "$SENTINEL" >"$SB/store/env/GH_TOKEN.gpg"
 	run_lendk add gh GH_TOKEN

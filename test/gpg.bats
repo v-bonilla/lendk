@@ -44,11 +44,11 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	local b start
 	for b in plain gpg2; do
 		branch "$b"
-		start=$(date +%s%3N)
+		start=$(now_ms)
 		run_lendk run -- stub
 		assert_class locked 120
 		assert_eq "$stderr" "lendk: locked: env/K1 needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lendk unlock K1' in a terminal, then retry."
-		(($(date +%s%3N) - start < 2000))
+		(($(now_ms) - start < 2000))
 		assert_eq "$(recorder_pids)" ""
 		assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	done
@@ -114,10 +114,10 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	for b in plain gpg2; do
 		branch "$b"
 		echo hang >"$GNUPGHOME/pinentry.mode"
-		start=$(date +%s%3N)
+		start=$(now_ms)
 		LENDK_PROMPT=allow LENDK_TIMEOUT=2 run_lendk run -- stub
 		assert_class timeout 120
-		(($(date +%s%3N) - start < 4000))
+		(($(now_ms) - start < 4000))
 		p=$(recorder_pids)
 		[[ -n $p ]]
 		gone_within 2 "$p"

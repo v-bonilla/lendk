@@ -60,7 +60,7 @@ quickstart() {
 	local sys=$HOME/bin src=$SB/lendk login_path cmds
 	mkdir -p "$sys" "$src/bin"
 	ln -s "$FIXTURES/stub-target" "$sys/gh"
-	cp "$FIXTURES/profile" "$HOME/.profile"
+	skel_profile >"$HOME/.profile"
 	cp "$FIXTURES/bashrc" "$HOME/.bashrc"
 	cp "$ROOT/Makefile" "$ROOT/LICENSE" "$README" "$src/"
 	cp "$LENDK" "$src/bin/"

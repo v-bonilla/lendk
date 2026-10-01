@@ -23,7 +23,7 @@ setup() {
 	done
 	printf '#!/bin/sh\nexec gh "$@"\n' >"$SYS/outer"
 	chmod +x "$SYS/outer"
-	cp "$FIXTURES/profile" "$HOME/.profile"
+	skel_profile >"$HOME/.profile"
 	cp "$FIXTURES/bashrc" "$HOME/.bashrc"
 	LOGIN_PATH=$SYS:${BASH%/*}:/usr/bin:/bin
 	# The clone source: a scratch repository holding the working tree's install inputs.
@@ -121,7 +121,7 @@ decrypts() {
 	done
 	rm "$HOME/.config/environment.d/99-lendk.conf"
 	login_env make -s -C lendk uninstall
-	cmp "$FIXTURES/profile" "$HOME/.profile"
+	skel_profile | cmp - "$HOME/.profile"
 	cmp "$FIXTURES/bashrc" "$HOME/.bashrc"
 	[[ ! -s $HOME/.zshenv ]]
 	run find "$HOME" \( -path "$HOME/lendk" -o -path "$SYS" \) -prune -o \( -type f -o -type l \) -print

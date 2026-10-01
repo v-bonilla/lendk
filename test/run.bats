@@ -243,6 +243,8 @@ junk() {
 	stderr=$(<"$SB/stderr")
 	assert_eq "${stderr##*$'\n'}" "lendk: exec: $SB/junk is not executable. Stop and ask the user."
 	assert_eq "$status" 126
+	# Only Linux refuses to run a file open for writing (ETXTBSY).
+	[[ $(uname -s) == Linux ]] || return 0
 	cp -L "$(type -P env)" "$SB/busy"
 	exec 7>>"$SB/busy"
 	run_raw run -- "$SB/busy"

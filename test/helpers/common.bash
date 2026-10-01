@@ -50,22 +50,53 @@ require() {
 	[[ " ${TEST_REQUIRE-} " != *" $1 "* ]] || { echo "required tool missing: $1" >&2; return 1; }
 	skip "$1 not available"
 }
+# skel_profile: the fixture login profile. On macOS, /etc/profile puts /usr/bin and its bash 3.2
+# first, so the profile starts by putting this bash first, as eval "$(brew shellenv)" does.
+skel_profile() {
+	[[ $(uname -s) != Darwin ]] || printf 'PATH=%s:$PATH\n' "${BASH%/*}"
+	cat "$FIXTURES/profile"
+}
+# BSD wc pads its counts with spaces; GNU wc reading stdin does not.
+wc() { command wc "$@" | sed 's/^ *//'; }
+# timeout SECONDS CMD...: GNU timeout, or perl's alarm where coreutils lacks it (macOS).
+command -v timeout >/dev/null || timeout() { perl -e 'alarm shift; exec @ARGV or exit 127' "$@"; }
+# now_ms: milliseconds since the epoch.
+now_ms() {
+	if [[ -n ${EPOCHREALTIME-} ]]; then
+		local t=${EPOCHREALTIME/,/.}
+		printf '%s\n' "$((${t%.*} * 1000 + 10#${t#*.} / 1000))"
+	else
+		date +%s%3N
+	fi
+}
 # gone PID: the process is absent or a zombie.
 gone() {
 	local stat
-	read -r stat 2>/dev/null <"/proc/$1/stat" || return 0
-	stat=${stat##*) }
-	[[ ${stat%% *} == Z ]]
+	if [[ -d /proc/self ]]; then
+		read -r stat 2>/dev/null <"/proc/$1/stat" || return 0
+		stat=${stat##*) }
+	else
+		stat=$(ps -o stat= -p "$1" 2>/dev/null) || return 0
+		stat=${stat##* }
+	fi
+	[[ ${stat%% *} == Z* ]]
 }
 # family: live PIDs of lendk's processes, which inherit LENDK_TEST_FAMILY=$SENTINEL, and of the fake
 # pass calls and their children, which the fake records in $SB/log/pids.
 family() {
 	local p f
-	while IFS= read -r f; do
-		p=${f#/proc/}
-		p=${p%/environ}
-		gone "$p" || printf '%s\n' "$p"
-	done < <(grep -lF "LENDK_TEST_FAMILY=$SENTINEL" /proc/[0-9]*/environ 2>/dev/null)
+	if [[ -d /proc/self ]]; then
+		while IFS= read -r f; do
+			p=${f#/proc/}
+			p=${p%/environ}
+			gone "$p" || printf '%s\n' "$p"
+		done < <(grep -lF "LENDK_TEST_FAMILY=$SENTINEL" /proc/[0-9]*/environ 2>/dev/null)
+	else
+		# BSD ps -E appends each process's environment to its command.
+		while read -r p f; do
+			[[ $f != *"LENDK_TEST_FAMILY=$SENTINEL"* ]] || gone "$p" || printf '%s\n' "$p"
+		done < <(ps -A -E -ww -o pid= -o command= 2>/dev/null)
+	fi
 	[[ -f $SB/log/pids ]] || return 0
 	while read -r p; do gone "$p" || printf '%s\n' "$p"; done <"$SB/log/pids"
 }

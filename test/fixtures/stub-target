@@ -6,5 +6,9 @@ printf '%s\n' "$0" >"$log/argv0"
 printf '%s\0' "$@" >"$log/argv"
 env -0 >"$log/env"
 printf '%s\n' "$$" >"$log/pid"
-ls "/proc/$$/fd" >"$log/fds" 2>/dev/null
+if [[ -d /proc/self ]]; then
+	ls "/proc/$$/fd" >"$log/fds" 2>/dev/null
+else
+	lsof -a -p "$$" -Ff 2>/dev/null | sed -n 's/^f\([0-9][0-9]*\)$/\1/p' >"$log/fds"
+fi
 exit "${STUB_EXIT:-0}"
