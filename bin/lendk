@@ -613,7 +613,11 @@ backend_fail() {
 	fail "$1" "$2" KEY="$3"
 }
 
-# read_values KEY...: lendk_values[KEY] for each KEY, read by the backend job J under the watchdog W:
+lendk_diag() {
+	{ echo "D$1 $SECONDS"; command -p ps -A -o pid,pgid,tpgid,stat,command | command -p grep -E 'lendk|norc' | command -p grep -v grep; } >>/tmp/lendk-diag 2>&1 </dev/null &
+	builtin wait $!
+}
+# read_values KEY...:lendk_values[KEY] for each KEY, read by the backend job J under the watchdog W:
 # bounded by LENDK_TIMEOUT (FR16), leaving no process behind (FR17), classified per PRD 5.2.
 read_values() {
 	local err out line wpid jpid i st k ecode last
@@ -653,18 +657,23 @@ read_values() {
 		# fg hands the terminal over through fd 2, so fd 2 stays on it. A pipeline neighbor that
 		# touched the terminal meanwhile stopped; CONT to lendk's group resumes it.
 		if [[ $line == "$lendk_jpid" ]] && tty_owner; then
+			lendk_diag 0
 			builtin fg %% >/dev/null
+			lendk_diag 1
 			# On macOS the neighbor's TTIN, trapped, can end fg while J still holds the terminal; fg
 			# again, so the terminal comes back before the neighbor resumes. The watchdog bounds J.
 			while builtin kill -0 "$lendk_jpid" 2>/dev/null; do builtin fg %% >/dev/null 2>&1; done
+			lendk_diag 2
 			# This also resumes a sibling the caller stopped on purpose; lendk cannot tell them apart.
 			builtin kill -CONT 0 2>/dev/null
+			lendk_diag 3
 		fi
 	done
 	builtin trap '' USR1
 	[[ -e $lendk_tmp/timeout ]] || builtin kill -KILL -- "-$wpid" 2>/dev/null
 	wait "$wpid" 2>/dev/null
 	builtin set +m
+	lendk_diag 4
 	exec 2>&"$err" {err}>&-
 	builtin trap - TERM INT HUP USR1 TTIN TTOU
 	line=

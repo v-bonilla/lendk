@@ -53,8 +53,8 @@ jobs:
         env:
           BATS_TEST_TIMEOUT: 40
         run: |
-          b=$(command -v bash)
-          { sleep 1; printf '%s\r' "{ sleep 1; kill -CONT 0; sleep 1; echo A-done; } | { kill -STOP \$BASHPID; sleep 2; echo B-done; }"; sleep 7; printf 'echo rc=$?\r'; sleep 1; printf 'exit\r'; } | script -qeF /dev/null "$b" --norc --noprofile -i || true
+          test/lib/bats-core/bin/bats --filter 'pipeline neighbor that reads' test/signals.bats || true
+          cut -c1-120 /tmp/lendk-diag
       - run: make test
         timeout-minutes: 20
         env:
