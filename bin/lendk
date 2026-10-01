@@ -654,6 +654,9 @@ read_values() {
 		# touched the terminal meanwhile stopped; CONT to lendk's group resumes it.
 		if [[ $line == "$lendk_jpid" ]] && tty_owner; then
 			builtin fg %% >/dev/null
+			# On macOS the neighbor's TTIN, trapped, can end fg while J still holds the terminal; fg
+			# again, so the terminal comes back before the neighbor resumes. The watchdog bounds J.
+			while builtin kill -0 "$lendk_jpid" 2>/dev/null; do builtin fg %% >/dev/null 2>&1; done
 			# This also resumes a sibling the caller stopped on purpose; lendk cannot tell them apart.
 			builtin kill -CONT 0 2>/dev/null
 		fi
