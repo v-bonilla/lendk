@@ -340,7 +340,13 @@ login() {
 	rm "$STUB/pass"
 	stub sudo 'shift; exec "$@"'
 	# The package manager stands for any step the user interrupts.
-	stub "$PM" 'kill -TERM "$(ps -o ppid= -p "$PPID" | tr -d " ")"; sleep 1'
+	# It signals the nearest ancestor running install.sh, since sh -c may exec it or fork it.
+	stub "$PM" 'p=$PPID
+for i in 1 2 3; do
+	case $(ps -o args= -p "$p") in *install.sh*) kill -TERM "$p"; sleep 1; exit 0 ;; esac
+	p=$(ps -o ppid= -p "$p" | tr -d " ")
+done
+exit 1'
 	inst --install-deps
 	assert_eq "$status" 1
 	assert_eq "$final" 'lendk-install: install: interrupted by a signal; rerun the installer'
