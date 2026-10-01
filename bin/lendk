@@ -580,6 +580,24 @@ watchdog() {
 	fi
 	[[ -z $tfd ]] || builtin exec {tfd}<&-
 	((abandon == 0)) || command -p rm -rf -- "$lendk_tmp"
+	return 0
+}
+# watchdog_rescue: a watchdog that died of an error ends the call as a timeout at once, so the
+# backend never outlives it.
+watchdog_rescue() {
+	local jpid='' i
+	for i in 1 2 3 4 5 6 7 8 9 10; do
+		{ builtin read -r jpid <"$lendk_tmp/pid"; } 2>/dev/null && break
+		command -p sleep 0.1
+	done
+	: >"$lendk_tmp/timeout"
+	if [[ -n $jpid ]]; then
+		builtin kill -TERM -- "-$jpid" 2>/dev/null
+		builtin kill -CONT -- "-$jpid" 2>/dev/null
+		command -p sleep 0.3
+		builtin kill -KILL -- "-$jpid" 2>/dev/null
+	fi
+	builtin kill -0 "$$" 2>/dev/null || command -p rm -rf -- "$lendk_tmp"
 }
 # watchdog_tick: about 0.1 s.
 watchdog_tick() {
@@ -589,11 +607,12 @@ watchdog_tick() {
 		command -p sleep 0.1
 	fi
 }
-# watchdog_clock: now, in microseconds from bash 5's clock, or 0 without one.
+# watchdog_clock: now, in microseconds from bash 5's clock, or 0 without one. bash 4.4 imports
+# EPOCHREALTIME from the caller's environment as a plain variable, so only bash 5's counts.
 watchdog_clock() {
 	local t=${EPOCHREALTIME-}
 	now=0
-	[[ -n $t ]] || return 0
+	((BASH_VERSINFO[0] >= 5)) && [[ $t =~ ^[0-9]+[.,][0-9]+$ ]] || return 0
 	t=${t/,/.}
 	now=$((${t%.*} * 1000000 + 10#${t#*.}))
 }
@@ -654,7 +673,7 @@ read_values() {
 	builtin trap : TTIN TTOU
 	# From set -m to set +m only builtins run: an external command would be a job taking the terminal.
 	builtin set -m
-	watchdog </dev/null >/dev/null 2>&1 &
+	{ (watchdog) || watchdog_rescue; } </dev/null >/dev/null 2>&1 &
 	wpid=$!
 	coproc LENDK_J { backend_job "$@"; }
 	jpid=$LENDK_J_PID

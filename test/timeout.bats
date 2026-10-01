@@ -46,7 +46,7 @@ before_tenths() {
 		assert_class timeout 120
 		within 2 4
 		# The implementation margin: LENDK_TIMEOUT + 1.5 s, plus 0.2 s for the harness.
-		before_tenths 37
+		before_tenths 32
 		assert_eq "$(compgen -G "$SB/log/target.*")" ""
 		assert_eq "$(ls -A "$TMPDIR")" ""
 	done
@@ -61,4 +61,18 @@ before_tenths() {
 	within 2 4
 	LENDK_TIMEOUT=5 timed_lendk run -- stub
 	assert_eq "$status" 0
+}
+
+@test "FR16: a caller's EPOCHREALTIME, garbage or frozen, cannot stretch the bound under bash 4.4" {
+	local v
+	echo hang >"$SB/store/env/K1.mode"
+	for v in abc 1700000000.000000; do
+		printf '#!/bin/sh\nexec env EPOCHREALTIME=%s %s "$@"\n' "$v" "$LENDK" >"$SB/poisoned"
+		chmod +x "$SB/poisoned"
+		LENDK=$SB/poisoned LENDK_TIMEOUT=2 timed_lendk run -- stub
+		assert_class timeout 120
+		within 2 4
+		before_tenths 32
+		assert_eq "$(ls -A "$TMPDIR")" ""
+	done
 }
