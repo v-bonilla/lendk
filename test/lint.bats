@@ -38,6 +38,15 @@ lint_copy() {
 	assert_eq "$status" 0
 }
 
+@test "NFR9: lint-repo.bash skips gitignored build output such as dist/" {
+	scratch
+	mkdir -p "$COPY/dist"
+	printf 'built %s\n' $'\xe2\x80\x94' >"$COPY/dist/lendk.tar.gz"
+	run bash "$ROOT/test/lint-repo.bash" "$COPY"
+	assert_eq "$output" ""
+	assert_eq "$status" 0
+}
+
 @test "NFR9: lint-repo.bash flags a planted em-dash" {
 	scratch
 	printf 'a %s b\n' "$(printf '\342\200\224')" >>"$COPY/docs/prd.md"

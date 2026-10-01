@@ -7,8 +7,15 @@ cd "$root" || exit 2
 problems=0
 problem() { printf 'lint-repo: %s\n' "$*"; problems=$((problems + 1)); }
 
+# Ignored directories, the .gitignore lines ending in /, hold build output such as dist/, not repository files.
+prune=(-name .git -o -path ./test/lib)
+if [[ -f .gitignore ]]; then
+	while IFS= read -r f; do
+		[[ $f == */ && $f != *[*?[]* ]] && prune+=(-o -path "./${f%/}")
+	done <.gitignore
+fi
 files=()
-while IFS= read -r f; do files+=("${f#./}"); done < <(find . \( -name .git -o -path ./test/lib \) -prune -o -type f -print | sort)
+while IFS= read -r f; do files+=("${f#./}"); done < <(find . \( "${prune[@]}" \) -prune -o -type f -print | sort)
 
 # NFR9: no em-dashes, email addresses, home paths other than /home/alice, or real-looking keys.
 emdash=$'\xe2\x80\x94'
