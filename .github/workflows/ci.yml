@@ -47,14 +47,4 @@ jobs:
         with:
           submodules: true
       - run: brew install bash gnupg pass
-      - name: diag
-        run: |
-          d=$(mktemp -d); mkdir -m 700 $d/shims; t=$d/shims/.tmp.1
-          set -x
-          (builtin umask 077 && builtin printf '%s' hi >"$t"); echo "printf=$?"
-          command -p chmod 755 -- "$t"; echo "chmod=$?"
-          command -p mv -f -- "$t" $d/shims/x; echo "mv=$?"
-          command -p ls -ln -- $d/shims/x; echo "ls=$?"
-          command -V chmod mv ls; getconf PATH || true
-          true
       - run: make test
