@@ -15,14 +15,9 @@ setup_file() {
 	unset IFS
 	(cd "$SYS" && rm -f bash pass gpg gpg2 curl wget apt-get dnf pacman zypper apk brew systemctl sudo)
 	command -v git >/dev/null && command -v make >/dev/null || return 0
-	# The release: make dist on a commit of this tree, plus a skill when the tree has none yet.
-	mkdir -p "$src/skills/lendk"
-	cp -R "$BATS_TEST_DIRNAME/../bin" "$BATS_TEST_DIRNAME/../Makefile" "$BATS_TEST_DIRNAME/../LICENSE" "$BATS_TEST_DIRNAME/../install.sh" "$src/"
-	if [[ -d $BATS_TEST_DIRNAME/../skills/lendk ]]; then
-		cp -R "$BATS_TEST_DIRNAME/../skills/lendk/." "$src/skills/lendk/"
-	else
-		printf -- '---\nname: lendk\ndescription: test skill\n---\n' >"$src/skills/lendk/SKILL.md"
-	fi
+	# The release: make dist on a commit of this tree.
+	mkdir -p "$src"
+	cp -R "$BATS_TEST_DIRNAME/../bin" "$BATS_TEST_DIRNAME/../skills" "$BATS_TEST_DIRNAME/../Makefile" "$BATS_TEST_DIRNAME/../LICENSE" "$BATS_TEST_DIRNAME/../install.sh" "$src/"
 	git -C "$src" init -q
 	git -C "$src" add -A
 	git -C "$src" -c user.name=test -c user.email=test commit -qm src
@@ -190,7 +185,9 @@ login() {
 @test "installer: --skill-dir copies the agent skill, and --uninstall with it removes the copy" {
 	inst --skill-dir "$SB/skills"
 	assert_eq "$status" 0
-	grep -qx 'name: lendk' "$SB/skills/lendk/SKILL.md"
+	diff -r "$ROOT/skills/lendk" "$SB/skills/lendk"
+	assert_eq "$(sed -n '1,/^name:/p' "$SB/skills/lendk/SKILL.md")" $'---\nname: lendk'
+	grep -q '^description: Use when ' "$SB/skills/lendk/SKILL.md"
 	inst --uninstall --skill-dir "$SB/skills"
 	assert_eq "$status" 0
 	[[ ! -e $SB/skills/lendk ]]

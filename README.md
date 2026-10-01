@@ -2,25 +2,109 @@
 
 `export OPENAI_API_KEY=...` in a shell rc file gives every key to every process you start: AI coding agents, package install scripts, any tool you try once. lendk keeps your API keys in [pass](https://www.passwordstore.org/) and gives each one only to the commands that need it, only while they run. You type `gh`; `gh` gets `GH_TOKEN`; nothing else does. A shim per mapped command sits first on PATH, so shells, scripts, Python subprocesses and agents all get the same behavior with no prefix command.
 
+## Key features
+
+- Per-command keys: `gh` gets `GH_TOKEN`, and no other process gets any key.
+- No prefix command: shims first on PATH serve shells, scripts, subprocesses and AI agents alike.
+- Keys stay in pass, never in rc files, argv, files, logs or lendk's output.
+- Built for agents: no hung passphrase prompts, one stable stderr class line per failure.
+- `lendk check` finds shadowed shims, missing keys and PATH mistakes without decrypting.
+- One bash file: no daemon, no cache of values, no network access, no telemetry.
+- Linux and macOS, installed by a checksum-verifying script without root.
+
 ## Quick start
 
-You need `git`, `make`, a GPG key and a pass store initialized for it. Without a store, run `pass init GPG-ID` first, GPG-ID being your key's ID or email.
+You need a GPG key and a pass store initialized for it; the installer prints the steps when the store is missing.
 
-Five commands, bash on Linux:
+Four commands, bash on Linux:
 
 <!-- quickstart -->
 ```
-git clone https://github.com/v-bonilla/lendk && make -C lendk install
-~/.local/bin/lendk init sh >> ~/.profile
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
 exec bash -l
 pass insert env/GH_TOKEN
 lendk add gh GH_TOKEN
 ```
 <!-- quickstart -->
 
-Command 2 names lendk by path: Debian and Ubuntu put `~/.local/bin` on PATH only at a login after it exists, which command 3 starts. Use `~/.bash_profile` instead when it exists. Desktop apps see the shims after the next desktop login. For zsh, systemd and macOS, see [PATH setup](#path-setup).
+Command 2 starts a login shell, which reads the PATH block the installer added. Desktop apps see the shims after the next desktop login. For zsh, systemd and macOS, see [PATH setup](#path-setup).
 
 Now `gh` gets `GH_TOKEN`, and `echo "$GH_TOKEN"` in your shell prints nothing.
+
+## Installation
+
+Install only from this repository. Same-named npm and crates.io packages are unrelated.
+
+### For humans
+
+```
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
+```
+
+The installer downloads the latest release and its `SHA256SUMS`, verifies the checksum, and installs `lendk` into `~/.local/bin` without root. It checks for bash 4.4 or later, GnuPG 2.4 or later, pass, curl or wget, tar and a SHA-256 tool, and prints the package manager command for any that are missing. It then appends a `# >>> lendk-install >>>` block to your login file (`~/.bash_profile` or `~/.profile`, plus `~/.zshenv` for zsh and `~/.zprofile` for zsh on macOS) that puts `~/.local/bin` on PATH and the shim directory first, and on Linux with a systemd user session writes `~/.config/environment.d/99-lendk.conf`. It prints each change. Rerunning it upgrades lendk and changes nothing else.
+
+Options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
+
+```
+--version X.Y.Z    install release X.Y.Z instead of the latest
+--prefix DIR       install into DIR/bin (default ~/.local)
+--yes              never prompt (also implied when stdin is not a terminal)
+--install-deps     run the package manager command for missing dependencies
+--no-modify-path   leave login files and the environment.d file alone
+--skill-dir DIR    copy the lendk agent skill to DIR/lendk
+--uninstall        remove what this installer added, never the map or the pass store
+```
+
+The last line of its output is `lendk-install: ok: TEXT`, or `lendk-install: CLASS: TEXT` with CLASS one of `usage`, `unsupported-os`, `missing-deps`, `download`, `checksum`, `install` or `path`. `LENDK_INSTALL_BASE_URL` replaces `https://github.com/v-bonilla/lendk/releases`, for tests and mirrors.
+
+Uninstall: `curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --uninstall`. It removes its login file blocks, the environment.d file, lendk's shims and the installed `lendk`, never the map or the store.
+
+#### From source
+
+```
+git clone https://github.com/v-bonilla/lendk
+make -C lendk install                  # PREFIX defaults to ~/.local; DESTDIR is honored
+```
+
+`make install` renames a new file over the old one, so a running lendk keeps reading its copy.
+
+Upgrade: `git pull`, then `make install`. With versioned install directories behind a stable symlink, run `lendk sync` once through the symlink.
+
+Uninstall: delete the `# >>> lendk >>>` blocks from your rc files and the environment.d file, then `make -C lendk uninstall`. It removes lendk's shims, the shim directory and lendk's data directory if empty, and the installed file when it is lendk's, never the map, the store or your rc files.
+
+### For AI agents
+
+Paste this prompt into your coding agent:
+
+<!-- agent-prompt -->
+```
+Install lendk (https://github.com/v-bonilla/lendk) on this machine. It gives API keys stored in
+pass only to the commands mapped to them.
+
+1. Run the installer without prompts:
+   curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --yes
+   If you support Agent Skills, add --skill-dir with your skills directory, for example
+   --skill-dir ~/.claude/skills for Claude Code, so you learn how to use lendk.
+2. The last output line is "lendk-install: ok: TEXT" or "lendk-install: CLASS: TEXT". On a CLASS,
+   diagnose the cause, fix it and rerun. Ask me before rerunning with --install-deps or running
+   anything with sudo. Never bypass a checksum failure. If the output says the pass store is not
+   initialized, show me the gpg --quick-generate-key and pass init steps and ask before running them.
+3. Verify:
+   - lendk --version prints the version (use ~/.local/bin/lendk until a new login shell).
+   - bash -lc 'command -v lendk; printf "%s\n" "$PATH"' finds lendk, and the first PATH entry is
+     the shim directory (~/.local/share/lendk/shims). For zsh, check zsh -lc the same way.
+   - lendk check runs and prints its report without decrypting. Relay any problem it shows.
+   - Only if I agree: an end-to-end test with a throwaway key. Run
+     printf 'lendk-test\n' | pass insert -m env/DEMO_TOKEN, then
+     lendk run DEMO_TOKEN -- sh -c 'test -n "$DEMO_TOKEN" && echo received', then
+     pass rm -f env/DEMO_TOKEN. On a "lendk: locked:" line, ask me to run lendk unlock DEMO_TOKEN
+     in a terminal, then retry once.
+4. Never read or print a secret, never run pass show, and never print the environment.
+5. Finish with a short report: what you installed and which files changed, each check's result,
+   and what I still have to do (open a new login shell, store keys with pass insert env/KEY, map
+   commands with lendk add CMD KEY).
+```
+<!-- agent-prompt -->
 
 ## Daily use
 
@@ -202,53 +286,13 @@ The first FIX shows in a terminal, the second without one.
 - `timeout`: a hardware token may be waiting for a touch, or gpg-agent is stuck; raise `LENDK_TIMEOUT` or run `lendk unlock KEY` to see gpg's own prompt.
 - `unsafe`: the map, its directory or the shim directory is writable by others or owned by someone else.
 
-## For AI agents
+## Agent contract
 
 - The `lendk: CLASS:` line on stderr is the contract. Act on the class; exit codes are hints and collide with the target's own codes.
 - On `locked`, `timeout` or `canceled`, stop and ask a human to run `lendk unlock` in a terminal. Do not retry in a loop.
 - Never run `pass`, `lendk add`, `lendk rm`, or `lendk run` with key names, and never print the environment. Relay the FIX to the user instead.
 - Run commands as usual: `gh pr list`, not `lendk run -- gh pr list`.
-
-## Install, upgrade, uninstall
-
-Install only from this repository. Same-named npm and crates.io packages are unrelated.
-
-### Installation for humans
-
-```
-curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
-```
-
-The installer downloads the latest release and its `SHA256SUMS`, verifies the checksum, and installs `lendk` into `~/.local/bin` without root. It checks for bash 4.4 or later, GnuPG 2.4 or later, pass, curl or wget, tar and a SHA-256 tool, and prints the package manager command for any that are missing. It then appends a `# >>> lendk-install >>>` block to your login file (`~/.bash_profile` or `~/.profile`, plus `~/.zshenv` for zsh and `~/.zprofile` for zsh on macOS) that puts `~/.local/bin` on PATH and the shim directory first, and on Linux with a systemd user session writes `~/.config/environment.d/99-lendk.conf`. It prints each change. Rerunning it upgrades lendk and changes nothing else.
-
-Pass options after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
-
-```
---version X.Y.Z    install release X.Y.Z instead of the latest
---prefix DIR       install into DIR/bin (default ~/.local)
---yes              never prompt (also implied when stdin is not a terminal)
---install-deps     run the package manager command for missing dependencies
---no-modify-path   leave login files and the environment.d file alone
---skill-dir DIR    copy the lendk agent skill to DIR/lendk
---uninstall        remove what this installer added, never the map or the pass store
-```
-
-The last line of its output is `lendk-install: ok: TEXT`, or `lendk-install: CLASS: TEXT` with CLASS one of `usage`, `unsupported-os`, `missing-deps`, `download`, `checksum`, `install` or `path`. `LENDK_INSTALL_BASE_URL` replaces `https://github.com/v-bonilla/lendk/releases`, for tests and mirrors.
-
-Uninstall: `curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --uninstall`. It removes its login file blocks, the environment.d file, lendk's shims and the installed `lendk`, never the map or the store.
-
-### From source
-
-```
-git clone https://github.com/v-bonilla/lendk
-make -C lendk install                  # PREFIX defaults to ~/.local; DESTDIR is honored
-```
-
-`make install` renames a new file over the old one, so a running lendk keeps reading its copy.
-
-Upgrade: `git pull`, then `make install`. With versioned install directories behind a stable symlink, run `lendk sync` once through the symlink.
-
-Uninstall: delete the `# >>> lendk >>>` blocks from your rc files and the environment.d file, then `make -C lendk uninstall`. It removes lendk's shims, the shim directory and lendk's data directory if empty, and the installed file when it is lendk's, never the map, the store or your rc files.
+- `install.sh --skill-dir DIR` copies the lendk agent skill, which teaches all of this, to `DIR/lendk`.
 
 ## Requirements
 
@@ -259,6 +303,8 @@ Uninstall: delete the `# >>> lendk >>>` blocks from your rc files and the enviro
 - `git` and `make` to install from source
 
 lendk supports Linux and macOS; CI runs the full test suite on both. On macOS it needs bash and GnuPG from Homebrew (`brew install bash gnupg pass`), since the system bash is 3.2. Homebrew's bash must come first on the login PATH: `/etc/profile` puts `/usr/bin` first, so keep `eval "$(brew shellenv)"` in `~/.profile` (or `~/.bash_profile`) and `~/.zprofile`, above lendk's blocks. Development needs Docker for `make check-docker` and `uv` for shellcheck; `make deps` fetches bats-core.
+
+On macOS, after a passphrase prompt inside a pipeline whose neighbor reads the terminal, such as `gh pr view | less`, the interactive bash can still show that neighbor as stopped; `fg` resumes it.
 
 ## License
 

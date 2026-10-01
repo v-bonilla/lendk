@@ -13,6 +13,7 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 - Fail-fast behavior without a terminal: the `locked` class, `LENDK_PROMPT` and `LENDK_TIMEOUT`.
 - A one-line stderr contract, `lendk: CLASS: TEXT. FIX`, with separate fixes for callers without a terminal.
 - `make install` and `make uninstall` without root, and `install.sh`, a checksum-verifying installer for the latest release.
+- An agent skill, `skills/lendk`, that `install.sh --skill-dir` installs, and a README prompt that has an AI agent install and verify lendk.
 - Linux and macOS support; macOS needs bash and GnuPG from Homebrew.
 
 [Unreleased]: https://github.com/v-bonilla/lendk/compare/v1.0.0...HEAD

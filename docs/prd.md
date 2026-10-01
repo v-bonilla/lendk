@@ -94,17 +94,16 @@ Real binaries still resolve in PATH order, so a virtualenv's `llm` is the one th
 
 ### 4.4 Quick start
 
-Five commands, bash on Linux:
+Four commands, bash on Linux:
 
 ```
-git clone https://github.com/v-bonilla/lendk && make -C lendk install
-~/.local/bin/lendk init sh >> ~/.profile
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
 exec bash -l
 pass insert env/GH_TOKEN
 lendk add gh GH_TOKEN
 ```
 
-Command 2 names lendk by path: Debian and Ubuntu put `~/.local/bin` on PATH only at a login after it exists, which command 3 starts. Use `~/.bash_profile` when it exists; desktop apps see the shims after the next desktop login.
+Command 1 installs lendk and adds a PATH block to the login file; command 2 starts a login shell that reads it. Desktop apps see the shims after the next desktop login.
 
 ## 5. Agent contract
 
@@ -207,13 +206,14 @@ Shims:
 - FR34 `unlock` decrypts each named key (default: the first mapped key present), discards values, prints `unlocked`, and follows `run`'s interactivity, timeout and class rules; no mapped key present is `missing-key`. Stores with per-folder `.gpg-id` recipients need `unlock KEY` per recipient.
 - FR35 `init` reads no map and prints 4.3's block, holding the absolute shim directory: `sh` moves it to the front of PATH without duplicates; `bash` and `zsh` add a prompt hook repeating that plus `hash -r` or `rehash`, registered once even when the block runs twice; `systemd` prints `PATH=` with the absolute shim path, then `${PATH}`, as systemd's environment.d generator accepts.
 - FR36 `--help` prints verbs, map grammar, name lists, classes with exit hints and environment variables, exit 0; `--version` prints `lendk X.Y.Z`; no arguments or an unknown verb is `usage`.
-- FR37 The README covers: the 4.4 quick start; installing only from the project repository; 4.3 for bash, zsh, systemd and macOS; the security model and `s2k-count` trade-off; cache TTLs and flushing; `lendk run -- CMD` by absolute path in cron, systemd and MCP configs; the git credential helper `!lendk run -- gh auth git-credential`, replacing the absolute path `gh auth setup-git` writes; PATH-bypassing launchers; the classes and name lists as `--help` prints them; an agent block: act on the `lendk: CLASS:` line; on `locked`, `timeout` or `canceled`, stop and ask the user; never run `pass`, `lendk add`, `lendk rm` or `lendk run` with keys, or print the environment.
+- FR37 The README covers: key features before the quick start; the 4.4 quick start; installation for humans (`install.sh`, its options and changes, `make install`, uninstall) and a fenced prompt for AI agents that runs the installer with `--yes`, asks before `--install-deps`, sudo, a GPG key or `pass init`, installs the skill with `--skill-dir`, verifies `--version`, the login PATH, `check` and, with consent, a throwaway `run`, never runs `pass show` or prints secrets, and ends with a report; the agent prompt names only options `install.sh --help` lists, classes it emits and verbs `--help` lists; installing only from the project repository; 4.3 for bash, zsh, systemd and macOS; the security model and `s2k-count` trade-off; cache TTLs and flushing; `lendk run -- CMD` by absolute path in cron, systemd and MCP configs; the git credential helper `!lendk run -- gh auth git-credential`, replacing the absolute path `gh auth setup-git` writes; PATH-bypassing launchers; the classes and name lists as `--help` prints them; an agent block: act on the `lendk: CLASS:` line; on `locked`, `timeout` or `canceled`, stop and ask the user; never run `pass`, `lendk add`, `lendk rm` or `lendk run` with keys, or print the environment.
+- FR38 `skills/lendk/SKILL.md` is an Agent Skill (frontmatter `name: lendk` and a `description` of when to load it) that teaches the mental model, every verb, the class table with what to do for each class, the agent rules of FR37, answers to common questions and troubleshooting with `check`. Its verbs and classes are exactly `--help`'s; `install.sh --skill-dir DIR` copies it to `DIR/lendk`.
 
 ## 7. Non-functional requirements
 
 - NFR1 Shim overhead: with keys preset and a 50-entry map, shim exec to target exec exceeds a direct exec of the target by at most 20 ms median and 40 ms p95 over 200 runs (`make bench`).
 - NFR2 Decrypt cost: `run` makes one backend read per key the caller did not set, `unlock` one per key it names, in sequence; other verbs make none. With real GnuPG, a warm cache and a key protected at `s2k-count 8388608`, a 3-key call takes at most 500 ms median (`make bench`).
-- NFR3 Bash 4.4+ and GnuPG 2.4+ (FR22). Tier 1 is Linux (Debian 13, Ubuntu 24.04+, current Fedora): every change passes `make check` and `make check-docker` (AC1). macOS is supported with bash and GnuPG from Homebrew, Homebrew's bash first on the login PATH: every change passes `make test` on GitHub's macOS runner, where the strace, systemd and ETXTBSY checks skip because macOS lacks them. `bin/lendk` uses POSIX utilities and options, plus `mktemp -d TEMPLATE`, plain `readlink` and fractional `sleep`, which GNU, BSD and busybox share; never `timeout`, `flock`, `stat`, `readlink -f` or `setsid`. It reads `/proc/PID/stat`, or runs `ps` where `/proc` is absent, only to learn whether its process group owns the terminal before a loopback prompt.
+- NFR3 Bash 4.4+ and GnuPG 2.4+ (FR22). Tier 1 is Linux (Debian 13, Ubuntu 24.04+, current Fedora): every change passes `make check` and `make check-docker` (AC1). macOS is supported with bash and GnuPG from Homebrew, Homebrew's bash first on the login PATH: every change passes `make test` on GitHub's macOS runner, where the strace, systemd and ETXTBSY checks skip because macOS lacks them. One limitation is macOS-only: after a loopback passphrase prompt inside a pipeline whose neighbor reads the terminal, the outer interactive bash can still show that neighbor as stopped; `fg` resumes it. `bin/lendk` uses POSIX utilities and options, plus `mktemp -d TEMPLATE`, plain `readlink` and fractional `sleep`, which GNU, BSD and busybox share; never `timeout`, `flock`, `stat`, `readlink -f` or `setsid`. It reads `/proc/PID/stat`, or runs `ps` where `/proc` is absent, only to learn whether its process group owns the terminal before a loopback prompt.
 - NFR4 Runtime dependencies: bash 4.4+, pass 1.7+, GnuPG 2.4+, POSIX utilities. Development: bats-core as a pinned git submodule, shellcheck pinned through `uvx` with zero findings, Docker for `make check-docker`; nothing else.
 - NFR5 lendk writes only the map (`add`, `rm`), the shim directory (`add`, `rm`, `sync`) and the lock: no caches or logs. Temporary files are mode 0600 in a 0700 directory, hold no value, and are gone before exit or exec, and within 2 s when lendk is killed.
 - NFR6 No network, telemetry or auto-update: every verb run under `strace -f --seccomp-bpf -e trace=connect` makes no AF_INET or AF_INET6 `connect`; the source has no `curl`, `wget`, `nc` or `/dev/tcp`. `check` is the self-report for drift, and a GnuPG status-code change fails FR18.
@@ -246,7 +246,7 @@ gopass `env` (a whole subtree), fnox and secretspec (manifests), CyberArk summon
 - AC2 FR18 passes on GnuPG 2.4 in both pass branches; FR4 and FR20 pass under strace; FR22 passes under bash 3.2 and 4.3.
 - AC3 `make bench` meets NFR1 and NFR2 on the development host; CI reports it without gating.
 - AC4 Fresh HOME whose `.profile` and `.bashrc` mirror Debian's `/etc/skel` (`.bashrc` sourced before `~/.local/bin` joins PATH, and returning early when non-interactive), stub `gh` recording `GH_TOKEN`, `make install`, the 4.3 blocks, `add gh GH_TOKEN`: the key reaches `gh` from interactive bash under `script`; `bash -lc`; `zsh -c` under a parent that prepended a directory holding another `gh`; Python `subprocess` without a shell, started from `sh -lc` like a desktop session; a nested shim, with one decrypt. `/usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator` puts the shim directory first; the parent shell lacks `GH_TOKEN`; `make uninstall` leaves only the map.
-- AC5 G3: on the AC4 HOME with a scratch GnuPG key and store, the README's five quick-start commands run as written, except that command 1 clones a local copy of the working tree and command 4 reads the value from stdin; commands 4 and 5 run in `bash -l` shells, which command 3 starts. A stub `gh` run by `bash -lc gh` then receives `GH_TOKEN`. The README has every FR37 topic.
+- AC5 G3: on the AC4 HOME with a scratch GnuPG key and store, the README's four quick-start commands run as written, except that command 1 runs the working tree's `install.sh` against a `make dist` release served from `file://` and command 3 reads the value from stdin; commands 3 and 4 run in `bash -l` shells, which command 2 starts. A stub `gh` run by `bash -lc gh` then receives `GH_TOKEN`. The README has every FR37 topic.
 - AC6 The GitHub Actions workflow passes on the private repository before it is made public, every job, macOS included.
 
 ## 12. Failure signals
