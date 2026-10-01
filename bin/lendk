@@ -1326,9 +1326,14 @@ check_scan() {
 	declare -gA c_status=()
 	scan_map
 	set_self
-	if [[ ! -e $map ]]; then
-		check_add '' "$map does not exist" "map a command: lendk add CMD KEY..."
-	elif failure_text check_map_paths; then
+	if [[ ! -e $map ]] || ((${#m_cmds[@]} + ${#m_groups[@]} + ${#m_bad[@]} == 0)); then
+		if ((interactive)); then
+			printf 'lendk: notice: no command is mapped yet, so lendk gives no keys; map one with lendk add CMD KEY.\n' >&2
+		else
+			printf 'lendk: notice: no command is mapped yet, so lendk gives no keys; ask the user which commands to map.\n' >&2
+		fi
+	fi
+	if [[ -e $map ]] && failure_text check_map_paths; then
 		check_add '' "$text" "chmod go-w it, or recreate it as your own"
 	fi
 	failure_text check_shim_dir && check_add '' "$text" "chmod go-w $shims, or recreate it as your own"

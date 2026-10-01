@@ -225,6 +225,20 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
+@test "FR33: a fresh install with no map, or an empty one, is no problem: exit 0 and a notice" {
+	run_lendk check
+	assert_eq "$output" "$HEAD"
+	assert_eq "$stderr" 'lendk: notice: no command is mapped yet, so lendk gives no keys; ask the user which commands to map.'
+	assert_eq "$status" 0
+	LENDK_PROMPT=allow run_lendk check
+	assert_eq "$stderr" 'lendk: notice: no command is mapped yet, so lendk gives no keys; map one with lendk add CMD KEY.'
+	assert_eq "$status" 0
+	map '# nothing yet'
+	run_lendk check
+	assert_eq "$status" 0
+	assert_eq "$stderr" 'lendk: notice: no command is mapped yet, so lendk gives no keys; ask the user which commands to map.'
+}
+
 @test "FR33: a shim that lost its mode 0755 is stale" {
 	healthy
 	chmod 644 "$SHIMS/stub"
