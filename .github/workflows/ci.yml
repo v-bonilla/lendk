@@ -48,10 +48,14 @@ jobs:
           submodules: true
       - run: brew install bash gnupg pass
       - name: diag
+        timeout-minutes: 3
+        continue-on-error: true
+        env:
+          BATS_TEST_TIMEOUT: 40
         run: |
           ( for i in $(seq 1 60); do echo "== $i"; ps -A -o pid,ppid,pgid,tpgid,stat,command | grep -E 'lendk|fake-pass|stub|read -r|bash --norc' | grep -v grep | cut -c1-160; sleep 0.25; done ) >/tmp/ps.log 2>&1 &
           test/lib/bats-core/bin/bats --filter 'pipeline neighbor that reads' test/signals.bats || true
-          wait; cat /tmp/ps.log
+          cat /tmp/ps.log
       - run: make test
         timeout-minutes: 20
         env:
