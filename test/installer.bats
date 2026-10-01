@@ -47,6 +47,8 @@ setup() {
 	stub curl 'echo "curl: no network in tests" >&2; exit 7'
 	VERSION=$(sed -n 's/^LENDK_VERSION=//p' "$LENDK")
 	SHIMS=$HOME/.local/share/lendk/shims
+	PM=apt-get PM_RUN="sudo -n apt-get install -y" PM_LOG=$'sudo -n apt-get install -y pass\napt-get install -y pass'
+	if [[ $(uname -s) == Darwin ]]; then PM=brew PM_RUN="brew install" PM_LOG="brew install pass"; fi
 }
 
 # stub NAME BODY: a sh script NAME in the stub directory.
@@ -140,16 +142,16 @@ login() {
 @test "installer: missing deps print the package manager command and stop; --install-deps runs it" {
 	rm "$STUB/pass"
 	stub sudo 'echo "sudo $*" >>"$HOME/pm.log"; [ "$1" = -n ] && shift; exec "$@"'
-	stub apt-get "echo \"apt-get \$*\" >>\"\$HOME/pm.log\"; printf '#!/bin/sh\nexit 0\n' >'$STUB/pass'; chmod +x '$STUB/pass'"
+	stub "$PM" "echo \"$PM \$*\" >>\"\$HOME/pm.log\"; printf '#!/bin/sh\nexit 0\n' >'$STUB/pass'; chmod +x '$STUB/pass'"
 	inst
 	assert_eq "$status" 1
-	assert_eq "$final" "lendk-install: missing-deps: missing: pass; run: sudo -n apt-get install -y pass (or rerun with --install-deps)"
+	assert_eq "$final" "lendk-install: missing-deps: missing: pass; run: $PM_RUN pass (or rerun with --install-deps)"
 	[[ ! -e $HOME/pm.log && ! -e $HOME/.local/bin/lendk ]]
 	inst --install-deps
 	assert_eq "$status" 0
 	refute_contains "$output" '[y/N]'
-	assert_line "$output" 'running: sudo -n apt-get install -y pass'
-	assert_eq "$(<"$HOME/pm.log")" $'sudo -n apt-get install -y pass\napt-get install -y pass'
+	assert_line "$output" "running: $PM_RUN pass"
+	assert_eq "$(<"$HOME/pm.log")" "$PM_LOG"
 	[[ -x $HOME/.local/bin/lendk ]]
 }
 
@@ -159,7 +161,7 @@ login() {
 		rm -rf "$HOME" && mkdir -p "$HOME"
 		rm -f "$STUB/pass"
 		stub sudo '[ "$1" = -n ] && shift; exec "$@"'
-		stub apt-get "cat >\"\$HOME/pm.stdin\"; printf '#!/bin/sh\nexit 0\n' >'$STUB/pass'; chmod +x '$STUB/pass'"
+		stub "$PM" "cat >\"\$HOME/pm.stdin\"; printf '#!/bin/sh\nexit 0\n' >'$STUB/pass'; chmod +x '$STUB/pass'"
 		status=0
 		output=$(env -i HOME="$HOME" PATH="$STUB:$SYS" SHELL=/bin/bash TMPDIR="$TMPDIR" PASSWORD_STORE_DIR="$PASSWORD_STORE_DIR" \
 			LENDK_INSTALL_BASE_URL="file://$REL" "$(PATH=$STUB:$SYS command -v "$shell")" -s -- --yes --install-deps <"$ROOT/install.sh" 2>&1) || status=$?
@@ -195,6 +197,7 @@ login() {
 }
 
 @test "installer: with a systemd user session it writes the environment.d file" {
+	[[ $(uname -s) == Linux ]] || skip "systemd user sessions are Linux only"
 	stub systemctl 'exit 0'
 	inst
 	assert_eq "$status" 0
