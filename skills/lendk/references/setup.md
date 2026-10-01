@@ -12,7 +12,7 @@ The last output line is `lendk-install: ok: TEXT` or `lendk-install: CLASS: TEXT
 |---|---|---|
 | `usage` | 2 | Bad option; see `--help`. |
 | `unsupported-os` | 1 | Only Linux and macOS are supported. |
-| `missing-deps` | 1 | The line names the package manager command. Ask the user before rerunning with `--install-deps`, which may use sudo. |
+| `missing-deps` | 1 | The line names the package manager command. Ask the user before rerunning with `--install-deps`, which may use sudo. When that fails without a terminal, the line names the command for the user to run by hand, after `sudo -v`. |
 | `download` | 1 | Network failure, or no release for `--version`. |
 | `checksum` | 1 | The download does not match `SHA256SUMS`; nothing was installed. Never bypass it. |
 | `install` | 1 | Cannot write `PREFIX/bin`, or a file the installer did not write is in the way. |
@@ -20,7 +20,7 @@ The last output line is `lendk-install: ok: TEXT` or `lendk-install: CLASS: TEXT
 
 Options: `--version X.Y.Z`, `--prefix DIR`, `--yes`, `--install-deps`, `--no-modify-path`, `--skill-dir DIR`, `--uninstall`, `--help`.
 
-When the pass store is not initialized, the installer prints the `gpg --quick-generate-key` and `pass init` steps. Only the user runs them, or approves them.
+When the pass store is not initialized, the installer prints the `gpg --quick-generate-key` and `pass init` steps. The user runs them in their own terminal, since gpg asks for a new passphrase.
 
 ## PATH
 

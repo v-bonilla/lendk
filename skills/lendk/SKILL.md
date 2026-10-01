@@ -94,9 +94,15 @@ Never retry `locked`, `timeout` or `canceled` in a loop. Every failure stops bef
 - Never run `lendk add`, `lendk rm` or `lendk run` with key names on your own initiative. Propose the exact command and let the user run it or approve it.
 - Never use `--force` unless the user asked for it.
 - On `locked`, stop and ask a human to run `lendk unlock` in a terminal. Do not try to unlock it yourself.
-- Never edit the map, the shims or GnuPG settings without the user's approval.
+- Never edit the map, the shim files or GnuPG settings by hand without the user's approval.
+- One exemption: an installation test the user approved, with a throwaway key and exactly these commands:
+  ```
+  printf 'lendk-test\n' | pass insert -m env/DEMO_TOKEN
+  lendk run DEMO_TOKEN -- sh -c 'test -n "$DEMO_TOKEN" && echo received'
+  pass rm -f env/DEMO_TOKEN
+  ```
 
-`lendk check`, `lendk sync`, `lendk --help`, `lendk --version` and `lendk init` are always safe to run.
+`lendk check`, `lendk --help`, `lendk --version` and printing `lendk init` are always safe to run. `lendk sync` is safe too: it only rewrites lendk's own shims to match the map, which is not editing them by hand.
 
 ## Common questions
 

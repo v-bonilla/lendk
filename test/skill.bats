@@ -44,3 +44,14 @@ classes_of() { grep -oE '^\| `[a-z-]+` \|' "$1" | sed 's/^| `//; s/` |$//' | sor
 	opts=$(grep -oE '^  --[a-z-]+' <(sh "$ROOT/install.sh" --help) | sed 's/^  //' | sort)
 	assert_eq "$(sed -n 's/^Options: //p' "$SETUP" | grep -oE -e '--[a-z-]+' | sort)" "$opts"
 }
+
+@test "FR38: the skill exempts exactly the README's approved installation test, and sync is safe" {
+	local cmd cmds
+	cmds=$(sed -n '/^- One exemption:/,/^$/p' "$SKILL" | grep -E '^  (printf|lendk|pass) ')
+	assert_eq "$(wc -l <<<"$cmds")" 3
+	while IFS= read -r cmd; do
+		grep -qF -e "${cmd#  }" "$ROOT/README.md" || { echo "README prompt lacks: $cmd" >&2; return 1; }
+	done <<<"$cmds"
+	grep -q '^`lendk check`.*`lendk sync` is safe too' "$SKILL"
+	refute_contains "$(<"$SKILL")" 'Never edit the map, the shims '
+}

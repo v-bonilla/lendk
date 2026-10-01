@@ -33,7 +33,7 @@ Now `gh` gets `GH_TOKEN`, and `echo "$GH_TOKEN"` in your shell prints nothing.
 
 ## Installation
 
-Install only from this repository. Same-named npm and crates.io packages are unrelated.
+Install only from this repository.
 
 ### For humans
 
@@ -55,7 +55,9 @@ Options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s 
 --uninstall        remove what this installer added, never the map or the pass store
 ```
 
-The last line of its output is `lendk-install: ok: TEXT`, or `lendk-install: CLASS: TEXT` with CLASS one of `usage`, `unsupported-os`, `missing-deps`, `download`, `checksum`, `install` or `path`. `LENDK_INSTALL_BASE_URL` replaces `https://github.com/v-bonilla/lendk/releases`, for tests and mirrors.
+Except with `--help`, the last line of its output is `lendk-install: ok: TEXT`, or `lendk-install: CLASS: TEXT` with CLASS one of `usage`, `unsupported-os`, `missing-deps`, `download`, `checksum`, `install` or `path`. `LENDK_INSTALL_BASE_URL` replaces `https://github.com/v-bonilla/lendk/releases`, for tests and mirrors: it must start with `https://` or `file:///`, and must serve `BASE/latest/download/lendk.tar.gz` and `BASE/latest/download/SHA256SUMS`, or `BASE/download/vX.Y.Z/` with the same two files for `--version X.Y.Z`.
+
+With `--install-deps` and no terminal, sudo runs as `sudo -n` and fails when it needs a password; run `sudo -v` first, or run the printed command yourself.
 
 Uninstall: `curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --uninstall`. It removes its login file blocks, the environment.d file, lendk's shims and the installed `lendk`, never the map or the store.
 
@@ -88,12 +90,15 @@ pass only to the commands mapped to them.
 2. The last output line is "lendk-install: ok: TEXT" or "lendk-install: CLASS: TEXT". On a CLASS,
    diagnose the cause, fix it and rerun. Ask me before rerunning with --install-deps or running
    anything with sudo. Never bypass a checksum failure. If the output says the pass store is not
-   initialized, show me the gpg --quick-generate-key and pass init steps and ask before running them.
-3. Verify:
-   - lendk --version prints the version (use ~/.local/bin/lendk until a new login shell).
+   initialized, show me the gpg --quick-generate-key and pass init steps; I run them in my own
+   terminal, since gpg asks for a passphrase.
+3. Verify, through login shells, since your own shell predates the PATH change:
+   - bash -lc 'lendk --version' prints the version.
    - bash -lc 'command -v lendk; printf "%s\n" "$PATH"' finds lendk, and the first PATH entry is
-     the shim directory (~/.local/share/lendk/shims). For zsh, check zsh -lc the same way.
-   - lendk check runs and prints its report without decrypting. Relay any problem it shows.
+     the shim directory (~/.local/share/lendk/shims). If zsh is installed, check zsh -lc the same way.
+   - bash -lc 'lendk check' prints its report without decrypting. On a fresh install it prints the
+     "# map", "# shims" and "# store" lines and the notice "no command is mapped yet", and exits 0;
+     that is expected. Relay any "# problem" line or other row it shows.
    - Only if I agree: an end-to-end test with a throwaway key. Run
      printf 'lendk-test\n' | pass insert -m env/DEMO_TOKEN, then
      lendk run DEMO_TOKEN -- sh -c 'test -n "$DEMO_TOKEN" && echo received', then

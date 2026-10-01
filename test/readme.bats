@@ -21,7 +21,7 @@ quickstart() {
 
 @test "FR37: the README covers every topic" {
 	local topic
-	for topic in '<!-- quickstart -->' 'Install only from this repository' 'npm and crates.io' \
+	for topic in '<!-- quickstart -->' 'Install only from this repository' \
 		'lendk init sh >> ~/.zshenv' 'lendk init zsh >> ~/.zshrc' 'lendk init systemd >' '~/.zprofile' \
 		'It does not protect against' 's2k-count 8388608' 'gpg --passwd' 'default-cache-ttl' 'max-cache-ttl' \
 		'gpgconf --reload gpg-agent' '/home/alice/.local/bin/lendk run -- ' 'cron' 'systemd unit' 'MCP' \
