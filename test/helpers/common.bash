@@ -77,7 +77,7 @@ gone() {
 		stat=${stat##*) }
 	else
 		stat=$(ps -o stat= -p "$1" 2>/dev/null) || return 0
-		stat=${stat##* }
+		stat=${stat//[[:space:]]/}
 	fi
 	[[ ${stat%% *} == Z* ]]
 }
