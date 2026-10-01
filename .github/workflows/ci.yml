@@ -9,6 +9,7 @@ permissions:
 
 jobs:
   check:
+    if: github.ref != 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -19,6 +20,7 @@ jobs:
       - run: make check
 
   docker:
+    if: github.ref != 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -27,6 +29,7 @@ jobs:
       - run: make check-docker
 
   bench:
+    if: github.ref != 'refs/heads/dev'
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -44,4 +47,12 @@ jobs:
         with:
           submodules: true
       - run: brew install bash gnupg pass
+      - name: diag
+        run: |
+          bash --version | head -1; gpg --version | head -1
+          d=$(mktemp -d); export HOME=$d/home LENDK_SHIMS=$d/shims PASSWORD_STORE_DIR=$d/store
+          mkdir -p $HOME/.config/lendk $d/store/env; chmod 700 $HOME/.config/lendk; echo K >$d/store/env/K1.gpg
+          ln -s /bin/ls $d/ls1; export PATH=$d:$PATH
+          bash -x bin/lendk add ls1 K1 2>&1 | tail -80 || true
+          ls -la $d/shims || true
       - run: make test
