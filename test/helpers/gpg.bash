@@ -13,10 +13,11 @@ gpg_guard() {
 
 # gpg_setup: the scratch home, key and store; KEYID names the key. The agent starts with an empty cache.
 gpg_setup() {
+	[[ ${HOME-} == "${BATS_TEST_TMPDIR-}/home" ]] || { gpg_guard; return 1; }
+	# The fake pass goes first, so require finds only a real one.
 	rm -f "$SB/bin/pass"
 	require gpg
 	require pass
-	[[ ${HOME-} == "${BATS_TEST_TMPDIR-}/home" ]] || { gpg_guard; return 1; }
 	GNUPGHOME=$(mktemp -d /tmp/lend-gpg.XXXXXX) || return 1
 	export GNUPGHOME
 	gpg_guard || return 1
