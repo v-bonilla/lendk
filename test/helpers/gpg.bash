@@ -13,9 +13,9 @@ gpg_guard() {
 
 # gpg_setup: the scratch home, key and store; KEYID names the key. The agent starts with an empty cache.
 gpg_setup() {
+	rm -f "$SB/bin/pass"
 	require gpg
 	require pass
-	rm -f "$SB/bin/pass"
 	[[ ${HOME-} == "${BATS_TEST_TMPDIR-}/home" ]] || { gpg_guard; return 1; }
 	GNUPGHOME=$(mktemp -d /tmp/lend-gpg.XXXXXX) || return 1
 	export GNUPGHOME
