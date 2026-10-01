@@ -52,7 +52,7 @@ if [[ -f bin/lendk ]]; then
 	for word in stat 'readlink[[:space:]]+-f' timeout flock setsid 'sed[[:space:]]+-i' 'date[[:space:]]+[+]%N'; do
 		while IFS= read -r hit; do problem "bin/lendk:${hit:1}: non-portable command"; done < <(grep -E -e "$(cmdpos "$word" "$start")" <<<"$code")
 	done
-	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: bash 5 variable"; done < <(grep -E -e '[$][{]?(EPOCHREALTIME|SRANDOM)' <<<"$code")
+	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: bash 5 variable"; done < <(grep -E -e '[$](EPOCHREALTIME|SRANDOM)|[$][{](EPOCHREALTIME|SRANDOM)([^-]|$)' <<<"$code")
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: /proc or ps outside the terminal-owner test"; done < <(grep -E -e "/proc|$(cmdpos ps "$start")" <<<"$code" | grep -v '^O')
 fi
 for f in "${files[@]}"; do

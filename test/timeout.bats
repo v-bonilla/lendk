@@ -28,6 +28,14 @@ within() {
 	((t >= $1 * 10 && t < $2 * 10)) || { echo "took $elapsed s, expected [$1, $2)" >&2; return 1; }
 }
 
+# before_tenths N: elapsed < N tenths of a second; appends elapsed to BATS_FR16_TIMES when set.
+before_tenths() {
+	local t=${elapsed/./}
+	t=$((10#$t))
+	printf '%s\n' "$elapsed" >>"${BATS_FR16_TIMES:-/dev/null}"
+	((t < $1 * 100)) || { echo "took $elapsed s, expected under $(($1 / 10)).$(($1 % 10)) s" >&2; return 1; }
+}
+
 @test "FR16: a hanging backend gives timeout after LENDK_TIMEOUT and before LENDK_TIMEOUT + 2 s" {
 	local mode
 	for mode in hang stubborn; do
@@ -36,6 +44,8 @@ within() {
 		assert_eq "$stderr" "lendk: timeout: env/K1: gpg did not finish within 2 s. Ask the user to run 'lendk unlock K1' in a terminal, then retry."
 		assert_class timeout 120
 		within 2 4
+		# The implementation margin: LENDK_TIMEOUT + 1.5 s, plus 0.2 s for the harness.
+		before_tenths 37
 		assert_eq "$(compgen -G "$SB/log/target.*")" ""
 		assert_eq "$(ls -A "$TMPDIR")" ""
 	done

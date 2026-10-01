@@ -536,21 +536,28 @@ backend_exit() {
 
 # watchdog: W, started before J (FR16, FR17), whose PID it reads from the temporary directory. Every 0.1 s it
 # wakes lendk in interactive calls, then checks. At LENDK_TIMEOUT it marks the timeout, and when lendk
-# is gone it notes that. Either way it stops the job's group, with KILL after 0.5 s, and removes a
+# is gone it notes that. Either way it stops the job's group, with KILL after 0.3 s, and removes a
 # gone lendk's temporary directory once the job can write no more.
 watchdog() {
-	local ticks=0 i abandon=0 jpid=
+	local ticks=0 i abandon=0 start now jpid='' tfd=''
 	builtin umask 077
 	SECONDS=0
+	# Ticks wait on a FIFO nobody writes: no fork per tick, so less drift on slow machines.
+	command -p mkfifo "$lendk_tmp/tick" 2>/dev/null && builtin exec {tfd}<>"$lendk_tmp/tick"
+	watchdog_clock
+	start=$now
 	while :; do
-		command -p sleep 0.1
+		watchdog_tick
 		((interactive == 0)) || builtin kill -USR1 "$$" 2>/dev/null
 		[[ -n $jpid ]] || { builtin read -r jpid <"$lendk_tmp/pid"; } 2>/dev/null
 		if ! builtin kill -0 "$$" 2>/dev/null; then
 			abandon=1
 			break
 		fi
-		if ((++ticks >= 10 * timeout || SECONDS >= timeout + 1)); then
+		((++ticks))
+		watchdog_clock
+		# bash 5's clock gives the deadline; without it, ticks, with SECONDS as a backstop.
+		if ((now - start >= timeout * 1000000 || (now == 0 && ticks >= 10 * timeout) || SECONDS >= timeout + 1)); then
 			: >"$lendk_tmp/timeout"
 			break
 		fi
@@ -559,19 +566,36 @@ watchdog() {
 	# A lendk killed right after starting J leaves J to record its PID.
 	for i in 1 2 3 4 5; do
 		[[ -z $jpid ]] || break
-		command -p sleep 0.1
+		watchdog_tick
 		{ builtin read -r jpid <"$lendk_tmp/pid"; } 2>/dev/null
 	done
 	if [[ -n $jpid ]]; then
 		builtin kill -TERM -- "-$jpid" 2>/dev/null
 		builtin kill -CONT -- "-$jpid" 2>/dev/null
-		for i in 1 2 3 4 5; do
+		for i in 1 2 3; do
 			builtin kill -0 -- "-$jpid" 2>/dev/null || break
-			command -p sleep 0.1
+			watchdog_tick
 		done
 		builtin kill -KILL -- "-$jpid" 2>/dev/null
 	fi
+	[[ -z $tfd ]] || builtin exec {tfd}<&-
 	((abandon == 0)) || command -p rm -rf -- "$lendk_tmp"
+}
+# watchdog_tick: about 0.1 s.
+watchdog_tick() {
+	if [[ -n $tfd ]]; then
+		builtin read -r -t 0.1 -u "$tfd" _
+	else
+		command -p sleep 0.1
+	fi
+}
+# watchdog_clock: now, in microseconds from bash 5's clock, or 0 without one.
+watchdog_clock() {
+	local t=${EPOCHREALTIME-}
+	now=0
+	[[ -n $t ]] || return 0
+	t=${t/,/.}
+	now=$((${t%.*} * 1000000 + 10#${t#*.}))
 }
 
 # backend_signal SIGNAL: lendk's trap while the job runs. It stops the job and re-raises SIGNAL; the
