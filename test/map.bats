@@ -5,26 +5,26 @@ setup() {
 	load helpers/common
 	sandbox
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
-	export LEND_SHIMS=$SB/shims K1=one K2=two
-	MAP=$HOME/.config/lend/map
+	export LENDK_SHIMS=$SB/shims K1=one K2=two
+	MAP=$HOME/.config/lendk/map
 }
 
 # map LINE...: write a private map at the default path.
 map() {
-	mkdir -p "$HOME/.config/lend" && chmod 700 "$HOME/.config/lend"
+	mkdir -p "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
 	printf '%s\n' "$@" >"$MAP"
 	chmod 600 "$MAP"
 }
 
-# injected: the LEND_INJECTED the one stub-target call received.
+# injected: the LENDK_INJECTED the one stub-target call received.
 injected() {
 	local logs=("$SB"/log/target.*)
-	tr '\0' '\n' <"${logs[0]}/env" | sed -n 's/^LEND_INJECTED=//p'
+	tr '\0' '\n' <"${logs[0]}/env" | sed -n 's/^LENDK_INJECTED=//p'
 }
 
 @test "FR23: run reads only its own line and groups; bad lines elsewhere leave it working" {
-	map '<<<<<<< HEAD' 'other K1' 'other K2' 'bad PATH' '@x @y' '@x K1' '1bad K1' '  stub   K1 @g	# trailing' '@g K2' '>>>>>>> branch' 'lend K1'
-	run_lend run -- stub
+	map '<<<<<<< HEAD' 'other K1' 'other K2' 'bad PATH' '@x @y' '@x K1' '1bad K1' '  stub   K1 @g	# trailing' '@g K2' '>>>>>>> branch' 'lendk K1'
+	run_lendk run -- stub
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
 }
@@ -47,27 +47,27 @@ injected() {
 		line=${case#*|}
 		text=${line#*|}
 		line=${line%%|*}
-		run_lend run -- stub
-		assert_eq "$stderr" "lend: map: $MAP:$line: $text. Stop and ask the user."
+		run_lendk run -- stub
+		assert_eq "$stderr" "lendk: map: $MAP:$line: $text. Stop and ask the user."
 		assert_class map 125
 	done
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 }
 
-@test "FR23: lend's own runtime cannot be mapped" {
+@test "FR23: lendk's own runtime cannot be mapped" {
 	map 'bash K1'
-	LEND_PROMPT=allow run_lend run -- bash
-	assert_eq "$stderr" "lend: map: $MAP:1: bash is lend's own runtime and cannot be mapped. Fix the line, then run: lend check"
+	LENDK_PROMPT=allow run_lendk run -- bash
+	assert_eq "$stderr" "lendk: map: $MAP:1: bash is lendk's own runtime and cannot be mapped. Fix the line, then run: lendk check"
 	assert_class map 125
 }
 
 @test "FR23: a named group must be defined; named keys need no map" {
 	map 'stub K1'
-	run_lend run @nope -- stub
-	assert_eq "$stderr" "lend: map: $MAP: group @nope is not defined. Stop and ask the user."
+	run_lendk run @nope -- stub
+	assert_eq "$stderr" "lendk: map: $MAP: group @nope is not defined. Stop and ask the user."
 	assert_class map 125
 	rm "$MAP"
-	run_lend run K1 -- stub
+	run_lendk run K1 -- stub
 	assert_eq "$status" 0
 	assert_eq "$(injected)" ""
 }
@@ -75,10 +75,10 @@ injected() {
 @test "4.2: groups expand in word order and duplicates drop, keeping the first" {
 	map 'stub K2 @g K1 # @late' '@g K1 K2 K3'
 	export K3=three
-	run_lend run -- stub
+	run_lendk run -- stub
 	assert_eq "$status" 0
 	# shellcheck disable=SC2016
-	LEND=$SB/bin/lend-fn run_lend eval 'load_env; expand_keys stub; printf "%s\n" "${keys[*]}"; expand_keys x K3 @g K3; printf "%s\n" "${keys[*]}"'
+	LENDK=$SB/bin/lendk-fn run_lendk eval 'load_env; expand_keys stub; printf "%s\n" "${keys[*]}"; expand_keys x K3 @g K3; printf "%s\n" "${keys[*]}"'
 	assert_eq "$output" "K2 K1 K3
 K3 K1 K2"
 }

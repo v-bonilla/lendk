@@ -1,14 +1,14 @@
 #!/usr/bin/env bats
-# lend check: diagnosis without decrypting (FR31 to FR33).
+# lendk check: diagnosis without decrypting (FR31 to FR33).
 # shellcheck disable=SC2030,SC2031,SC2329
 
 setup() {
 	load helpers/common
 	sandbox
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
-	export LEND_SHIMS=$SB/shims
-	SHIMS=$LEND_SHIMS
-	MAP=$HOME/.config/lend/map
+	export LENDK_SHIMS=$SB/shims
+	SHIMS=$LENDK_SHIMS
+	MAP=$HOME/.config/lendk/map
 	HEAD="# map: $MAP"$'\n'"# shims: $SHIMS"$'\n'"# store: $SB/store/env"
 	stub_gpg 2.4.4
 	export PATH=$SHIMS:$PATH
@@ -21,7 +21,7 @@ teardown() {
 
 # map LINE...: write a private map at the default path.
 map() {
-	mkdir -p "$HOME/.config/lend" && chmod 700 "$HOME/.config/lend"
+	mkdir -p "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
 	printf '%s\n' "$@" >"$MAP"
 	chmod 600 "$MAP"
 }
@@ -45,7 +45,7 @@ stub_gpg() {
 healthy() {
 	map '@g K2' 'stub K1 @g'
 	keys K1 K2
-	run_lend sync
+	run_lendk sync
 	assert_eq "$status" 0
 }
 
@@ -55,7 +55,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 @test "FR31: check calls no backend read, and an empty value shows as ok" {
 	healthy
 	: >"$SB/store/env/K1.gpg"
-	run_lend check
+	run_lendk check
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
 	no_reads
@@ -65,8 +65,8 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	map 'zed K1' '@g K2' 'stub K1 @g' '@a K1'
 	ln -s "$FIXTURES/stub-target" "$SB/bin/zed"
 	keys K1 K2
-	run_lend sync
-	run_lend check
+	run_lendk sync
+	run_lendk check
 	assert_eq "$output" "$HEAD"$'\n@a\tK1\tok\n@g\tK2\tok\nstub\tK1 @g\tok\nzed\tK1\tok'
 	assert_eq "$status" 0
 	no_reads
@@ -76,40 +76,40 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	map '@aws A B' 'tf @aws C' 'stub G'
 	ln -s "$FIXTURES/stub-target" "$SB/bin/tf"
 	keys A B C G
-	run_lend sync
-	run_lend check A
+	run_lendk sync
+	run_lendk check A
 	assert_eq "$output" "$HEAD"$'\n@aws\tA B\tok\ntf\t@aws C\tok'
-	run_lend check @aws
+	run_lendk check @aws
 	assert_eq "$output" "$HEAD"$'\n@aws\tA B\tok\ntf\t@aws C\tok'
-	run_lend check stub C
+	run_lendk check stub C
 	assert_eq "$output" "$HEAD"$'\nstub\tG\tok\ntf\t@aws C\tok'
 	assert_eq "$status" 0
 }
 
-@test "FR32: interactive calls get the full FIX; lend sync and lend run -- CMD stay non-interactive" {
+@test "FR32: interactive calls get the full FIX; lendk sync and lendk run -- CMD stay non-interactive" {
 	map 'stub K1'
-	LEND_PROMPT=allow run_lend check
-	assert_line "$output" $'stub\tK1\tenv/K1 is not in the store (pass insert env/K1); no shim (lend sync)'
-	run_lend check
-	assert_line "$output" $'stub\tK1\tenv/K1 is not in the store (ask the user); no shim (lend sync)'
+	LENDK_PROMPT=allow run_lendk check
+	assert_line "$output" $'stub\tK1\tenv/K1 is not in the store (pass insert env/K1); no shim (lendk sync)'
+	run_lendk check
+	assert_line "$output" $'stub\tK1\tenv/K1 is not in the store (ask the user); no shim (lendk sync)'
 	assert_eq "$status" 1
 }
 
 @test "FR33: map violations, on their row or as a problem line" {
 	map 'bad! K1' 'stub K1 @nope' 'stub K1'
 	keys K1
-	run_lend sync
-	run_lend check
+	run_lendk sync
+	run_lendk check
 	assert_eq "$output" "$HEAD"$'\n'"# problem: $MAP:1: 'bad!' is not a valid command name (ask the user)"$'\n'"stub	K1 @nope	line 2: group @nope is not defined (ask the user); line 3: stub is mapped twice (ask the user)"
 	assert_eq "$status" 1
-	LEND_PROMPT=allow run_lend check
+	LENDK_PROMPT=allow run_lendk check
 	assert_line "$output" "# problem: $MAP:1: 'bad!' is not a valid command name (fix the line)"
 }
 
 @test "FR33: a missing key" {
 	healthy
 	rm "$SB/store/env/K2.gpg"
-	run_lend check
+	run_lendk check
 	assert_line "$output" $'@g\tK2\tenv/K2 is not in the store (ask the user)'
 	assert_line "$output" $'stub\tK1 @g\tenv/K2 is not in the store (ask the user)'
 	assert_eq "$status" 1
@@ -118,28 +118,28 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 @test "FR33: a command not found" {
 	map 'nothere K1'
 	keys K1
-	run_lend sync
-	run_lend check
+	run_lendk sync
+	run_lendk check
 	assert_line "$output" $'nothere\tK1\t'"nothere is not on PATH outside $SHIMS (ask the user)"
-	LEND_PROMPT=allow run_lend check
-	assert_line "$output" $'nothere\tK1\t'"nothere is not on PATH outside $SHIMS (install it, or unmap it: lend rm nothere)"
+	LENDK_PROMPT=allow run_lendk check
+	assert_line "$output" $'nothere\tK1\t'"nothere is not on PATH outside $SHIMS (install it, or unmap it: lendk rm nothere)"
 	assert_eq "$status" 1
 }
 
 @test "FR33: no shim, a stale shim, and a stray shim" {
 	healthy
 	rm "$SHIMS/stub"
-	run_lend check
-	assert_line "$output" $'stub\tK1 @g\tno shim (lend sync)'
+	run_lendk check
+	assert_line "$output" $'stub\tK1 @g\tno shim (lendk sync)'
 	assert_eq "$status" 1
-	run_lend sync
+	run_lendk sync
 	printf 'edited\n' >>"$SHIMS/stub"
-	run_lend check
-	assert_line "$output" $'stub\tK1 @g\tstale shim (lend sync)'
-	run_lend sync
-	printf '#!/bin/sh\n# lend shim v1: generated by lend sync, edits are overwritten\n' >"$SHIMS/old"
-	run_lend check
-	assert_eq "$output" "$HEAD"$'\n'"# problem: $SHIMS/old is a stray shim (lend sync)"$'\n@g\tK2\tok\nstub\tK1 @g\tok'
+	run_lendk check
+	assert_line "$output" $'stub\tK1 @g\tstale shim (lendk sync)'
+	run_lendk sync
+	printf '#!/bin/sh\n# lendk shim v1: generated by lendk sync, edits are overwritten\n' >"$SHIMS/old"
+	run_lendk check
+	assert_eq "$output" "$HEAD"$'\n'"# problem: $SHIMS/old is a stray shim (lendk sync)"$'\n@g\tK2\tok\nstub\tK1 @g\tok'
 	assert_eq "$status" 1
 }
 
@@ -147,22 +147,22 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	healthy
 	printf 'mine\n' >"$SHIMS/notes"
 	printf '#!/bin/sh\necho mine\n' >"$SHIMS/stub"
-	run_lend check
-	assert_eq "$output" "$HEAD"$'\n'"# problem: $SHIMS/notes is not a lend shim (ask the user)"$'\n@g\tK2\tok\nstub\tK1 @g\t'"$SHIMS/stub is not a lend shim (ask the user)"
-	LEND_PROMPT=allow run_lend check
-	assert_line "$output" "# problem: $SHIMS/notes is not a lend shim (move it out of $SHIMS)"
+	run_lendk check
+	assert_eq "$output" "$HEAD"$'\n'"# problem: $SHIMS/notes is not a lendk shim (ask the user)"$'\n@g\tK2\tok\nstub\tK1 @g\t'"$SHIMS/stub is not a lendk shim (ask the user)"
+	LENDK_PROMPT=allow run_lendk check
+	assert_line "$output" "# problem: $SHIMS/notes is not a lendk shim (move it out of $SHIMS)"
 	assert_eq "$status" 1
 }
 
-@test "FR33: a shim whose lend path is not executable" {
+@test "FR33: a shim whose lendk path is not executable" {
 	map 'stub K1'
 	keys K1
 	mkdir "$SB/opt"
-	cp "$LEND" "$SB/opt/lend"
-	LEND=$SB/opt/lend run_lend sync
-	chmod -x "$SB/opt/lend"
-	run_lend check
-	assert_line "$output" $'stub\tK1\t'"the shim runs $SB/opt/lend, which is not executable (lend sync)"
+	cp "$LENDK" "$SB/opt/lendk"
+	LENDK=$SB/opt/lendk run_lendk sync
+	chmod -x "$SB/opt/lendk"
+	run_lendk check
+	assert_line "$output" $'stub\tK1\t'"the shim runs $SB/opt/lendk, which is not executable (lendk sync)"
 	assert_eq "$status" 1
 }
 
@@ -170,7 +170,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	healthy
 	chmod 770 "$SHIMS"
 	chmod 660 "$MAP"
-	run_lend check
+	run_lendk check
 	assert_eq "$output" "$HEAD"$'\n'"# problem: $MAP is writable by others (ask the user)"$'\n'"# problem: $SHIMS is writable by others (ask the user)"$'\n@g\tK2\tok\nstub\tK1 @g\tok'
 	assert_eq "$status" 1
 	no_reads
@@ -178,7 +178,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 
 @test "FR33: the shim directory is not on PATH" {
 	healthy
-	PATH=${PATH#"$SHIMS":} run_lend check
+	PATH=${PATH#"$SHIMS":} run_lendk check
 	assert_eq "$output" "$HEAD"$'\n'"# problem: $SHIMS is not on PATH (ask the user)"$'\n@g\tK2\tok\nstub\tK1 @g\tok'
 	assert_eq "$status" 1
 }
@@ -187,31 +187,31 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	healthy
 	mkdir "$SB/early"
 	ln -s "$FIXTURES/stub-target" "$SB/early/stub"
-	PATH=$SB/early:$PATH run_lend check
-	assert_line "$output" $'stub\tK1 @g\t'"shadowed by $SB/early/stub (lend run -- stub)"
-	PATH=$SB/early:$PATH LEND_PROMPT=allow run_lend check
-	assert_line "$output" $'stub\tK1 @g\t'"shadowed by $SB/early/stub (put $SHIMS first on PATH, or call: lend run -- stub)"
+	PATH=$SB/early:$PATH run_lendk check
+	assert_line "$output" $'stub\tK1 @g\t'"shadowed by $SB/early/stub (lendk run -- stub)"
+	PATH=$SB/early:$PATH LENDK_PROMPT=allow run_lendk check
+	assert_line "$output" $'stub\tK1 @g\t'"shadowed by $SB/early/stub (put $SHIMS first on PATH, or call: lendk run -- stub)"
 	assert_eq "$status" 1
 }
 
 @test "FR33: a GnuPG below 2.4" {
 	healthy
 	stub_gpg 2.2.27
-	run_lend check
-	assert_line "$output" "# problem: GnuPG 2.2.27 found; lend needs GnuPG 2.4 or later (ask the user)"
+	run_lendk check
+	assert_line "$output" "# problem: GnuPG 2.2.27 found; lendk needs GnuPG 2.4 or later (ask the user)"
 	assert_eq "$status" 1
 }
 
-@test "FR33: a mapped key set in the environment, unless lend injected it" {
+@test "FR33: a mapped key set in the environment, unless lendk injected it" {
 	healthy
-	K2='set' run_lend check
+	K2='set' run_lendk check
 	assert_line "$output" $'@g\tK2\tK2 is set in the environment, which overrides the store (ask the user)'
 	assert_line "$output" $'stub\tK1 @g\tK2 is set in the environment, which overrides the store (ask the user)'
 	assert_eq "$status" 1
-	K2='set' LEND_INJECTED='K1 K2' run_lend check
+	K2='set' LENDK_INJECTED='K1 K2' run_lendk check
 	assert_eq "$status" 0
 	READS=1
-	run_lend run K1 K2 -- "$LEND" check
+	run_lendk run K1 K2 -- "$LENDK" check
 	assert_eq "$status" 0
 	assert_line "$output" $'stub\tK1 @g\tok'
 }
@@ -219,16 +219,16 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 @test "FR33: exit 1 only when a shown item has a problem" {
 	healthy
 	map '@g K2' 'stub K1 @g' 'other K3'
-	run_lend check stub
+	run_lendk check stub
 	assert_eq "$status" 0
-	run_lend check other
+	run_lendk check other
 	assert_eq "$status" 1
 }
 
 @test "FR33: a shim that lost its mode 0755 is stale" {
 	healthy
 	chmod 644 "$SHIMS/stub"
-	run_lend check
-	assert_line "$output" $'stub\tK1 @g\tstale shim (lend sync)'
+	run_lendk check
+	assert_line "$output" $'stub\tK1 @g\tstale shim (lendk sync)'
 	assert_eq "$status" 1
 }

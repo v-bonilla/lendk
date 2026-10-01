@@ -54,7 +54,7 @@ lint_copy() {
 @test "NFR9: lint-repo.bash flags a home path other than /home/alice and accepts /home/alice" {
 	scratch
 	local home=/ho
-	printf 'ok: %s\n' "${home}me/alice/.local/bin/lend" >>"$COPY/Makefile"
+	printf 'ok: %s\n' "${home}me/alice/.local/bin/lendk" >>"$COPY/Makefile"
 	run bash "$ROOT/test/lint-repo.bash" "$COPY"
 	assert_eq "$status" 0
 	printf 'bad: %s\n' "${home}me/bob/.config" >>"$COPY/Makefile"
@@ -90,37 +90,37 @@ lint_copy() {
 	local line
 	# shellcheck disable=SC2016
 	for line in 'x=$(pass show env/K)' 'ls "$store"' 'f=${store}/env'; do
-		cp "$ROOT/bin/lend" "$COPY/bin/lend"
-		printf '%s\n' "$line" >>"$COPY/bin/lend"
+		cp "$ROOT/bin/lendk" "$COPY/bin/lendk"
+		printf '%s\n' "$line" >>"$COPY/bin/lendk"
 		lint_copy "pass or the store outside backend_has and backend_read"
 	done
 }
 
-@test "NFR3: lint-repo.bash flags non-portable commands in bin/lend, except in the name-list tables" {
+@test "NFR3: lint-repo.bash flags non-portable commands in bin/lendk, except in the name-list tables" {
 	scratch
 	local w
 	for w in stat 'readlink -f' timeout flock setsid 'sed -i' 'date +%N'; do
-		cp "$ROOT/bin/lend" "$COPY/bin/lend"
+		cp "$ROOT/bin/lendk" "$COPY/bin/lendk"
 		# shellcheck disable=SC2016
-		printf 'x=$(%s /x)\n' "$w" >>"$COPY/bin/lend"
+		printf 'x=$(%s /x)\n' "$w" >>"$COPY/bin/lendk"
 		lint_copy "non-portable command"
 	done
-	cp "$ROOT/bin/lend" "$COPY/bin/lend"
-	printf '# lint: tables begin\ntimeout stat\n# lint: tables end\ntimeout=5\n' >>"$COPY/bin/lend"
+	cp "$ROOT/bin/lendk" "$COPY/bin/lendk"
+	printf '# lint: tables begin\ntimeout stat\n# lint: tables end\ntimeout=5\n' >>"$COPY/bin/lendk"
 	run bash "$ROOT/test/lint-repo.bash" "$COPY"
 	assert_eq "$output" ""
 	assert_eq "$status" 0
 	# shellcheck disable=SC2016
-	printf 'echo "${%s}"\n' EPOCHREALTIME >>"$COPY/bin/lend"
+	printf 'echo "${%s}"\n' EPOCHREALTIME >>"$COPY/bin/lendk"
 	lint_copy "bash 5 variable"
 }
 
 @test "NFR3: lint-repo.bash allows /proc and ps only in the terminal-owner test" {
 	scratch
-	printf '# lint: tty-owner begin\nread -r s </proc/$$/stat || ps -o tpgid=\n# lint: tty-owner end\n' >>"$COPY/bin/lend"
+	printf '# lint: tty-owner begin\nread -r s </proc/$$/stat || ps -o tpgid=\n# lint: tty-owner end\n' >>"$COPY/bin/lendk"
 	run bash "$ROOT/test/lint-repo.bash" "$COPY"
 	assert_eq "$output" ""
-	printf 'ps -o pid=\n' >>"$COPY/bin/lend"
+	printf 'ps -o pid=\n' >>"$COPY/bin/lendk"
 	lint_copy "/proc or ps outside the terminal-owner test"
 }
 

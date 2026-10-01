@@ -22,22 +22,22 @@ quickstart() {
 @test "FR37: the README covers every topic" {
 	local topic
 	for topic in '<!-- quickstart -->' 'Install only from this repository' 'npm and crates.io' \
-		'lend init sh >> ~/.zshenv' 'lend init zsh >> ~/.zshrc' 'lend init systemd >' '~/.zprofile' \
+		'lendk init sh >> ~/.zshenv' 'lendk init zsh >> ~/.zshrc' 'lendk init systemd >' '~/.zprofile' \
 		'It does not protect against' 's2k-count 8388608' 'gpg --passwd' 'default-cache-ttl' 'max-cache-ttl' \
-		'gpgconf --reload gpg-agent' '/home/alice/.local/bin/lend run -- ' 'cron' 'systemd unit' 'MCP' \
-		"'!lend run -- gh auth git-credential'" 'gh auth setup-git' 'npx' 'uv run' \
-		'  reserved commands: ' '  lend-missing (127): ' '## For AI agents' '`lend: CLASS:` line' \
-		'`locked`, `timeout` or `canceled`, stop and ask' 'Never run `pass`, `lend add`, `lend rm`, or `lend run` with key names, and never print the environment'; do
+		'gpgconf --reload gpg-agent' '/home/alice/.local/bin/lendk run -- ' 'cron' 'systemd unit' 'MCP' \
+		"'!lendk run -- gh auth git-credential'" 'gh auth setup-git' 'npx' 'uv run' \
+		'  reserved commands: ' '  lendk-missing (127): ' '## For AI agents' '`lendk: CLASS:` line' \
+		'`locked`, `timeout` or `canceled`, stop and ask' 'Never run `pass`, `lendk add`, `lendk rm`, or `lendk run` with key names, and never print the environment'; do
 		grep -qF -e "$topic" "$README" || { echo "README lacks: $topic" >&2; return 1; }
 	done
 	assert_eq "$(quickstart | wc -l)" 5
 }
 
-@test "FR37: the credential helper snippet leaves only lend's helper after none, or after gh's two" {
+@test "FR37: the credential helper snippet leaves only lendk's helper after none, or after gh's two" {
 	require git
 	local snippet host want
 	snippet=$(sed -n '/^### Git credential helper$/,/^###/p' "$README" | sed -n '/^```$/,/^```$/p' | sed '1d;$d')
-	want=$'\n!lend run -- gh auth git-credential'
+	want=$'\n!lendk run -- gh auth git-credential'
 	cd "$HOME"
 	bash -c "$snippet"
 	for host in github.com gist.github.com; do
@@ -57,20 +57,20 @@ quickstart() {
 	require git
 	require make
 	gpg_setup
-	local sys=$HOME/bin src=$SB/lend login_path cmds
+	local sys=$HOME/bin src=$SB/lendk login_path cmds
 	mkdir -p "$sys" "$src/bin"
 	ln -s "$FIXTURES/stub-target" "$sys/gh"
 	cp "$FIXTURES/profile" "$HOME/.profile"
 	cp "$FIXTURES/bashrc" "$HOME/.bashrc"
 	cp "$ROOT/Makefile" "$ROOT/LICENSE" "$README" "$src/"
-	cp "$LEND" "$src/bin/"
+	cp "$LENDK" "$src/bin/"
 	git -C "$src" init -q
 	git -C "$src" add -A
 	git -C "$src" -c user.name=test -c user.email=test commit -qm src
 	login_path=$sys:${BASH%/*}:/usr/bin:/bin
 	mapfile -t cmds < <(quickstart)
-	[[ ${cmds[0]} == 'git clone https://github.com/v-bonilla/lend '* ]]
-	cmds[0]=${cmds[0]/https:\/\/github.com\/v-bonilla\/lend/$(printf %q "$src")}
+	[[ ${cmds[0]} == 'git clone https://github.com/v-bonilla/lendk '* ]]
+	cmds[0]=${cmds[0]/https:\/\/github.com\/v-bonilla\/lendk/$(printf %q "$src")}
 	assert_eq "${cmds[2]}" 'exec bash -l'
 	# login CMD...: CMD in $HOME in an environment built from scratch, as a login would start it.
 	login() {

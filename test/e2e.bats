@@ -28,7 +28,7 @@ setup() {
 	LOGIN_PATH=$SYS:${BASH%/*}:/usr/bin:/bin
 	# The clone source: a scratch repository holding the working tree's install inputs.
 	cp "$ROOT/Makefile" "$ROOT/LICENSE" "$SB/src/"
-	cp "$LEND" "$SB/src/bin/"
+	cp "$LENDK" "$SB/src/bin/"
 	git -C "$SB/src" init -q
 	git -C "$SB/src" add -A
 	git -C "$SB/src" -c user.name=test -c user.email=test commit -qm src
@@ -44,14 +44,14 @@ login_env() {
 # quickstart: PRD 4.4's five commands with a local clone source and the store entry written for the
 # fake pass; command 3 starts the login shells that run commands 4 and 5. Then the other 4.3 blocks.
 quickstart() {
-	login_env bash -c "git clone -q $(printf %q "$SB/src") lend && make -s -C lend install"
-	login_env bash -c '~/.local/bin/lend init sh >> ~/.profile'
+	login_env bash -c "git clone -q $(printf %q "$SB/src") lendk && make -s -C lendk install"
+	login_env bash -c '~/.local/bin/lendk init sh >> ~/.profile'
 	printf '%s\n' "$SENTINEL" >"$SB/store/env/GH_TOKEN.gpg"
-	login_env bash -lc 'lend add gh GH_TOKEN' >/dev/null
-	login_env bash -lc 'lend add outer GH_TOKEN' >/dev/null
-	login_env bash -lc 'lend init sh >> ~/.zshenv && lend init bash >> ~/.bashrc'
+	login_env bash -lc 'lendk add gh GH_TOKEN' >/dev/null
+	login_env bash -lc 'lendk add outer GH_TOKEN' >/dev/null
+	login_env bash -lc 'lendk init sh >> ~/.zshenv && lendk init bash >> ~/.bashrc'
 	mkdir -p "$HOME/.config/environment.d"
-	login_env bash -lc 'lend init systemd > ~/.config/environment.d/99-lend.conf'
+	login_env bash -lc 'lendk init systemd > ~/.config/environment.d/99-lendk.conf'
 	rm -rf "$SB"/log/pass.* "$SB"/log/target.*
 }
 
@@ -71,11 +71,11 @@ decrypts() {
 	printf '%s\n' "${#calls[@]}"
 }
 
-@test "AC4: the quick start installs lend, writes the map and the shim, and the parent lacks GH_TOKEN" {
-	[[ -x $HOME/.local/bin/lend && -f $HOME/.local/share/lend/shims/gh ]]
-	assert_eq "$(<"$HOME/.config/lend/map")" $'gh GH_TOKEN\nouter GH_TOKEN'
+@test "AC4: the quick start installs lendk, writes the map and the shim, and the parent lacks GH_TOKEN" {
+	[[ -x $HOME/.local/bin/lendk && -f $HOME/.local/share/lendk/shims/gh ]]
+	assert_eq "$(<"$HOME/.config/lendk/map")" $'gh GH_TOKEN\nouter GH_TOKEN'
 	run login_env bash -lc 'printf "%s|" "${GH_TOKEN-unset}"; command -v gh'
-	assert_eq "$output" "unset|$HOME/.local/share/lend/shims/gh"
+	assert_eq "$output" "unset|$HOME/.local/share/lendk/shims/gh"
 }
 
 @test "AC4: interactive bash in a terminal gets the key" {
@@ -111,20 +111,20 @@ decrypts() {
 @test "AC4: systemd's environment.d generator puts the shim directory first" {
 	require environment-d
 	run env -i HOME="$HOME" PATH=/usr/bin:/bin /usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator
-	[[ $'\n'$output == *$'\n'"PATH=$HOME/.local/share/lend/shims:"* ]]
+	[[ $'\n'$output == *$'\n'"PATH=$HOME/.local/share/lendk/shims:"* ]]
 }
 
 @test "AC4: removing the blocks and make uninstall leave only the map" {
 	local f
 	for f in .profile .zshenv .bashrc; do
-		sed '/^# >>> lend >>>$/,/^# <<< lend <<<$/d' "$HOME/$f" >"$SB/rc" && cat "$SB/rc" >"$HOME/$f"
+		sed '/^# >>> lendk >>>$/,/^# <<< lendk <<<$/d' "$HOME/$f" >"$SB/rc" && cat "$SB/rc" >"$HOME/$f"
 	done
-	rm "$HOME/.config/environment.d/99-lend.conf"
-	login_env make -s -C lend uninstall
+	rm "$HOME/.config/environment.d/99-lendk.conf"
+	login_env make -s -C lendk uninstall
 	cmp "$FIXTURES/profile" "$HOME/.profile"
 	cmp "$FIXTURES/bashrc" "$HOME/.bashrc"
 	[[ ! -s $HOME/.zshenv ]]
-	run find "$HOME" \( -path "$HOME/lend" -o -path "$SYS" \) -prune -o \( -type f -o -type l \) -print
-	assert_eq "$(sort <<<"$output")" "$(printf '%s\n' "$HOME/.bashrc" "$HOME/.config/lend/map" "$HOME/.profile" "$HOME/.zshenv")"
-	[[ ! -e $HOME/.local/share/lend/shims ]]
+	run find "$HOME" \( -path "$HOME/lendk" -o -path "$SYS" \) -prune -o \( -type f -o -type l \) -print
+	assert_eq "$(sort <<<"$output")" "$(printf '%s\n' "$HOME/.bashrc" "$HOME/.config/lendk/map" "$HOME/.profile" "$HOME/.zshenv")"
+	[[ ! -e $HOME/.local/share/lendk/shims ]]
 }

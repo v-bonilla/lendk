@@ -9,10 +9,10 @@ setup() {
 	load helpers/gpg
 	sandbox
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
-	export LEND_SHIMS=$SB/shims
-	mkdir -p "$LEND_SHIMS" "$HOME/.config/lend" && chmod 700 "$LEND_SHIMS" "$HOME/.config/lend"
-	printf 'stub K1\n' >"$HOME/.config/lend/map"
-	chmod 600 "$HOME/.config/lend/map"
+	export LENDK_SHIMS=$SB/shims
+	mkdir -p "$LENDK_SHIMS" "$HOME/.config/lendk" && chmod 700 "$LENDK_SHIMS" "$HOME/.config/lendk"
+	printf 'stub K1\n' >"$HOME/.config/lendk/map"
+	chmod 600 "$HOME/.config/lendk/map"
 	gpg_setup
 	gpg_insert K1 "$SENTINEL"
 }
@@ -45,9 +45,9 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	for b in plain gpg2; do
 		branch "$b"
 		start=$(date +%s%3N)
-		run_lend run -- stub
+		run_lendk run -- stub
 		assert_class locked 120
-		assert_eq "$stderr" "lend: locked: env/K1 needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lend unlock K1' in a terminal, then retry."
+		assert_eq "$stderr" "lendk: locked: env/K1 needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lendk unlock K1' in a terminal, then retry."
 		(($(date +%s%3N) - start < 2000))
 		assert_eq "$(recorder_pids)" ""
 		assert_eq "$(compgen -G "$SB/log/target.*")" ""
@@ -60,7 +60,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	for b in plain gpg2; do
 		branch "$b"
 		gpg_prime K1
-		run_lend run -- stub
+		run_lendk run -- stub
 		assert_eq "$stderr" ""
 		assert_eq "$status" 0
 		target_got
@@ -69,11 +69,11 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (c) LEND_PROMPT=allow launches pinentry" {
+@test "FR18: (c) LENDK_PROMPT=allow launches pinentry" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"
-		LEND_PROMPT=allow run_lend run -- stub
+		LENDK_PROMPT=allow run_lendk run -- stub
 		assert_eq "$stderr" ""
 		assert_eq "$status" 0
 		target_got
@@ -87,7 +87,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	q=$(printf %q "$SB")
 	for b in plain gpg2; do
 		branch "$b"
-		in_pty "tty >$q/tty; echo | $(printf %q "$LEND") run -- stub"
+		in_pty "tty >$q/tty; echo | $(printf %q "$LENDK") run -- stub"
 		assert_eq "$status" 0
 		target_got
 		[[ $(<"$SB/tty") == /dev/* ]]
@@ -101,8 +101,8 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	for b in plain gpg2; do
 		branch "$b"
 		echo cancel >"$GNUPGHOME/pinentry.mode"
-		LEND_PROMPT=allow run_lend run -- stub
-		assert_eq "$stderr" "lend: canceled: passphrase entry for env/K1 was canceled. Run the command again to retry."
+		LENDK_PROMPT=allow run_lendk run -- stub
+		assert_eq "$stderr" "lendk: canceled: passphrase entry for env/K1 was canceled. Run the command again to retry."
 		assert_class canceled 120
 		assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	done
@@ -115,7 +115,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 		branch "$b"
 		echo hang >"$GNUPGHOME/pinentry.mode"
 		start=$(date +%s%3N)
-		LEND_PROMPT=allow LEND_TIMEOUT=2 run_lend run -- stub
+		LENDK_PROMPT=allow LENDK_TIMEOUT=2 run_lendk run -- stub
 		assert_class timeout 120
 		(($(date +%s%3N) - start < 4000))
 		p=$(recorder_pids)
@@ -125,13 +125,13 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (g) KILL to lend's process group while pinentry waits leaves no pinentry within 2 s" {
+@test "FR18: (g) KILL to lendk's process group while pinentry waits leaves no pinentry within 2 s" {
 	local b i lpid p
 	for b in plain gpg2; do
 		branch "$b"
 		echo hang >"$GNUPGHOME/pinentry.mode"
 		set -m
-		LEND_PROMPT=allow "$LEND" run -- stub </dev/null >/dev/null 2>"$SB/stderr" &
+		LENDK_PROMPT=allow "$LENDK" run -- stub </dev/null >/dev/null 2>"$SB/stderr" &
 		lpid=$!
 		set +m
 		for ((i = 0; i < 100; i++)); do
@@ -151,7 +151,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 @test "FR18: (h) with loopback in gpg.conf the passphrase typed into the terminal reaches gpg, and the target gets the value" {
 	branch plain
 	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
-	in_shell "$(printf %q "$LEND") run -- stub; st=\$?; echo; echo status=\$st" @3 "$GPG_PASS" @3 exit
+	in_shell "$(printf %q "$LENDK") run -- stub; st=\$?; echo; echo status=\$st" @3 "$GPG_PASS" @3 exit
 	assert_line "$output" "status=0"
 	target_got
 	assert_eq "$(recorder_pids)" ""
@@ -161,9 +161,9 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 @test "FR18: (i) with loopback in gpg.conf, a call in a command substitution gives locked and shows no prompt" {
 	branch plain
 	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
-	in_shell "x=\$($(printf %q "$LEND") run -- stub); echo rc=\$?" @3 exit
+	in_shell "x=\$($(printf %q "$LENDK") run -- stub); echo rc=\$?" @3 exit
 	assert_line "$output" rc=120
-	[[ $output == *"lend: locked: env/K1 needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lend unlock K1' in a terminal, then retry."* ]]
+	[[ $output == *"lendk: locked: env/K1 needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lendk unlock K1' in a terminal, then retry."* ]]
 	refute_contains "$output" "Enter passphrase"
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	assert_eq "$(recorder_pids)" ""
@@ -174,14 +174,14 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	local b
 	for b in plain gpg2; do
 		branch "$b"
-		LEND_PROMPT=allow run_lend unlock
+		LENDK_PROMPT=allow run_lendk unlock
 		assert_eq "$stderr" ""
 		assert_eq "$output" unlocked
 		assert_eq "$status" 0
 		refute_contains "$output" "$SENTINEL"
-		run_lend unlock K1
+		run_lendk unlock K1
 		assert_eq "$output" unlocked
-		run_lend run -- stub
+		run_lendk run -- stub
 		assert_eq "$status" 0
 		target_got
 		assert_eq "$(recorder_pids | wc -l)" 1
@@ -193,7 +193,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	local b
 	for b in plain gpg2; do
 		branch "$b"
-		run_lend unlock K1
+		run_lendk unlock K1
 		assert_eq "$output" ""
 		assert_class locked 120
 		assert_eq "$(recorder_pids)" ""

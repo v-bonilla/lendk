@@ -1,13 +1,13 @@
 # Real GnuPG helpers, loaded after common.bash and sandbox: a scratch GnuPG home under /tmp, short enough for the agent's socket path, whose
 # agent asks pinentry-recorder, a passphrase-protected key and a store initialized for it.
 # shellcheck disable=SC2034
-GPG_PASS=lend-test-passphrase
+GPG_PASS=lendk-test-passphrase
 
 # gpg_guard: HOME is the sandbox's and GNUPGHOME a scratch home, so no helper reaches a real keyring.
 gpg_guard() {
 	[[ -n ${BATS_TEST_TMPDIR-} && ${HOME-} == "$BATS_TEST_TMPDIR/home" ]] ||
 		{ echo "gpg.bash: HOME '${HOME-}' is outside the sandbox" >&2; return 1; }
-	[[ ${GNUPGHOME-} == /tmp/lend-gpg.?* && ${GNUPGHOME#/tmp/lend-gpg.} != */* && -d $GNUPGHOME && -O $GNUPGHOME ]] ||
+	[[ ${GNUPGHOME-} == /tmp/lendk-gpg.?* && ${GNUPGHOME#/tmp/lendk-gpg.} != */* && -d $GNUPGHOME && -O $GNUPGHOME ]] ||
 		{ echo "gpg.bash: GNUPGHOME '${GNUPGHOME-}' is outside the sandbox" >&2; return 1; }
 }
 
@@ -18,7 +18,7 @@ gpg_setup() {
 	rm -f "$SB/bin/pass"
 	require gpg
 	require pass
-	GNUPGHOME=$(mktemp -d /tmp/lend-gpg.XXXXXX) || return 1
+	GNUPGHOME=$(mktemp -d /tmp/lendk-gpg.XXXXXX) || return 1
 	export GNUPGHOME
 	gpg_guard || return 1
 	printf '#!/bin/sh\nexec %q %q\n' "$FIXTURES/pinentry-recorder" "$GNUPGHOME" >"$GNUPGHOME/pinentry"
@@ -26,7 +26,7 @@ gpg_setup() {
 	printf '%s\n' "$GPG_PASS" >"$GNUPGHOME/pinentry.pass"
 	printf 'pinentry-program %s\nallow-loopback-pinentry\n' "$GNUPGHOME/pinentry" >"$GNUPGHOME/gpg-agent.conf"
 	gpg --batch --quiet --pinentry-mode loopback --passphrase "$GPG_PASS" \
-		--quick-gen-key 'lend test key' future-default default never 2>/dev/null || return 1
+		--quick-gen-key 'lendk test key' future-default default never 2>/dev/null || return 1
 	KEYID=$(gpg --batch --with-colons --list-secret-keys 2>/dev/null | awk -F: '$1 == "fpr" { print $10; exit }')
 	[[ -n $KEYID ]] || return 1
 	pass init "$KEYID" >/dev/null 2>&1 || return 1
@@ -74,7 +74,7 @@ gone_within() {
 
 # gpg_teardown: stop the scratch agent and remove its home.
 gpg_teardown() {
-	[[ ${GNUPGHOME-} == /tmp/lend-gpg.?* ]] || return 0
+	[[ ${GNUPGHOME-} == /tmp/lendk-gpg.?* ]] || return 0
 	gpg_guard || return 0
 	gpgconf --kill gpg-agent
 	gpgconf --remove-socketdir 2>/dev/null

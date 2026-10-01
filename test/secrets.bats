@@ -6,14 +6,14 @@ setup() {
 	load helpers/common
 	sandbox
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
-	export LEND_SHIMS=$SB/shims
-	mkdir -p "$LEND_SHIMS" && chmod 700 "$LEND_SHIMS"
+	export LENDK_SHIMS=$SB/shims
+	mkdir -p "$LENDK_SHIMS" && chmod 700 "$LENDK_SHIMS"
 }
 
 map() {
-	mkdir -p "$HOME/.config/lend" && chmod 700 "$HOME/.config/lend"
-	printf '%s\n' "$@" >"$HOME/.config/lend/map"
-	chmod 600 "$HOME/.config/lend/map"
+	mkdir -p "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
+	printf '%s\n' "$@" >"$HOME/.config/lendk/map"
+	chmod 600 "$HOME/.config/lendk/map"
 }
 
 # entry KEY VALUE: store VALUE, a newline and a second line as KEY's entry.
@@ -39,9 +39,9 @@ no_sentinel() {
 @test "FR3: every missing key is listed before any decrypt, and the command does not run" {
 	map 'stub K1 K2 K3'
 	entry K2 "$SENTINEL"
-	run_lend run -- stub
-	assert_eq "$stderr" "lend: missing-key: env/K1 is not in the store. Stop and ask the user.
-lend: missing-key: env/K3 is not in the store. Stop and ask the user."
+	run_lendk run -- stub
+	assert_eq "$stderr" "lendk: missing-key: env/K1 is not in the store. Stop and ask the user.
+lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_class missing-key 125
 	assert_eq "$(pass_logs)" ""
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
@@ -50,7 +50,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 @test "FR3: the command resolves before anything is decrypted" {
 	map 'nothere K1'
 	entry K1 "$SENTINEL"
-	run_lend run -- nothere
+	run_lendk run -- nothere
 	assert_class not-found 127
 	assert_eq "$(pass_logs)" ""
 }
@@ -63,8 +63,8 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	chmod 755 "$SB/bin/failpass"
 	rm "$SB/bin/pass"
 	ln -s "$SB/bin/failpass" "$SB/bin/pass"
-	run_lend run -- stub
-	assert_eq "$stderr" "lend: decrypt: env/K1: gpg says: decryption failed: No secret key. Ask the user to run 'lend unlock K1' in a terminal, then retry."
+	run_lendk run -- stub
+	assert_eq "$stderr" "lendk: decrypt: env/K1: gpg says: decryption failed: No secret key. Ask the user to run 'lendk unlock K1' in a terminal, then retry."
 	assert_class decrypt 125
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	assert_eq "$(ls -A "$TMPDIR")" ""
@@ -74,7 +74,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	map 'stub K1 K2'
 	entry K1 "$SENTINEL-1"
 	entry K2 "$SENTINEL-2"
-	run_lend run -- stub
+	run_lendk run -- stub
 	assert_eq "$status" 0
 	local logs log
 	mapfile -t logs < <(pass_logs)
@@ -95,7 +95,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	entry K2 "$SENTINEL-2"
 	printf '#!/bin/sh\nexit 0\n' >"$SB/bin/tgt"
 	chmod 755 "$SB/bin/tgt"
-	strace -f --seccomp-bpf -v -s 4096 -e trace=execve -o "$SB/trace" "$LEND" run -- tgt </dev/null 2>"$SB/stderr"
+	strace -f --seccomp-bpf -v -s 4096 -e trace=execve -o "$SB/trace" "$LENDK" run -- tgt </dev/null 2>"$SB/stderr"
 	assert_eq "$(<"$SB/stderr")" ""
 	local hits
 	hits=$(grep -F -- "$SENTINEL" "$SB/trace")
@@ -104,7 +104,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	[[ ${hits%%], [*} != *"$SENTINEL"* ]]
 }
 
-@test "FR7: the target gets the caller's umask and descriptors, and lend's files are private, under umask 000 and 022" {
+@test "FR7: the target gets the caller's umask and descriptors, and lendk's files are private, under umask 000 and 022" {
 	map 'tgt K1'
 	entry K1 "$SENTINEL"
 	printf '#!/bin/sh\numask >"$STUB_LOG/umask"\n{ echo open >&7; } 2>/dev/null\n' >"$SB/bin/tgt"
@@ -112,7 +112,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	local mask modes
 	for mask in 000 022; do
 		rm -rf "$SB/log" && mkdir "$SB/log"
-		(umask "$mask" && exec 7>"$SB/fd7" && "$LEND" run -- tgt </dev/null 2>"$SB/stderr")
+		(umask "$mask" && exec 7>"$SB/fd7" && "$LENDK" run -- tgt </dev/null 2>"$SB/stderr")
 		assert_eq "$(<"$SB/stderr")" ""
 		assert_eq "$(<"$SB/log/umask")" "0$mask"
 		assert_eq "$(<"$SB/fd7")" open
@@ -129,7 +129,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	logs=("$SB"/log/target.*)
 	mv "${logs[0]}/fds" "$SB/direct"
 	rm -rf "$SB/log" && mkdir "$SB/log"
-	(exec 7>"$SB/fd7" && "$LEND" run -- stub </dev/null 2>"$SB/stderr")
+	(exec 7>"$SB/fd7" && "$LENDK" run -- stub </dev/null 2>"$SB/stderr")
 	logs=("$SB"/log/target.*)
 	assert_eq "$(<"${logs[0]}/fds")" "$(<"$SB/direct")"
 }
@@ -137,7 +137,7 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 @test "FR10: the value is the first line without its newline, spaces and glob characters kept" {
 	map 'stub K1'
 	printf '  a * b\\n  \nsecond\n' >"$SB/store/env/K1.gpg"
-	run_lend run -- stub
+	run_lendk run -- stub
 	assert_eq "$status" 0
 	assert_eq "$(target_var K1)" '  a * b\n  '
 }
@@ -145,12 +145,12 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 @test "FR10: an empty first line or an empty entry is missing-key" {
 	map 'stub K1'
 	printf '\nsecond\n' >"$SB/store/env/K1.gpg"
-	run_lend run -- stub
-	assert_eq "$stderr" "lend: missing-key: env/K1 has an empty first line. Stop and ask the user."
+	run_lendk run -- stub
+	assert_eq "$stderr" "lendk: missing-key: env/K1 has an empty first line. Stop and ask the user."
 	assert_class missing-key 125
 	: >"$SB/store/env/K1.gpg"
-	LEND_PROMPT=allow run_lend run -- stub
-	assert_eq "$stderr" "lend: missing-key: env/K1 has an empty first line. Set it: pass edit env/K1"
+	LENDK_PROMPT=allow run_lendk run -- stub
+	assert_eq "$stderr" "lendk: missing-key: env/K1 has an empty first line. Set it: pass edit env/K1"
 	assert_class missing-key 125
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	assert_eq "$(ls -A "$TMPDIR")" ""
@@ -161,8 +161,8 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	: >"$SB/store/env/K1.gpg"
 	echo big >"$SB/store/env/K1.mode"
 	# The kernel refuses a 200 kB environment string at exec, so the read is timed on its own.
-	run lend-fn eval 'load_env; declare -A lend_env=([PATH]=$PATH [HOME]=$HOME [PASSWORD_STORE_DIR]=$PASSWORD_STORE_DIR) lend_values=()
-		lend_tmp=$(mktemp -d) lend_gpg_tty=; TIMEFORMAT=%R; time read_values K1; echo "${#lend_values[K1]}"' </dev/null
+	run lendk-fn eval 'load_env; declare -A lendk_env=([PATH]=$PATH [HOME]=$HOME [PASSWORD_STORE_DIR]=$PASSWORD_STORE_DIR) lendk_values=()
+		lendk_tmp=$(mktemp -d) lendk_gpg_tty=; TIMEFORMAT=%R; time read_values K1; echo "${#lendk_values[K1]}"' </dev/null
 	assert_eq "${lines[1]}" 200000
 	[[ ${lines[0]%%.*} == 0 ]] || { echo "took ${lines[0]} s" >&2; return 1; }
 }
@@ -171,45 +171,45 @@ lend: missing-key: env/K3 is not in the store. Stop and ask the user."
 	map 'stub K1' 'nest K2'
 	entry K1 "$SENTINEL"
 	entry K2 "$SENTINEL-2"
-	run_lend run -- stub
+	run_lendk run -- stub
 	assert_eq "$status" 0
 	refute_contains "$output$stderr" "$SENTINEL"
 	no_sentinel
 	rm -rf "$SB/log" && mkdir "$SB/log"
-	bash -x "$LEND" run -- stub </dev/null >"$SB/out" 2>"$SB/stderr"
+	bash -x "$LENDK" run -- stub </dev/null >"$SB/out" 2>"$SB/stderr"
 	refute_contains "$(<"$SB/out")$(<"$SB/stderr")" "$SENTINEL"
 	[[ -s $SB/stderr ]]
 	no_sentinel
 	rm -rf "$SB/log" && mkdir "$SB/log"
-	# A nested call under xtrace: the outer target's key is preset for the inner lend.
-	printf '#!/bin/sh\nexec %q run -- stub\n' "$LEND" >"$SB/bin/nest"
+	# A nested call under xtrace: the outer target's key is preset for the inner lendk.
+	printf '#!/bin/sh\nexec %q run -- stub\n' "$LENDK" >"$SB/bin/nest"
 	chmod 755 "$SB/bin/nest"
-	env SHELLOPTS=xtrace "$LEND" run K2 -- nest </dev/null >"$SB/out" 2>"$SB/stderr"
+	env SHELLOPTS=xtrace "$LENDK" run K2 -- nest </dev/null >"$SB/out" 2>"$SB/stderr"
 	refute_contains "$(<"$SB/out")$(<"$SB/stderr")" "$SENTINEL"
 	[[ -s $SB/stderr ]]
 	no_sentinel
 	assert_eq "$(target_var K2)" "$SENTINEL-2"
 }
 
-@test "FR21: lend leaves stdin to the target, and the backend's stdin is /dev/null" {
+@test "FR21: lendk leaves stdin to the target, and the backend's stdin is /dev/null" {
 	map 'tgt K1'
 	entry K1 "$SENTINEL"
 	printf '#!/bin/sh\ncat >"$STUB_LOG/stdin"\n' >"$SB/bin/tgt"
 	chmod 755 "$SB/bin/tgt"
-	printf 'line one\nline two\n' | "$LEND" run -- tgt 2>"$SB/stderr"
+	printf 'line one\nline two\n' | "$LENDK" run -- tgt 2>"$SB/stderr"
 	assert_eq "$(<"$SB/stderr")" ""
 	assert_eq "$(<"$SB/log/stdin")" $'line one\nline two'
 	assert_eq "$(<"$(pass_logs)/stdin")" /dev/null
 }
 
-@test "FR20: LEND_TEST_PAUSE never changes a decrypt's output or class, and no value reaches stderr" {
+@test "FR20: LENDK_TEST_PAUSE never changes a decrypt's output or class, and no value reaches stderr" {
 	local p
 	map 'stub K1 K2'
 	entry K1 "12$SENTINEL"
 	entry K2 "7 $SENTINEL"
 	for p in 1 x 10 -1 ''; do
 		rm -rf "$SB/log" && mkdir "$SB/log"
-		LEND_TEST_PAUSE=$p run_lend run -- stub
+		LENDK_TEST_PAUSE=$p run_lendk run -- stub
 		assert_eq "$stderr" ""
 		assert_eq "$status" 0
 		assert_eq "$(target_var K1)" "12$SENTINEL"

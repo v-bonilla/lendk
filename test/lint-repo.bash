@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repository lint: NFR9 content rules, portability of bin/lend (NFR3), one file in bin/, PRD ID coverage.
+# Repository lint: NFR9 content rules, portability of bin/lendk (NFR3), one file in bin/, PRD ID coverage.
 # Usage: test/lint-repo.bash [ROOT]; prints one line per problem and exits 1 when there is any.
 set -u -o pipefail
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -25,31 +25,31 @@ if ! grep -q '^MIT License' LICENSE 2>/dev/null || ! grep -q 'v-bonilla' LICENSE
 
 # NFR7: bin/ holds one file.
 bins=(bin/*)
-[[ ${#bins[@]} -eq 1 && ${bins[0]} == bin/lend ]] || problem "bin/: holds ${bins[*]}, not only bin/lend"
+[[ ${#bins[@]} -eq 1 && ${bins[0]} == bin/lendk ]] || problem "bin/: holds ${bins[*]}, not only bin/lendk"
 
-# NFR3 on bin/lend, skipping the name-list tables and the terminal-owner test.
+# NFR3 on bin/lendk, skipping the name-list tables and the terminal-owner test.
 # cmdpos WORD [START]: WORD in command position; START matches the line start.
 cmdpos() { printf '(%s|[;&|(]|[$][(])[[:space:]]*%s([^A-Za-z0-9_=-]|$)' "${2:-^}" "$1"; }
-if [[ -f bin/lend ]]; then
+if [[ -f bin/lendk ]]; then
 	body=$(awk '
 		/# lint: tables begin/ { t = 1 } /# lint: tables end/ { t = 0; next }
 		/# lint: tty-owner begin/ { o = 1 } /# lint: tty-owner end/ { o = 0; next }
 		/^backend_(has|read)\(\) \{/ { b = 1 }
 		{ print (t ? "#" : (o ? "O" : (b ? "B" : " "))) NR ":" $0 }
-		b && /^\}/ { b = 0 }' bin/lend)
+		b && /^\}/ { b = 0 }' bin/lendk)
 	code=$(grep -v '^#' <<<"$body")
 	start='^[ OB][0-9]+:'
 	# NFR7: only the backend functions name pass or the store.
-	while IFS= read -r hit; do problem "bin/lend:${hit:1}: pass or the store outside backend_has and backend_read"; done < <(
+	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: pass or the store outside backend_has and backend_read"; done < <(
 		grep -E -e "$(cmdpos pass '^[ O][0-9]+:')|[\$][{]?store([^A-Za-z0-9_]|\$)" <<<"$code" | grep -v '^B')
 	for word in stat 'readlink[[:space:]]+-f' timeout flock setsid 'sed[[:space:]]+-i' 'date[[:space:]]+[+]%N'; do
-		while IFS= read -r hit; do problem "bin/lend:${hit:1}: non-portable command"; done < <(grep -E -e "$(cmdpos "$word" "$start")" <<<"$code")
+		while IFS= read -r hit; do problem "bin/lendk:${hit:1}: non-portable command"; done < <(grep -E -e "$(cmdpos "$word" "$start")" <<<"$code")
 	done
-	while IFS= read -r hit; do problem "bin/lend:${hit:1}: bash 5 variable"; done < <(grep -E -e '[$][{]?(EPOCHREALTIME|SRANDOM)' <<<"$code")
-	while IFS= read -r hit; do problem "bin/lend:${hit:1}: /proc or ps outside the terminal-owner test"; done < <(grep -E -e "/proc|$(cmdpos ps "$start")" <<<"$code" | grep -v '^O')
+	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: bash 5 variable"; done < <(grep -E -e '[$][{]?(EPOCHREALTIME|SRANDOM)' <<<"$code")
+	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: /proc or ps outside the terminal-owner test"; done < <(grep -E -e "/proc|$(cmdpos ps "$start")" <<<"$code" | grep -v '^O')
 fi
 for f in "${files[@]}"; do
-	[[ $f == bin/lend || $f == test/*.bats || $f == test/fixtures/* ]] || continue
+	[[ $f == bin/lendk || $f == test/*.bats || $f == test/fixtures/* ]] || continue
 	while IFS= read -r hit; do problem "$f:$hit: only test helpers may call script"; done < <(grep -nE -e "$(cmdpos script)" -- "$f")
 done
 

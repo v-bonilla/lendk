@@ -6,7 +6,7 @@ setup() {
 	load helpers/common
 	sandbox
 	PRD=$ROOT/docs/prd.md
-	HELP=$("$LEND" --help)
+	HELP=$("$LENDK" --help)
 }
 
 # prd_list LABEL: the backticked list that follows LABEL in the PRD.
@@ -23,7 +23,7 @@ prd_list() {
 	while IFS= read -r line; do
 		assert_line "$HELP" "  ${line% (4.3)}"
 		n=$((n + 1))
-	done < <(sed -n '/^### 4.1 Verbs/,/^### 4.2/p' "$PRD" | sed -n '/^```$/,/^```$/p' | grep '^lend ')
+	done < <(sed -n '/^### 4.1 Verbs/,/^### 4.2/p' "$PRD" | sed -n '/^```$/,/^```$/p' | grep '^lendk ')
 	assert_eq "$n" 8
 }
 
@@ -59,7 +59,7 @@ prd_list() {
 	while read -r name; do
 		assert_line "$(grep -oE '^  [A-Z_]+ ' <<<"$HELP" | sed 's/ *$//')" "  $name"
 		n=$((n + 1))
-	done < <(sed -n '/^## 8\./,/^## 9\./p' "$PRD" | grep -oE 'LEND_[A-Z_]+|PASSWORD_STORE_DIR|XDG_[A-Z_]+_HOME|GPG_TTY' | sort -u)
+	done < <(sed -n '/^## 8\./,/^## 9\./p' "$PRD" | grep -oE 'LENDK_[A-Z_]+|PASSWORD_STORE_DIR|XDG_[A-Z_]+_HOME|GPG_TTY' | sort -u)
 	assert_eq "$n" 10
 }
 
@@ -76,12 +76,12 @@ prd_list() {
 	local want
 	want=$(sed -n '/^- FR29 /,/^- FR30 /p' "$PRD" | sed -n '/^  ```$/,/^  ```$/p' | sed '1d;$d; s/^  //')
 	[[ $want == '#!/bin/sh'* ]]
-	want=${want//\/home\/alice\/.local\/bin\/lend/$LEND}
+	want=${want//\/home\/alice\/.local\/bin\/lendk/$LENDK}
 	want=${want//so gh did/so stub did}
 	want=${want//"'gh'"/"'stub'"}
-	mkdir -p "$HOME/.config/lend" && chmod 700 "$HOME/.config/lend"
-	printf 'stub K1\n' >"$HOME/.config/lend/map" && chmod 600 "$HOME/.config/lend/map"
-	LEND_SHIMS=$SB/shims run_lend sync
+	mkdir -p "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
+	printf 'stub K1\n' >"$HOME/.config/lendk/map" && chmod 600 "$HOME/.config/lendk/map"
+	LENDK_SHIMS=$SB/shims run_lendk sync
 	assert_eq "$status" 0
 	assert_eq "$(cat "$SB/shims/stub")" "$want"
 }

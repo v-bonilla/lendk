@@ -6,14 +6,14 @@ setup() {
 	sandbox
 }
 
-@test "sandbox: HOME, TMPDIR and the store are private, and no key or lend variable leaks in" {
+@test "sandbox: HOME, TMPDIR and the store are private, and no key or lendk variable leaks in" {
 	assert_eq "$HOME" "$SB/home"
 	assert_eq "$TMPDIR" "$SB/tmp"
 	assert_eq "$PASSWORD_STORE_DIR" "$SB/store"
 	local leaked
-	leaked=$(compgen -e | grep -E '^(XDG_|LEND_|GNUPGHOME$|GH_TOKEN$|.*_(TOKEN|KEY|SECRET)$)' || true)
+	leaked=$(compgen -e | grep -E '^(XDG_|LENDK_|GNUPGHOME$|GH_TOKEN$|.*_(TOKEN|KEY|SECRET)$)' || true)
 	assert_eq "$leaked" ""
-	[[ $SENTINEL == lend-sentinel-?* ]]
+	[[ $SENTINEL == lendk-sentinel-?* ]]
 }
 
 @test "fake-pass: prints the entry and logs argv, environment and PID" {
@@ -42,33 +42,33 @@ setup() {
 	assert_eq "$(tr '\0' '|' <"${log[0]}/argv")" "a|b c|"
 }
 
-@test "run_lend: rejects a stderr line outside the contract" {
-	printf '#!/bin/sh\necho "raw error" >&2\n' >"$SB/bin/fake-lend"
-	chmod +x "$SB/bin/fake-lend"
+@test "run_lendk: rejects a stderr line outside the contract" {
+	printf '#!/bin/sh\necho "raw error" >&2\n' >"$SB/bin/fake-lendk"
+	chmod +x "$SB/bin/fake-lendk"
 	# shellcheck disable=SC2034
-	LEND=$SB/bin/fake-lend
-	run run_lend
+	LENDK=$SB/bin/fake-lendk
+	run run_lendk
 	assert_eq "$status" 1
 	assert_line "$output" "stderr line breaks the contract: raw error"
 }
 
-@test "run_lend: rejects a non-interactive forbidden suggestion" {
-	printf '#!/bin/sh\necho "lend: unmapped: gh is not mapped. Map it: lend add gh KEY" >&2\n' >"$SB/bin/fake-lend"
-	chmod +x "$SB/bin/fake-lend"
+@test "run_lendk: rejects a non-interactive forbidden suggestion" {
+	printf '#!/bin/sh\necho "lendk: unmapped: gh is not mapped. Map it: lendk add gh KEY" >&2\n' >"$SB/bin/fake-lendk"
+	chmod +x "$SB/bin/fake-lendk"
 	# shellcheck disable=SC2034
-	LEND=$SB/bin/fake-lend
-	run run_lend
+	LENDK=$SB/bin/fake-lendk
+	run run_lendk
 	assert_eq "$status" 1
-	LEND_PROMPT=allow run run_lend
+	LENDK_PROMPT=allow run run_lendk
 	assert_eq "$status" 0
 }
 
-@test "run_lend: captures stdout, stderr and status with stdin at /dev/null" {
-	printf '#!/bin/sh\ncat; echo out; echo "lend: map: m:1: bad. Fix the line, then run: lend check" >&2; exit 125\n' >"$SB/bin/fake-lend"
-	chmod +x "$SB/bin/fake-lend"
+@test "run_lendk: captures stdout, stderr and status with stdin at /dev/null" {
+	printf '#!/bin/sh\ncat; echo out; echo "lendk: map: m:1: bad. Fix the line, then run: lendk check" >&2; exit 125\n' >"$SB/bin/fake-lendk"
+	chmod +x "$SB/bin/fake-lendk"
 	# shellcheck disable=SC2034
-	LEND=$SB/bin/fake-lend
-	run_lend
+	LENDK=$SB/bin/fake-lendk
+	run_lendk
 	assert_eq "$output" out
 	assert_class map 125
 }
@@ -97,9 +97,9 @@ setup() {
 }
 
 @test "require: skips an absent tool and fails one TEST_REQUIRE lists" {
-	run require lend-no-such-tool
+	run require lendk-no-such-tool
 	assert_eq "$status" 0
-	TEST_REQUIRE="lend-no-such-tool" run require lend-no-such-tool
+	TEST_REQUIRE="lendk-no-such-tool" run require lendk-no-such-tool
 	assert_eq "$status" 1
 }
 

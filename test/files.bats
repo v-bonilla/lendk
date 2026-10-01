@@ -6,9 +6,9 @@
 setup() {
 	load helpers/common
 	sandbox
-	MAP=$HOME/.config/lend/map
-	SHIMS=$HOME/.local/share/lend/shims
-	mkdir -p "$HOME/.config/lend" && chmod 700 "$HOME/.config/lend"
+	MAP=$HOME/.config/lendk/map
+	SHIMS=$HOME/.local/share/lendk/shims
+	mkdir -p "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
 	printf '@g K2 K3\nstub K1 @g\ntmpls K1\n' >"$MAP"
 	chmod 600 "$MAP"
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
@@ -16,7 +16,7 @@ setup() {
 	printf '#!/bin/sh\nls -A "$TMPDIR" >"$STUB_LOG/tmp-at-exec"\n' >"$SB/bin/tmpls"
 	chmod +x "$SB/bin/tmpls"
 	for k in K1 K2 K3 K4; do printf '%s-%s\n' "$SENTINEL" "$k" >"$SB/store/env/$k.gpg"; done
-	run_lend sync
+	run_lendk sync
 	assert_eq "$status" 0
 	export PATH=$SHIMS:$PATH
 	rm -rf "$SB/log"/*
@@ -39,9 +39,9 @@ snapshot() {
 	done < <(find "$SB" \( -path "$SB/log" -o -path "$SB/stderr" \) -prune -o -print | sort)
 }
 
-# verb ARG...: run_lend ARG..., then TMPDIR is empty.
+# verb ARG...: run_lendk ARG..., then TMPDIR is empty.
 verb() {
-	run_lend "$@"
+	run_lendk "$@"
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
@@ -92,19 +92,19 @@ verb() {
 
 @test "NFR5: sync, add and rm write only the map, its directory and the shim directory" {
 	local before after
-	before=$(snapshot | grep -v "$HOME/.config/lend\|$SHIMS")
+	before=$(snapshot | grep -v "$HOME/.config/lendk\|$SHIMS")
 	verb add other K4
 	verb add stub K4
 	verb rm other
 	verb sync
-	after=$(snapshot | grep -v "$HOME/.config/lend\|$SHIMS")
+	after=$(snapshot | grep -v "$HOME/.config/lendk\|$SHIMS")
 	assert_eq "$after" "$before"
 	[[ ! -e $SHIMS.lock ]]
 	assert_eq "$(ls -ldn "$MAP" | cut -c1-10)" -rw-------
 }
 
 @test "NFR5: TMPDIR is empty when the target starts" {
-	run_lend run -- tmpls
+	run_lendk run -- tmpls
 	assert_eq "$status" 0
 	assert_eq "$(calls)" 1
 	[[ -f $STUB_LOG/tmp-at-exec && ! -s $STUB_LOG/tmp-at-exec ]]

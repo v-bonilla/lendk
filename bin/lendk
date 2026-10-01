@@ -1,22 +1,22 @@
 #!/usr/bin/env bash
-# lend: give API keys stored in pass to the commands that need them.
+# lendk: give API keys stored in pass to the commands that need them.
 # SPDX-License-Identifier: MIT
 
 # These lines must parse and run in bash 3.2 and any POSIX sh.
 # No commands run before the version test, so inherited functions cannot interfere with it.
-lend_old=
+lendk_old=
 case ${BASH_VERSION-} in
-'') lend_old=unknown ;;
-[0-3].* | 4.[0-3].*) lend_old=${BASH_VERSION%%[!0-9.]*} ;;
+'') lendk_old=unknown ;;
+[0-3].* | 4.[0-3].*) lendk_old=${BASH_VERSION%%[!0-9.]*} ;;
 esac
-case $lend_old in
+case $lendk_old in
 ?*)
-	lend_fix='Stop and ask the user.'
-	case "${LEND_PROMPT-auto}" in
-	allow) lend_fix='Put a newer bash first on PATH.' ;;
-	auto) if [ -t 0 ] || [ -t 2 ]; then lend_fix='Put a newer bash first on PATH.'; fi ;;
+	lendk_fix='Stop and ask the user.'
+	case "${LENDK_PROMPT-auto}" in
+	allow) lendk_fix='Put a newer bash first on PATH.' ;;
+	auto) if [ -t 0 ] || [ -t 2 ]; then lendk_fix='Put a newer bash first on PATH.'; fi ;;
 	esac
-	printf 'lend: unsupported: bash %s found; lend needs bash 4.4 or later. %s\n' "$lend_old" "$lend_fix" >&2
+	printf 'lendk: unsupported: bash %s found; lendk needs bash 4.4 or later. %s\n' "$lendk_old" "$lendk_fix" >&2
 	exit 125
 	;;
 esac
@@ -25,70 +25,70 @@ esac
 # functions of the same name until builtin is safe; it leaves before the purge, since bash 4.4
 # refuses names like [ in POSIX mode. An exported POSIXLY_CORRECT keeps its value for the target
 # but not POSIX mode, in which bash 4.4 cannot parse process substitution.
-lend_shellopts=$SHELLOPTS
-lend_bashopts=$BASHOPTS
-lend_posix=${POSIXLY_CORRECT+set}
-lend_posix_value=${POSIXLY_CORRECT-}
+lendk_shellopts=$SHELLOPTS
+lendk_bashopts=$BASHOPTS
+lendk_posix=${POSIXLY_CORRECT+set}
+lendk_posix_value=${POSIXLY_CORRECT-}
 POSIXLY_CORRECT=y
 set -f
 IFS=$' \t\n'
 unset -f builtin
-case $lend_posix in
-set) POSIXLY_CORRECT=$lend_posix_value ;;
+case $lendk_posix in
+set) POSIXLY_CORRECT=$lendk_posix_value ;;
 *) unset POSIXLY_CORRECT ;;
 esac
-# lend runs under bash's default options; restore_options gives the target the caller's.
-for lend_f in ${lend_shellopts//:/ }; do
-	case $lend_f in braceexpand | hashall | interactive-comments | noglob | posix) ;; *) builtin set +o "$lend_f" ;; esac
+# lendk runs under bash's default options; restore_options gives the target the caller's.
+for lendk_f in ${lendk_shellopts//:/ }; do
+	case $lendk_f in braceexpand | hashall | interactive-comments | noglob | posix) ;; *) builtin set +o "$lendk_f" ;; esac
 done
-for lend_f in ${lend_bashopts//:/ }; do
-	case $lend_f in
+for lendk_f in ${lendk_bashopts//:/ }; do
+	case $lendk_f in
 	checkwinsize | cmdhist | complete_fullquote | extquote | force_fignore | globasciiranges | globskipdots | \
 		hostcomplete | interactive_comments | patsub_replacement | progcomp | promptvars | sourcepath) ;;
-	*) builtin shopt -u "$lend_f" ;;
+	*) builtin shopt -u "$lendk_f" ;;
 	esac
 done
-# lend_env keeps the caller's environment, which lend's own variables may shadow, for FR2 and for
+# lendk_env keeps the caller's environment, which lendk's own variables may shadow, for FR2 and for
 # the target (FR1). The names come from expansions, not a fork, to keep shim overhead low (NFR1).
-lend_i=
-case ${lend_env@a} in *x*) lend_i=$lend_env ;; esac
-builtin unset -v lend_env
-builtin declare -A lend_env
-for lend_f in ${!A*} ${!B*} ${!C*} ${!D*} ${!E*} ${!F*} ${!G*} ${!H*} ${!I*} ${!J*} ${!K*} ${!L*} ${!M*} \
+lendk_i=
+case ${lendk_env@a} in *x*) lendk_i=$lendk_env ;; esac
+builtin unset -v lendk_env
+builtin declare -A lendk_env
+for lendk_f in ${!A*} ${!B*} ${!C*} ${!D*} ${!E*} ${!F*} ${!G*} ${!H*} ${!I*} ${!J*} ${!K*} ${!L*} ${!M*} \
 	${!N*} ${!O*} ${!P*} ${!Q*} ${!R*} ${!S*} ${!T*} ${!U*} ${!V*} ${!W*} ${!X*} ${!Y*} ${!Z*} \
 	${!a*} ${!b*} ${!c*} ${!d*} ${!e*} ${!f*} ${!g*} ${!h*} ${!i*} ${!j*} ${!k*} ${!l*} ${!m*} \
 	${!n*} ${!o*} ${!p*} ${!q*} ${!r*} ${!s*} ${!t*} ${!u*} ${!v*} ${!w*} ${!x*} ${!y*} ${!z*} \
 	${!_*}; do
-	case ${!lend_f@a} in *[aA]*) ;; *x*) lend_env[$lend_f]=${!lend_f} ;; esac
+	case ${!lendk_f@a} in *[aA]*) ;; *x*) lendk_env[$lendk_f]=${!lendk_f} ;; esac
 done
-[[ -z $lend_i ]] || lend_env[lend_env]=$lend_i
+[[ -z $lendk_i ]] || lendk_env[lendk_env]=$lendk_i
 
 builtin set +o posix
 # Only a call that inherits functions forks, for "declare -f[x] NAME" per function. Exported ones are
-# part of the environment: their definitions wait in lend_fdefs for exec.
-lend_funcs=()
-lend_xfuncs=()
-lend_fdefs=
+# part of the environment: their definitions wait in lendk_fdefs for exec.
+lendk_funcs=()
+lendk_xfuncs=()
+lendk_fdefs=
 if builtin compgen -A function >/dev/null; then
-	lend_i=0
-	for lend_f in $(builtin declare -F); do
-		lend_i=$((lend_i + 1))
-		case $((lend_i % 3)) in
-		2) lend_old=$lend_f ;;
+	lendk_i=0
+	for lendk_f in $(builtin declare -F); do
+		lendk_i=$((lendk_i + 1))
+		case $((lendk_i % 3)) in
+		2) lendk_old=$lendk_f ;;
 		0)
-			lend_funcs+=("$lend_f")
-			case $lend_old in -*x*) lend_xfuncs+=("$lend_f") ;; esac
+			lendk_funcs+=("$lendk_f")
+			case $lendk_old in -*x*) lendk_xfuncs+=("$lendk_f") ;; esac
 			;;
 		esac
 	done
 fi
-if ((${#lend_xfuncs[@]})); then
-	lend_fdefs=$(builtin declare -f -- "${lend_xfuncs[@]}")
-	builtin printf -v lend_f ' %q' "${lend_xfuncs[@]}"
-	lend_fdefs+=$'\n'"builtin export -f --$lend_f"
+if ((${#lendk_xfuncs[@]})); then
+	lendk_fdefs=$(builtin declare -f -- "${lendk_xfuncs[@]}")
+	builtin printf -v lendk_f ' %q' "${lendk_xfuncs[@]}"
+	lendk_fdefs+=$'\n'"builtin export -f --$lendk_f"
 fi
-for lend_f in "${lend_funcs[@]}"; do builtin unset -f "$lend_f"; done
-builtin unset lend_old lend_f lend_i lend_posix lend_posix_value lend_funcs lend_xfuncs
+for lendk_f in "${lendk_funcs[@]}"; do builtin unset -f "$lendk_f"; done
+builtin unset lendk_old lendk_f lendk_i lendk_posix lendk_posix_value lendk_funcs lendk_xfuncs
 
 # set_paths: PRD section 8 paths.
 # shellcheck disable=SC2034
@@ -96,11 +96,11 @@ set_paths() {
 	local config=${HOME-}/.config data=${HOME-}/.local/share
 	[[ ${XDG_CONFIG_HOME-} == /* ]] && config=$XDG_CONFIG_HOME
 	[[ ${XDG_DATA_HOME-} == /* ]] && data=$XDG_DATA_HOME
-	map=${LEND_MAP:-$config/lend/map}
-	shims=${LEND_SHIMS:-$data/lend/shims}
+	map=${LENDK_MAP:-$config/lendk/map}
+	shims=${LENDK_SHIMS:-$data/lendk/shims}
 	while [[ $shims == ?*/ ]]; do shims=${shims%/}; done
 	store=${PASSWORD_STORE_DIR:-${HOME-}/.password-store}
-	prefix=${LEND_PREFIX:-env}
+	prefix=${LENDK_PREFIX:-env}
 }
 
 # For shim overhead (NFR1): the FR28 listing of a plain map and its directory starts first and runs while bash does the
@@ -111,15 +111,15 @@ start_listing() {
 	local map shims store prefix
 	set_paths
 	if [[ $map == /?*/* && -f $map && ! -L $map ]]; then
-		exec {lend_listing}< <(command -p ls -ldnL -- "${map%/*}" "$map" 2>/dev/null)
+		exec {lendk_listing}< <(command -p ls -ldnL -- "${map%/*}" "$map" 2>/dev/null)
 	fi
 }
-lend_listing=
+lendk_listing=
 [[ ${1-} != run ]] || start_listing
 
 set -u -o pipefail
 
-LEND_VERSION=1.0.0
+LENDK_VERSION=1.0.0
 
 # lint: tables begin
 grammar=(
@@ -127,7 +127,7 @@ grammar=(
 	'@NAME KEY...   defines a group of keys; NAME matches [A-Za-z0-9_-]+'
 	'CMD WORD...    maps a command; WORD is a KEY or @NAME; CMD matches [A-Za-z0-9_+][A-Za-z0-9._+-]*'
 	'KEY matches [A-Za-z_][A-Za-z0-9_]*; its value is the first line of store entry PREFIX/KEY.'
-	'Denied keys: the prefixes and names below; LEND_ in any case.'
+	'Denied keys: the prefixes and names below; LENDK_ in any case.'
 	'Each CMD and group appears once; a group may be used before its definition.'
 	'Expansion follows word order, inlines groups, and drops duplicates, keeping the first.'
 	'Guarded commands are mapped only with add --force: their keys reach every program they run.'
@@ -135,9 +135,9 @@ grammar=(
 
 # The lists are read through the names in lists.
 # shellcheck disable=SC2034
-reserved_cmds=(lend bash pass gpg gpg2 gpg-agent gpgconf)
+reserved_cmds=(lendk bash pass gpg gpg2 gpg-agent gpgconf)
 # shellcheck disable=SC2034
-denied_prefixes=(BASH LEND_ PASSWORD_STORE_ GNUPG GPG_ LD_ DYLD_ LC_ XDG_)
+denied_prefixes=(BASH LENDK_ PASSWORD_STORE_ GNUPG GPG_ LD_ DYLD_ LC_ XDG_)
 # shellcheck disable=SC2034
 denied_names=(PATH HOME SHELL ENV IFS CDPATH PS4 PROMPT_COMMAND TMPDIR USER LOGNAME LANG TERM DISPLAY
 	WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS PINENTRY_USER_DATA SHELLOPTS UID EUID PPID GROUPS
@@ -165,37 +165,37 @@ lists=(
 
 # Rows: CLASS|HINT|interactive FIX|non-interactive FIX. A class with two TEXT forms has two rows,
 # keyed CLASS and CLASS:FORM.
-unlock_fix="Ask the user to run 'lend unlock KEY' in a terminal, then retry."
+unlock_fix="Ask the user to run 'lendk unlock KEY' in a terminal, then retry."
 stop_fix='Stop and ask the user.'
 classes=(
-	"usage|2|See: lend --help|See: lend --help"
-	"guarded|2|To map it anyway: lend add --force CMD WORD...|$stop_fix"
+	"usage|2|See: lendk --help|See: lendk --help"
+	"guarded|2|To map it anyway: lendk add --force CMD WORD...|$stop_fix"
 	"unsupported|125|Put a newer bash first on PATH.|$stop_fix"
 	"unsupported:gnupg|125|Upgrade GnuPG.|$stop_fix"
 	"locked|120|$unlock_fix|$unlock_fix"
 	"canceled|120|Run the command again to retry.|$stop_fix"
-	"timeout|120|Retry; a hardware token may need a touch, or raise LEND_TIMEOUT.|$unlock_fix"
-	"map|125|Fix the line, then run: lend check|$stop_fix"
-	"map:group|125|Define it first: lend add @GROUP KEY...|$stop_fix"
-	"unmapped|125|Map it: lend add CMD KEY..., or name keys: lend run KEY... -- CMD|$stop_fix"
+	"timeout|120|Retry; a hardware token may need a touch, or raise LENDK_TIMEOUT.|$unlock_fix"
+	"map|125|Fix the line, then run: lendk check|$stop_fix"
+	"map:group|125|Define it first: lendk add @GROUP KEY...|$stop_fix"
+	"unmapped|125|Map it: lendk add CMD KEY..., or name keys: lendk run KEY... -- CMD|$stop_fix"
 	"missing-key|125|Add it: pass insert env/KEY|$stop_fix"
-	"missing-key:nomap|125|Create it with lend add, or name the keys to unlock.|$stop_fix"
+	"missing-key:nomap|125|Create it with lendk add, or name the keys to unlock.|$stop_fix"
 	"missing-key:none|125|Add a mapped key with pass insert, then retry.|$stop_fix"
 	"missing-key:empty|125|Set it: pass edit env/KEY|$stop_fix"
-	"decrypt|125|See gpg's error: lend unlock KEY|$unlock_fix"
+	"decrypt|125|See gpg's error: lendk unlock KEY|$unlock_fix"
 	"unsafe|125|Fix it: chmod go-w PATH, or recreate it as your own|$stop_fix"
-	"write|125|Fix it, then run: lend sync|$stop_fix"
-	"exec|126|Fix it, or unmap it: lend rm CMD|$stop_fix"
-	"not-found|127|Install it, or unmap it: lend rm CMD|Install CMD, or ask the user."
-	"lend-missing|127|The user must reinstall lend from its project repository, then run: lend sync|The user must reinstall lend from its project repository, then run: lend sync"
+	"write|125|Fix it, then run: lendk sync|$stop_fix"
+	"exec|126|Fix it, or unmap it: lendk rm CMD|$stop_fix"
+	"not-found|127|Install it, or unmap it: lendk rm CMD|Install CMD, or ask the user."
+	"lendk-missing|127|The user must reinstall lendk from its project repository, then run: lendk sync|The user must reinstall lendk from its project repository, then run: lendk sync"
 )
 
 # lint: tables end
 
-# set_interactive: PRD 5.1. An invalid LEND_PROMPT counts as non-interactive until validated.
+# set_interactive: PRD 5.1. An invalid LENDK_PROMPT counts as non-interactive until validated.
 set_interactive() {
 	interactive=0
-	case ${LEND_PROMPT-auto} in
+	case ${LENDK_PROMPT-auto} in
 	allow) interactive=1 ;;
 	auto) [[ -t 0 || -t 2 ]] && interactive=1 ;;
 	esac
@@ -227,7 +227,7 @@ class_line() {
 		fix=${fix//$'\1'$i$'\2'/"${sub#*=}"}
 		i=$((i + 1))
 	done
-	line="lend: ${id%%:*}: $text. $fix"
+	line="lendk: ${id%%:*}: $text. $fix"
 }
 
 # fail CLASS[:FORM] TEXT [TOKEN=VALUE...]: print class_line's line and exit with its code.
@@ -237,23 +237,23 @@ fail() {
 	exit "$code"
 }
 
-# load_env: PRD section 8 paths and the LEND_PROMPT and LEND_TIMEOUT checks; the verbs read the globals.
+# load_env: PRD section 8 paths and the LENDK_PROMPT and LENDK_TIMEOUT checks; the verbs read the globals.
 # shellcheck disable=SC2034
 load_env() {
 	set_paths
 	set_interactive
-	case ${LEND_PROMPT-auto} in
+	case ${LENDK_PROMPT-auto} in
 	auto | never | allow) ;;
-	*) fail usage "LEND_PROMPT is '${LEND_PROMPT}'; use auto, never or allow" ;;
+	*) fail usage "LENDK_PROMPT is '${LENDK_PROMPT}'; use auto, never or allow" ;;
 	esac
-	[[ -z ${LEND_MAP-} || $LEND_MAP == /* ]] || fail usage "LEND_MAP is '$LEND_MAP'; use an absolute path"
-	[[ -z ${LEND_SHIMS-} || $LEND_SHIMS == /* ]] || fail usage "LEND_SHIMS is '$LEND_SHIMS'; use an absolute path"
+	[[ -z ${LENDK_MAP-} || $LENDK_MAP == /* ]] || fail usage "LENDK_MAP is '$LENDK_MAP'; use an absolute path"
+	[[ -z ${LENDK_SHIMS-} || $LENDK_SHIMS == /* ]] || fail usage "LENDK_SHIMS is '$LENDK_SHIMS'; use an absolute path"
 	if ((interactive)); then timeout=60; else timeout=10; fi
-	if [[ -n ${LEND_TIMEOUT+set} ]]; then
-		if ! [[ $LEND_TIMEOUT =~ ^[1-9][0-9]{0,3}$ ]] || ((LEND_TIMEOUT > 3600)); then
-			fail usage "LEND_TIMEOUT is '${LEND_TIMEOUT}'; use whole seconds from 1 to 3600"
+	if [[ -n ${LENDK_TIMEOUT+set} ]]; then
+		if ! [[ $LENDK_TIMEOUT =~ ^[1-9][0-9]{0,3}$ ]] || ((LENDK_TIMEOUT > 3600)); then
+			fail usage "LENDK_TIMEOUT is '${LENDK_TIMEOUT}'; use whole seconds from 1 to 3600"
 		fi
-		timeout=$LEND_TIMEOUT
+		timeout=$LENDK_TIMEOUT
 	fi
 }
 
@@ -273,7 +273,7 @@ bad_word() {
 	*)
 		if [[ $1 != [${az}]* || $1 == *[!${az}0123456789]* ]]; then
 			problem="'$1' is not a valid key name"
-		elif [[ " ${denied_names[*]} " == *" $1 "* || ${1^^} == LEND_* ]]; then
+		elif [[ " ${denied_names[*]} " == *" $1 "* || ${1^^} == LENDK_* ]]; then
 			problem="key '$1' is denied"
 		else
 			for p in "${denied_prefixes[@]}"; do
@@ -309,11 +309,11 @@ check_map_paths() {
 		[[ -O $p ]] || fail unsafe "$p is owned by another user" PATH="$p"
 	done
 	# ls sorts its operands, and a directory sorts before the paths it prefixes.
-	if [[ -n $lend_listing && $file == "$map" ]]; then
-		IFS= read -r -u "$lend_listing" mdir
-		IFS= read -r -u "$lend_listing" mfile
-		exec {lend_listing}<&-
-		lend_listing=
+	if [[ -n $lendk_listing && $file == "$map" ]]; then
+		IFS= read -r -u "$lendk_listing" mdir
+		IFS= read -r -u "$lendk_listing" mfile
+		exec {lendk_listing}<&-
+		lendk_listing=
 	else
 		modes=$(command -p ls -ldnL -- "$dir" "$file")
 		mdir=${modes%%$'\n'*}
@@ -365,7 +365,7 @@ expand_keys() {
 		((cmdline)) || fail unmapped "$cmd is not mapped" CMD="$cmd"
 		((cmddup == 0)) || fail map "$map:$cmddup: $cmd is mapped twice"
 		for g in "${reserved_cmds[@]}"; do
-			[[ $cmd == "$g" ]] && fail map "$map:$cmdline: $cmd is lend's own runtime and cannot be mapped"
+			[[ $cmd == "$g" ]] && fail map "$map:$cmdline: $cmd is lendk's own runtime and cannot be mapped"
 		done
 		# shellcheck disable=SC2206
 		fields=(${lines[cmdline - 1]%%#*})
@@ -421,18 +421,18 @@ resolve() {
 				[[ $resolved == */* ]] && dir=${resolved%/*}
 				[[ ${dir:-/} -ef $shims ]] && continue
 			fi
-			# A shim directory other than this call's (LEND_SHIMS set only in some shells) would
+			# A shim directory other than this call's (LENDK_SHIMS set only in some shells) would
 			# make the shim exec itself forever; only this one hit is read (NFR1).
 			line=
 			{ IFS= read -r -n 256 line && IFS= read -r -n 256 line; } <"$file" 2>/dev/null
-			[[ $line == '# lend shim '* ]] && continue
+			[[ $line == '# lendk shim '* ]] && continue
 			target=$file
 			break
 		done
 		[[ -n $target ]] || fail not-found "$cmd is not on PATH outside $shims" CMD="$cmd"
 	fi
 	[[ -f $target && -x $target ]] || fail exec "$target is not executable" PATH="$target" CMD="${cmd##*/}"
-	# A missing interpreter would fail the exec after the point where lend can still speak for it.
+	# A missing interpreter would fail the exec after the point where lendk can still speak for it.
 	line=
 	{ IFS= read -r -n 256 line <"$target"; } 2>/dev/null
 	if [[ $line == '#!'* ]]; then
@@ -457,18 +457,18 @@ backend_read() {
 	local n out k='' st=ok vals=() opts benv=()
 	local -a lines
 	allow_env
-	opts=${lend_env[PASSWORD_STORE_GPG_OPTS]-}
+	opts=${lendk_env[PASSWORD_STORE_GPG_OPTS]-}
 	opts+="${opts:+ }--status-fd 9"
-	((interactive && !lend_noloop)) || opts+=' --pinentry-mode error'
+	((interactive && !lendk_noloop)) || opts+=' --pinentry-mode error'
 	benv+=("PASSWORD_STORE_GPG_OPTS=$opts")
-	if [[ -n $lend_gpg_tty ]]; then
-		benv+=("GPG_TTY=$lend_gpg_tty")
-	elif [[ -n ${lend_env[GPG_TTY]+set} ]]; then
-		benv+=("GPG_TTY=${lend_env[GPG_TTY]}")
+	if [[ -n $lendk_gpg_tty ]]; then
+		benv+=("GPG_TTY=$lendk_gpg_tty")
+	elif [[ -n ${lendk_env[GPG_TTY]+set} ]]; then
+		benv+=("GPG_TTY=${lendk_env[GPG_TTY]}")
 	fi
 	for k in "$@"; do
-		builtin printf '%s\n' "$k" >"$lend_tmp/key"
-		if ! out=$(builtin command -p env -i "${benv[@]}" pass show "$prefix/$k" 9>"$lend_tmp/status.$k" 2>"$lend_tmp/err.$k" </dev/null); then
+		builtin printf '%s\n' "$k" >"$lendk_tmp/key"
+		if ! out=$(builtin command -p env -i "${benv[@]}" pass show "$prefix/$k" 9>"$lendk_tmp/status.$k" 2>"$lendk_tmp/err.$k" </dev/null); then
 			st=fail
 			break
 		fi
@@ -499,12 +499,12 @@ allow_env() {
 		n+=${n:+:}$dir
 	done
 	benv=("PATH=$n")
-	for n in "${!lend_env[@]}"; do
+	for n in "${!lendk_env[@]}"; do
 		case $n in
 		GPG_TTY | PASSWORD_STORE_GPG_OPTS) ;;
 		HOME | USER | LOGNAME | LANG | LC_* | TERM | TMPDIR | DISPLAY | WAYLAND_DISPLAY | XAUTHORITY | \
 			DBUS_SESSION_BUS_ADDRESS | XDG_RUNTIME_DIR | GNUPGHOME | PINENTRY_USER_DATA | PASSWORD_STORE_*)
-			benv+=("$n=${lend_env[$n]}")
+			benv+=("$n=${lendk_env[$n]}")
 			;;
 		esac
 	done
@@ -518,21 +518,21 @@ backend_job() {
 	builtin trap 'backend_exit 129' HUP
 	builtin trap '' TSTP
 	builtin umask 077
-	exec 2>"$lend_tmp/job-err"
-	builtin printf '%s\n' "$BASHPID" >"$lend_tmp/pid"
-	: >"$lend_tmp/stopped"
+	exec 2>"$lendk_tmp/job-err"
+	builtin printf '%s\n' "$BASHPID" >"$lendk_tmp/pid"
+	: >"$lendk_tmp/stopped"
 	backend_read "$@"
 }
 # shellcheck disable=SC2329 # called from traps
 backend_exit() {
-	builtin printf '%s\n' "$1" 2>/dev/null >"$lend_tmp/signal"
+	builtin printf '%s\n' "$1" 2>/dev/null >"$lendk_tmp/signal"
 	builtin exit "$1"
 }
 
 # watchdog: W, started before J (FR16, FR17), whose PID it reads from the temporary directory. Every 0.1 s it
-# wakes lend in interactive calls, then checks. At LEND_TIMEOUT it marks the timeout, and when lend
+# wakes lendk in interactive calls, then checks. At LENDK_TIMEOUT it marks the timeout, and when lendk
 # is gone it notes that. Either way it stops the job's group, with KILL after 0.5 s, and removes a
-# gone lend's temporary directory once the job can write no more.
+# gone lendk's temporary directory once the job can write no more.
 watchdog() {
 	local ticks=0 i abandon=0 jpid=
 	builtin umask 077
@@ -540,22 +540,22 @@ watchdog() {
 	while :; do
 		command -p sleep 0.1
 		((interactive == 0)) || builtin kill -USR1 "$$" 2>/dev/null
-		[[ -n $jpid ]] || { builtin read -r jpid <"$lend_tmp/pid"; } 2>/dev/null
+		[[ -n $jpid ]] || { builtin read -r jpid <"$lendk_tmp/pid"; } 2>/dev/null
 		if ! builtin kill -0 "$$" 2>/dev/null; then
 			abandon=1
 			break
 		fi
 		if ((++ticks >= 10 * timeout || SECONDS >= timeout + 1)); then
-			: >"$lend_tmp/timeout"
+			: >"$lendk_tmp/timeout"
 			break
 		fi
 	done
 	builtin trap '' TERM
-	# A lend killed right after starting J leaves J to record its PID.
+	# A lendk killed right after starting J leaves J to record its PID.
 	for i in 1 2 3 4 5; do
 		[[ -z $jpid ]] || break
 		command -p sleep 0.1
-		{ builtin read -r jpid <"$lend_tmp/pid"; } 2>/dev/null
+		{ builtin read -r jpid <"$lendk_tmp/pid"; } 2>/dev/null
 	done
 	if [[ -n $jpid ]]; then
 		builtin kill -TERM -- "-$jpid" 2>/dev/null
@@ -566,14 +566,14 @@ watchdog() {
 		done
 		builtin kill -KILL -- "-$jpid" 2>/dev/null
 	fi
-	((abandon == 0)) || command -p rm -rf -- "$lend_tmp"
+	((abandon == 0)) || command -p rm -rf -- "$lendk_tmp"
 }
 
-# backend_signal SIGNAL: lend's trap while the job runs. It stops the job and re-raises SIGNAL; the
-# watchdog, outside lend's group, kills what the job leaves and removes the temporary directory.
+# backend_signal SIGNAL: lendk's trap while the job runs. It stops the job and re-raises SIGNAL; the
+# watchdog, outside lendk's group, kills what the job leaves and removes the temporary directory.
 # shellcheck disable=SC2329 # called from traps
 backend_signal() {
-	local j=${lend_jpid:-${LEND_J_PID-}}
+	local j=${lendk_jpid:-${LENDK_J_PID-}}
 	builtin trap '' USR1
 	if [[ -n $j ]]; then
 		builtin kill -TERM -- "-$j" 2>/dev/null
@@ -586,7 +586,7 @@ backend_signal() {
 }
 
 # lint: tty-owner begin
-# tty_owner: lend's process group is the terminal's foreground group.
+# tty_owner: lendk's process group is the terminal's foreground group.
 tty_owner() {
 	local stat a b
 	local -a f
@@ -604,57 +604,57 @@ tty_owner() {
 
 # backend_fail CLASS TEXT KEY: fail after removing the temporary directory.
 backend_fail() {
-	command -p rm -rf -- "$lend_tmp"
+	command -p rm -rf -- "$lendk_tmp"
 	fail "$1" "$2" KEY="$3"
 }
 
-# read_values KEY...: lend_values[KEY] for each KEY, read by the backend job J under the watchdog W:
-# bounded by LEND_TIMEOUT (FR16), leaving no process behind (FR17), classified per PRD 5.2.
+# read_values KEY...: lendk_values[KEY] for each KEY, read by the backend job J under the watchdog W:
+# bounded by LENDK_TIMEOUT (FR16), leaving no process behind (FR17), classified per PRD 5.2.
 read_values() {
 	local err out line wpid jpid i st k ecode last
 	local -a f keys=("$@")
-	lend_jpid=
+	lendk_jpid=
 	exec {err}>&2
 	[[ -t 0 ]] && exec 2<&0
 	builtin trap 'backend_signal TERM' TERM
 	builtin trap 'backend_signal INT' INT
 	builtin trap 'backend_signal HUP' HUP
 	builtin trap : USR1
-	# A pipeline neighbor reading the terminal during a handoff stops lend's whole group; caught, not
+	# A pipeline neighbor reading the terminal during a handoff stops lendk's whole group; caught, not
 	# ignored, so J keeps the default action.
 	builtin trap : TTIN TTOU
 	# From set -m to set +m only builtins run: an external command would be a job taking the terminal.
 	builtin set -m
 	watchdog </dev/null >/dev/null 2>&1 &
 	wpid=$!
-	coproc LEND_J { backend_job "$@"; }
-	jpid=$LEND_J_PID
-	exec {out}<&"${LEND_J[0]}"
-	# Tests widen the window before lend_jpid is set. A builtin loop, since an external sleep here
-	# would be a job of its own that a signal to lend's group misses.
-	if [[ ${LEND_TEST_PAUSE-} =~ ^[0-9]$ ]]; then
-		i=$((SECONDS + LEND_TEST_PAUSE))
+	coproc LENDK_J { backend_job "$@"; }
+	jpid=$LENDK_J_PID
+	exec {out}<&"${LENDK_J[0]}"
+	# Tests widen the window before lendk_jpid is set. A builtin loop, since an external sleep here
+	# would be a job of its own that a signal to lendk's group misses.
+	if [[ ${LENDK_TEST_PAUSE-} =~ ^[0-9]$ ]]; then
+		i=$((SECONDS + LENDK_TEST_PAUSE))
 		while ((SECONDS < i)); do :; done
 	fi
-	lend_jpid=$jpid
+	lendk_jpid=$jpid
 	while :; do
 		# Plain wait: bash 4.4 runs traps during wait only when wait is not called through builtin.
-		wait "$lend_jpid" 2>/dev/null
-		builtin kill -0 "$lend_jpid" 2>/dev/null || break
+		wait "$lendk_jpid" 2>/dev/null
+		builtin kill -0 "$lendk_jpid" 2>/dev/null || break
 		line=
-		builtin jobs -sp >"$lend_tmp/stopped" 2>/dev/null
-		{ builtin read -r line <"$lend_tmp/stopped"; } 2>/dev/null
+		builtin jobs -sp >"$lendk_tmp/stopped" 2>/dev/null
+		{ builtin read -r line <"$lendk_tmp/stopped"; } 2>/dev/null
 		# A loopback prompt stops J on the terminal; J gets it only from a group that owns it (FR17).
 		# fg hands the terminal over through fd 2, so fd 2 stays on it. A pipeline neighbor that
-		# touched the terminal meanwhile stopped; CONT to lend's group resumes it.
-		if [[ $line == "$lend_jpid" ]] && tty_owner; then
+		# touched the terminal meanwhile stopped; CONT to lendk's group resumes it.
+		if [[ $line == "$lendk_jpid" ]] && tty_owner; then
 			builtin fg %% >/dev/null
-			# This also resumes a sibling the caller stopped on purpose; lend cannot tell them apart.
+			# This also resumes a sibling the caller stopped on purpose; lendk cannot tell them apart.
 			builtin kill -CONT 0 2>/dev/null
 		fi
 	done
 	builtin trap '' USR1
-	[[ -e $lend_tmp/timeout ]] || builtin kill -KILL -- "-$wpid" 2>/dev/null
+	[[ -e $lendk_tmp/timeout ]] || builtin kill -KILL -- "-$wpid" 2>/dev/null
 	wait "$wpid" 2>/dev/null
 	builtin set +m
 	exec 2>&"$err" {err}>&-
@@ -664,7 +664,7 @@ read_values() {
 	# shellcheck disable=SC2206
 	f=($line)
 	for ((i = 0; i < ${f[0]:-0}; i++)); do
-		IFS= builtin read -r -u "$out" "lend_values[${keys[i]}]"
+		IFS= builtin read -r -u "$out" "lendk_values[${keys[i]}]"
 	done
 	exec {out}<&-
 	st=${f[1]-}
@@ -680,24 +680,24 @@ read_values() {
 			f=($line)
 			[[ ${f[3]-} =~ ^[0-9]+$ ]] && ecode=$((f[3] & 65535))
 			break
-		done <"$lend_tmp/status.$k"
-		if ((interactive == 0 || lend_noloop)) && [[ $ecode == 85 || $ecode == 99 ]]; then
+		done <"$lendk_tmp/status.$k"
+		if ((interactive == 0 || lendk_noloop)) && [[ $ecode == 85 || $ecode == 99 ]]; then
 			backend_fail locked "$prefix/$k needs the gpg passphrase and this call cannot prompt" "$k"
 		elif ((interactive)) && [[ $ecode == 99 ]]; then
 			backend_fail canceled "passphrase entry for $prefix/$k was canceled" "$k"
 		fi
 		last=
-		while IFS= read -r line; do [[ -z $line ]] || last=$line; done <"$lend_tmp/err.$k"
+		while IFS= read -r line; do [[ -z $line ]] || last=$line; done <"$lendk_tmp/err.$k"
 		[[ -n $last ]] || last='pass failed with no message'
 		last=${last#gpg: }
 		backend_fail decrypt "$prefix/$k: gpg says: ${last%.}" "$k"
 		;;
 	esac
 	k=${keys[0]}
-	{ IFS= read -r k <"$lend_tmp/key"; } 2>/dev/null
-	[[ -e $lend_tmp/timeout ]] && backend_fail timeout "$prefix/$k: gpg did not finish within $timeout s" "$k"
+	{ IFS= read -r k <"$lendk_tmp/key"; } 2>/dev/null
+	[[ -e $lendk_tmp/timeout ]] && backend_fail timeout "$prefix/$k: gpg did not finish within $timeout s" "$k"
 	line=
-	{ read -r line <"$lend_tmp/signal"; } 2>/dev/null
+	{ read -r line <"$lendk_tmp/signal"; } 2>/dev/null
 	((interactive)) && [[ $line == 130 ]] && backend_fail canceled "passphrase entry for $prefix/$k was canceled" "$k"
 	backend_fail decrypt "$prefix/$k: gpg says: the backend stopped" "$k"
 }
@@ -715,11 +715,11 @@ check_gnupg() {
 		return 0
 	fi
 	[[ -n $v ]] || v='no version'
-	fail unsupported:gnupg "GnuPG ${v//[![:print:]]/?} found; lend needs GnuPG 2.4 or later"
+	fail unsupported:gnupg "GnuPG ${v//[![:print:]]/?} found; lendk needs GnuPG 2.4 or later"
 }
 
-# check_loopback: lend_noloop=1 for an interactive call that cannot take the terminal, because job
-# control signals were ignored when lend started (a command substitution), while gpg is set to
+# check_loopback: lendk_noloop=1 for an interactive call that cannot take the terminal, because job
+# control signals were ignored when lendk started (a command substitution), while gpg is set to
 # prompt on the terminal itself. Such a prompt would only show and lose the typed passphrase to the
 # caller's shell, so the call fails fast instead; any other pinentry prompts as usual.
 check_loopback() {
@@ -727,7 +727,7 @@ check_loopback() {
 	local -a f
 	((interactive)) || return 0
 	[[ -n $(builtin trap -p TTOU) ]] || return 0
-	conf=${lend_env[GNUPGHOME]:-${HOME-}/.gnupg}/gpg.conf
+	conf=${lendk_env[GNUPGHOME]:-${HOME-}/.gnupg}/gpg.conf
 	if [[ -r $conf ]]; then
 		while IFS= read -r line; do
 			# shellcheck disable=SC2206
@@ -735,12 +735,12 @@ check_loopback() {
 			[[ ${f[0]-} == pinentry-mode ]] && mode=${f[1]-}
 		done <"$conf"
 	fi
-	for w in ${lend_env[PASSWORD_STORE_GPG_OPTS]-}; do
+	for w in ${lendk_env[PASSWORD_STORE_GPG_OPTS]-}; do
 		[[ $prev == --pinentry-mode ]] && mode=$w
 		[[ $w == --pinentry-mode=* ]] && mode=${w#*=}
 		prev=$w
 	done
-	[[ $mode != loopback ]] || lend_noloop=1
+	[[ $mode != loopback ]] || lendk_noloop=1
 }
 
 # read_keys KEY...: FR3 from the existence check to the last decrypt; values stay unexported (FR4).
@@ -756,128 +756,128 @@ read_keys() {
 	check_gnupg
 	check_loopback
 	builtin set +x +v
-	lend_tmp=$(builtin umask 077 && command -p mktemp -d "${TMPDIR:-/tmp}/lend.XXXXXX") ||
+	lendk_tmp=$(builtin umask 077 && command -p mktemp -d "${TMPDIR:-/tmp}/lendk.XXXXXX") ||
 		fail write "${TMPDIR:-/tmp}: cannot create a temporary directory" PATH="${TMPDIR:-/tmp}"
 	# FR15: the backend, never the target, gets the caller's terminal as GPG_TTY.
-	lend_gpg_tty=
-	if ((interactive)) && [[ ! -c ${lend_env[GPG_TTY]-} ]]; then
+	lendk_gpg_tty=
+	if ((interactive)) && [[ ! -c ${lendk_env[GPG_TTY]-} ]]; then
 		if [[ -t 0 ]]; then
-			lend_gpg_tty=$(command -p tty 2>/dev/null)
+			lendk_gpg_tty=$(command -p tty 2>/dev/null)
 		elif [[ -t 2 ]]; then
-			lend_gpg_tty=$(command -p tty <&2 2>/dev/null)
+			lendk_gpg_tty=$(command -p tty <&2 2>/dev/null)
 		fi
 	fi
 	read_values "$@"
-	command -p rm -rf -- "$lend_tmp"
+	command -p rm -rf -- "$lendk_tmp"
 }
 
 # restore_options: the caller's shell options, which an exported SHELLOPTS or BASHOPTS carries to
-# the target (FR1), with execfail kept so a failed exec returns to lend.
+# the target (FR1), with execfail kept so a failed exec returns to lendk.
 restore_options() {
 	local o
 	for o in ${SHELLOPTS//:/ }; do
-		[[ :$lend_shellopts: == *:"$o":* ]] || builtin set +o "$o"
+		[[ :$lendk_shellopts: == *:"$o":* ]] || builtin set +o "$o"
 	done
-	for o in ${lend_shellopts//:/ }; do
+	for o in ${lendk_shellopts//:/ }; do
 		[[ :$SHELLOPTS: == *:"$o":* || $o == noexec || $o == xtrace || $o == verbose ]] || builtin set -o "$o"
 	done
-	for o in ${lend_bashopts//:/ }; do
+	for o in ${lendk_bashopts//:/ }; do
 		[[ :$BASHOPTS: == *:"$o":* ]] || builtin shopt -s "$o"
 	done
 	builtin shopt -s execfail
 }
 
-# restore_env: give every caller variable its value and export back where lend's own shadow it,
-# except the keys this call exported and LEND_INJECTED. Names lend uses come last, lend_env at the end.
+# restore_env: give every caller variable its value and export back where lendk's own shadow it,
+# except the keys this call exported and LENDK_INJECTED. Names lendk uses come last, lendk_env at the end.
 restore_env() {
-	local lend_n lend_a lend_late=()
-	for lend_n in "${!lend_env[@]}"; do
-		case $lend_n in
-		_ | SHELLOPTS | BASHOPTS | LEND_INJECTED | lend_env) continue ;;
-		lend_*) lend_late+=("$lend_n") && continue ;;
+	local lendk_n lendk_a lendk_late=()
+	for lendk_n in "${!lendk_env[@]}"; do
+		case $lendk_n in
+		_ | SHELLOPTS | BASHOPTS | LENDK_INJECTED | lendk_env) continue ;;
+		lendk_*) lendk_late+=("$lendk_n") && continue ;;
 		esac
-		[[ -z ${lend_values[$lend_n]+set} ]] || continue
-		lend_a=
-		[[ -v $lend_n ]] && lend_a=${!lend_n@a}
-		[[ $lend_a == *x* && $lend_a != *[aAr]* && ${!lend_n} == "${lend_env[$lend_n]}" ]] && continue
-		[[ $lend_a == *r* ]] && continue
-		[[ $lend_a == *[aA]* ]] && builtin unset -v "$lend_n"
-		builtin export "$lend_n=${lend_env[$lend_n]}"
+		[[ -z ${lendk_values[$lendk_n]+set} ]] || continue
+		lendk_a=
+		[[ -v $lendk_n ]] && lendk_a=${!lendk_n@a}
+		[[ $lendk_a == *x* && $lendk_a != *[aAr]* && ${!lendk_n} == "${lendk_env[$lendk_n]}" ]] && continue
+		[[ $lendk_a == *r* ]] && continue
+		[[ $lendk_a == *[aA]* ]] && builtin unset -v "$lendk_n"
+		builtin export "$lendk_n=${lendk_env[$lendk_n]}"
 	done
-	for lend_n in "${lend_late[@]}"; do
-		[[ $lend_n == lend_late ]] && continue
-		[[ -v $lend_n && ${!lend_n@a} == *[aA]* ]] && builtin unset -v "$lend_n"
-		builtin export "$lend_n=${lend_env[$lend_n]}"
+	for lendk_n in "${lendk_late[@]}"; do
+		[[ $lendk_n == lendk_late ]] && continue
+		[[ -v $lendk_n && ${!lendk_n@a} == *[aA]* ]] && builtin unset -v "$lendk_n"
+		builtin export "$lendk_n=${lendk_env[$lendk_n]}"
 	done
-	if [[ -n ${lend_env[lend_late]+set} ]]; then
-		lend_a=${lend_env[lend_late]}
-		builtin unset -v lend_late
+	if [[ -n ${lendk_env[lendk_late]+set} ]]; then
+		lendk_a=${lendk_env[lendk_late]}
+		builtin unset -v lendk_late
 		# shellcheck disable=SC2178 # the caller's variable, no longer the local array
-		builtin export lend_late="$lend_a"
+		builtin export lendk_late="$lendk_a"
 	fi
-	if [[ -n ${lend_env[lend_env]+set} ]]; then
-		lend_a=${lend_env[lend_env]}
-		builtin unset -v lend_env
-		builtin export lend_env="$lend_a"
+	if [[ -n ${lendk_env[lendk_env]+set} ]]; then
+		lendk_a=${lendk_env[lendk_env]}
+		builtin unset -v lendk_env
+		builtin export lendk_env="$lendk_a"
 	fi
 }
 
-# run_verb [WORD...] -- CMD [ARG...]: FR3 up to exec. Locals carry the lend_ prefix because they are
+# run_verb [WORD...] -- CMD [ARG...]: FR3 up to exec. Locals carry the lendk_ prefix because they are
 # still in scope at exec, where a local would hide the caller's variable of the same name.
 run_verb() {
-	local lend_words=() lend_cmd lend_k lend_list=() lend_tmp lend_gpg_tty lend_jpid lend_noloop=0
-	local -A lend_values=() lend_seen=()
+	local lendk_words=() lendk_cmd lendk_k lendk_list=() lendk_tmp lendk_gpg_tty lendk_jpid lendk_noloop=0
+	local -A lendk_values=() lendk_seen=()
 	while (($#)) && [[ $1 != -- ]]; do
-		lend_words+=("$1")
+		lendk_words+=("$1")
 		shift
 	done
 	if (($# == 0)); then
-		for lend_k in "${lend_words[@]}"; do
-			[[ $lend_k != @* ]] && type -P -- "$lend_k" >/dev/null && fail usage "'$lend_k' is a command; put -- before it"
+		for lendk_k in "${lendk_words[@]}"; do
+			[[ $lendk_k != @* ]] && type -P -- "$lendk_k" >/dev/null && fail usage "'$lendk_k' is a command; put -- before it"
 		done
 		fail usage "run needs -- before the command"
 	fi
 	shift
 	(($#)) || fail usage "run needs a command after --"
-	lend_cmd=$1
+	lendk_cmd=$1
 	shift
-	for lend_k in "${lend_words[@]}"; do
-		bad_word "$lend_k" && fail usage "$problem"
+	for lendk_k in "${lendk_words[@]}"; do
+		bad_word "$lendk_k" && fail usage "$problem"
 	done
 	check_map_paths
-	if ((${#lend_words[@]} == 0)); then
-		lend_k=${lend_cmd##*/}
-		if [[ $lend_k != [A-Za-z0-9_+]* || $lend_k == *[!A-Za-z0-9._+-]* ]]; then
-			fail usage "'$lend_cmd' names no valid command"
+	if ((${#lendk_words[@]} == 0)); then
+		lendk_k=${lendk_cmd##*/}
+		if [[ $lendk_k != [A-Za-z0-9_+]* || $lendk_k == *[!A-Za-z0-9._+-]* ]]; then
+			fail usage "'$lendk_cmd' names no valid command"
 		fi
 	fi
-	expand_keys "${lend_cmd##*/}" "${lend_words[@]}"
-	resolve "$lend_cmd"
-	for lend_k in "${keys[@]}"; do
-		[[ -n ${lend_env[$lend_k]-} ]] || lend_list+=("$lend_k")
+	expand_keys "${lendk_cmd##*/}" "${lendk_words[@]}"
+	resolve "$lendk_cmd"
+	for lendk_k in "${keys[@]}"; do
+		[[ -n ${lendk_env[$lendk_k]-} ]] || lendk_list+=("$lendk_k")
 	done
-	((${#lend_list[@]} == 0)) || read_keys "${lend_list[@]}"
-	lend_list=()
-	[[ -z $lend_listing ]] || exec {lend_listing}<&-
-	for lend_k in ${lend_env[LEND_INJECTED]-}; do
-		[[ -n ${lend_seen[$lend_k]-} ]] || lend_list+=("$lend_k")
-		lend_seen[$lend_k]=1
+	((${#lendk_list[@]} == 0)) || read_keys "${lendk_list[@]}"
+	lendk_list=()
+	[[ -z $lendk_listing ]] || exec {lendk_listing}<&-
+	for lendk_k in ${lendk_env[LENDK_INJECTED]-}; do
+		[[ -n ${lendk_seen[$lendk_k]-} ]] || lendk_list+=("$lendk_k")
+		lendk_seen[$lendk_k]=1
 	done
-	for lend_k in "${keys[@]}"; do
-		[[ -n ${lend_values[$lend_k]+set} ]] || continue
-		export "$lend_k=${lend_values[$lend_k]}"
-		[[ -n ${lend_seen[$lend_k]-} ]] || lend_list+=("$lend_k")
-		lend_seen[$lend_k]=1
+	for lendk_k in "${keys[@]}"; do
+		[[ -n ${lendk_values[$lendk_k]+set} ]] || continue
+		export "$lendk_k=${lendk_values[$lendk_k]}"
+		[[ -n ${lendk_seen[$lendk_k]-} ]] || lendk_list+=("$lendk_k")
+		lendk_seen[$lendk_k]=1
 	done
-	export LEND_INJECTED="${lend_list[*]}"
-	# The error line is made while lend's functions stand; the caller's may replace them below.
-	class_line exec "$target is not executable" PATH="$target" CMD="${lend_cmd##*/}"
-	# From here on only positional parameters and builtins: caller variables may take lend's names.
+	export LENDK_INJECTED="${lendk_list[*]}"
+	# The error line is made while lendk's functions stand; the caller's may replace them below.
+	class_line exec "$target is not executable" PATH="$target" CMD="${lendk_cmd##*/}"
+	# From here on only positional parameters and builtins: caller variables may take lendk's names.
 	# xtrace and verbose come back last, so no restore step traces a caller's value (FR20).
-	lend_k=
-	[[ :$lend_shellopts: != *:xtrace:* ]] || lend_k+=x
-	[[ :$lend_shellopts: != *:verbose:* ]] || lend_k+=v
-	set -- "$line" "$code" "$lend_fdefs" "$target" "$lend_cmd" "$lend_k" "$@"
+	lendk_k=
+	[[ :$lendk_shellopts: != *:xtrace:* ]] || lendk_k+=x
+	[[ :$lendk_shellopts: != *:verbose:* ]] || lendk_k+=v
+	set -- "$line" "$code" "$lendk_fdefs" "$target" "$lendk_cmd" "$lendk_k" "$@"
 	restore_options
 	restore_env
 	[[ -z $3 ]] || eval "$3"
@@ -897,38 +897,38 @@ fi
 
 # lint: tables begin
 verbs=(
-	'lend run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys'
-	'lend add [--force] CMD|@GROUP KEY|@GROUP...   # map, then sync'
-	'lend rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync'
-	'lend check [NAME...]                          # diagnose without decrypting'
-	'lend sync                                     # write shims to match the map'
-	'lend unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere'
-	'lend init sh|bash|zsh|systemd                 # print PATH setup'
-	'lend --help | --version'
+	'lendk run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys'
+	'lendk add [--force] CMD|@GROUP KEY|@GROUP...   # map, then sync'
+	'lendk rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync'
+	'lendk check [NAME...]                          # diagnose without decrypting'
+	'lendk sync                                     # write shims to match the map'
+	'lendk unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere'
+	'lendk init sh|bash|zsh|systemd                 # print PATH setup'
+	'lendk --help | --version'
 )
 
 # shellcheck disable=SC2016
 variables=(
-	'LEND_MAP|map file; default ${XDG_CONFIG_HOME:-~/.config}/lend/map'
-	'LEND_SHIMS|shim directory, set wherever lend runs; default ${XDG_DATA_HOME:-~/.local/share}/lend/shims; lock: SHIMS.lock'
-	'LEND_PREFIX|store entry prefix; default env'
-	'LEND_PROMPT|auto (default), never or allow'
-	'LEND_TIMEOUT|seconds of backend work per call, 1 to 3600; default 60 interactive, 10 otherwise'
-	'LEND_INJECTED|set by lend for targets: the names injected, space-separated'
+	'LENDK_MAP|map file; default ${XDG_CONFIG_HOME:-~/.config}/lendk/map'
+	'LENDK_SHIMS|shim directory, set wherever lendk runs; default ${XDG_DATA_HOME:-~/.local/share}/lendk/shims; lock: SHIMS.lock'
+	'LENDK_PREFIX|store entry prefix; default env'
+	'LENDK_PROMPT|auto (default), never or allow'
+	'LENDK_TIMEOUT|seconds of backend work per call, 1 to 3600; default 60 interactive, 10 otherwise'
+	'LENDK_INJECTED|set by lendk for targets: the names injected, space-separated'
 	'PASSWORD_STORE_DIR|store; default ~/.password-store'
 	'XDG_CONFIG_HOME|base of the default map; relative values are ignored'
 	'XDG_DATA_HOME|base of the default shim directory; relative values are ignored'
-	'GPG_TTY|set by lend for the backend only'
+	'GPG_TTY|set by lendk for the backend only'
 )
 # lint: tables end
 
 print_help() {
 	local line name i
-	printf 'lend %s: give API keys stored in pass to the commands that need them, only while they run.\n\n' "$LEND_VERSION"
+	printf 'lendk %s: give API keys stored in pass to the commands that need them, only while they run.\n\n' "$LENDK_VERSION"
 	printf 'Usage:\n'
 	printf '  %s\n' "${verbs[@]}"
-	printf '\n--force is the only flag. Shims call: lend run -- CMD. After a hand edit of the map, run: lend sync\n'
-	printf '\nMap file (LEND_MAP):\n'
+	printf '\n--force is the only flag. Shims call: lendk run -- CMD. After a hand edit of the map, run: lendk sync\n'
+	printf '\nMap file (LENDK_MAP):\n'
 	printf '  %s\n' "${grammar[@]}"
 	printf '\nName lists:\n'
 	for ((i = 0; i < ${#lists[@]}; i += 2)); do
@@ -936,7 +936,7 @@ print_help() {
 		printf '  %s: %s\n' "${lists[i]}" "${list[*]}"
 		unset -n list
 	done
-	printf '\nClasses: lend: CLASS: TEXT. FIX (exit hint): interactive FIX | non-interactive FIX\n'
+	printf '\nClasses: lendk: CLASS: TEXT. FIX (exit hint): interactive FIX | non-interactive FIX\n'
 	for line in "${classes[@]}"; do
 		name=${line%%|*}
 		line=${line#*|}
@@ -973,8 +973,8 @@ first_mapped_key() {
 
 # unlock_verb [WORD...]: FR34, decrypting under run's rules and discarding the values.
 unlock_verb() {
-	local k key lend_tmp lend_gpg_tty lend_jpid lend_noloop=0
-	local -A lend_values=()
+	local k key lendk_tmp lendk_gpg_tty lendk_jpid lendk_noloop=0
+	local -A lendk_values=()
 	for k in "$@"; do
 		bad_word "$k" && fail usage "$problem"
 	done
@@ -988,7 +988,7 @@ unlock_verb() {
 		keys=("$key")
 	fi
 	read_keys "${keys[@]}"
-	lend_values=()
+	lendk_values=()
 	printf 'unlocked\n'
 	exit 0
 }
@@ -1027,7 +1027,7 @@ scan_map() {
 				continue
 			fi
 			if [[ " ${reserved_cmds[*]} " == *" $name "* ]]; then
-				m_bad+=("$i||$name is lend's own runtime and cannot be mapped")
+				m_bad+=("$i||$name is lendk's own runtime and cannot be mapped")
 				continue
 			fi
 			[[ -z ${m_line[$name]-} ]] || { m_bad+=("$i|$name|$name is mapped twice") && continue; }
@@ -1064,7 +1064,7 @@ scan_map() {
 	((${#m_bad[@]} < 2)) || mapfile -t m_bad < <(printf '%s\n' "${m_bad[@]}" | command -p sort -s -t '|' -k 1,1n)
 }
 
-# set_self: self, the path lend was invoked by, made absolute with symlinks unresolved (FR29).
+# set_self: self, the path lendk was invoked by, made absolute with symlinks unresolved (FR29).
 set_self() {
 	self=$0
 	[[ $self == /* ]] || self=$PWD/${self#./}
@@ -1073,10 +1073,10 @@ set_self() {
 # shim_text CMD: shim, the FR29 text for CMD.
 shim_text() {
 	shim="#!/bin/sh
-# lend shim v1: generated by lend sync, edits are overwritten
-lend='${self//\'/\'\\\'\'}'
-[ -x \"\$lend\" ] || { echo \"lend: lend-missing: \$lend is missing, so $1 did not run. The user must reinstall lend from its project repository, then run: lend sync\" >&2; exit 127; }
-exec \"\$lend\" run -- '$1' \"\$@\"
+# lendk shim v1: generated by lendk sync, edits are overwritten
+lendk='${self//\'/\'\\\'\'}'
+[ -x \"\$lendk\" ] || { echo \"lendk: lendk-missing: \$lendk is missing, so $1 did not run. The user must reinstall lendk from its project repository, then run: lendk sync\" >&2; exit 127; }
+exec \"\$lendk\" run -- '$1' \"\$@\"
 "
 }
 
@@ -1085,7 +1085,7 @@ is_shim() {
 	local l2=
 	[[ -f $1 && ! -L $1 ]] || return 1
 	{ IFS= read -r && IFS= read -r l2; } <"$1" 2>/dev/null
-	[[ $l2 == '# lend shim '* ]]
+	[[ $l2 == '# lendk shim '* ]]
 }
 
 # read_file FILE: content, every byte of FILE up to a NUL.
@@ -1126,10 +1126,10 @@ check_dir() {
 # holder of the break marker, after rereading the owner, so no two waiters both break it.
 take_lock() {
 	local lock=$shims.lock owner empty=0 i
-	lend_bempty=
+	lendk_bempty=
 	for ((i = 0; i < 100; i++)); do
 		if command -p mkdir -m 700 -- "$lock" 2>/dev/null; then
-			lend_lock=$lock
+			lendk_lock=$lock
 			builtin trap release_lock EXIT
 			builtin trap 'exit 129' HUP
 			builtin trap 'exit 130' INT
@@ -1161,18 +1161,18 @@ break_lock() {
 		if [[ -n $b ]]; then
 			builtin kill -0 "$b" 2>/dev/null && return 1
 		else
-			[[ ${lend_bempty% *} == "$p" ]] || lend_bempty="$p 0"
-			lend_bempty="$p $((${lend_bempty##* } + 1))"
-			((${lend_bempty##* } > 10)) || return 1
+			[[ ${lendk_bempty% *} == "$p" ]] || lendk_bempty="$p 0"
+			lendk_bempty="$p $((${lendk_bempty##* } + 1))"
+			((${lendk_bempty##* } > 10)) || return 1
 		fi
 		dead=$b
 		p=$p/break
 	done
-	lend_bempty=
+	lendk_bempty=
 	printf '%s\n' "$$" >"$p/pid"
 	# Tests kill a waiter here, holding the marker.
-	if [[ ${LEND_TEST_PAUSE-} =~ ^[0-9]$ ]]; then
-		i=$((SECONDS + LEND_TEST_PAUSE))
+	if [[ ${LENDK_TEST_PAUSE-} =~ ^[0-9]$ ]]; then
+		i=$((SECONDS + LENDK_TEST_PAUSE))
 		while ((SECONDS < i)); do :; done
 	fi
 	if [[ $p != "$lock.break" ]]; then
@@ -1197,10 +1197,10 @@ break_lock() {
 # shellcheck disable=SC2329 # called from traps
 release_lock() {
 	local owner=
-	[[ -z ${lend_synctmp-} ]] || command -p rm -f -- "$lend_synctmp"
-	[[ -z ${lend_maptmp-} ]] || command -p rm -f -- "$lend_maptmp"
-	{ IFS= read -r owner <"$lend_lock/pid"; } 2>/dev/null
-	[[ $owner != "$$" ]] || command -p rm -rf -- "$lend_lock"
+	[[ -z ${lendk_synctmp-} ]] || command -p rm -f -- "$lendk_synctmp"
+	[[ -z ${lendk_maptmp-} ]] || command -p rm -f -- "$lendk_maptmp"
+	{ IFS= read -r owner <"$lendk_lock/pid"; } 2>/dev/null
+	[[ $owner != "$$" ]] || command -p rm -rf -- "$lendk_lock"
 }
 
 # lock_shims: create the shim directory 0700 under any umask (FR28), then hold its lock.
@@ -1248,10 +1248,10 @@ write_shims() {
 	local name f wlines=() notices=() foreign=() files
 	local -A mapped=()
 	set_self
-	lend_synctmp=$shims/.lend-sync.$$
+	lendk_synctmp=$shims/.lendk-sync.$$
 	# Under the lock no other sync is writing, so any other temporary file is a killed call's.
 	builtin set +f
-	for f in "$shims"/.lend-sync.*; do
+	for f in "$shims"/.lendk-sync.*; do
 		[[ ! -f $f || -L $f ]] || command -p rm -f -- "$f"
 	done
 	builtin set -f
@@ -1264,9 +1264,9 @@ write_shims() {
 			read_file "$f"
 			[[ $content != "$shim" ]] || ! shim_mode_ok "$f" || continue
 		fi
-		if ! { (builtin umask 077 && builtin printf '%s' "$shim" >"$lend_synctmp") &&
-			command -p chmod 755 -- "$lend_synctmp" && command -p mv -f -- "$lend_synctmp" "$f"; } 2>/dev/null; then
-			command -p rm -f -- "$lend_synctmp"
+		if ! { (builtin umask 077 && builtin printf '%s' "$shim" >"$lendk_synctmp") &&
+			command -p chmod 755 -- "$lendk_synctmp" && command -p mv -f -- "$lendk_synctmp" "$f"; } 2>/dev/null; then
+			command -p rm -f -- "$lendk_synctmp"
 			class_line write "$f: cannot be written" PATH="$f"
 			wlines+=("$line")
 		fi
@@ -1278,13 +1278,13 @@ write_shims() {
 		if is_shim "$f"; then
 			command -p rm -f -- "$f" 2>/dev/null || { class_line write "$f: cannot be removed" PATH="$f" && wlines+=("$line"); }
 		else
-			notices+=("lend: notice: $f is not a lend shim, so sync leaves it.")
+			notices+=("lendk: notice: $f is not a lendk shim, so sync leaves it.")
 		fi
 	done
 	map_lines
 	lines+=("${wlines[@]}")
 	for f in "${foreign[@]}"; do
-		class_line write "$f: is not a lend shim, so sync leaves it" PATH="$f"
+		class_line write "$f: is not a lendk shim, so sync leaves it" PATH="$f"
 		lines+=("$line")
 	done
 	((${#notices[@]} == 0)) || printf '%s\n' "${notices[@]}" >&2
@@ -1294,7 +1294,7 @@ write_shims() {
 # failure_text FUNCTION ARG...: true, with text set to the TEXT of its class line, when FUNCTION fails.
 failure_text() {
 	text=$( ("$@") 2>&1 >/dev/null) && return 1
-	text=${text#lend: *: }
+	text=${text#lendk: *: }
 	text=${text%%. *}
 	[[ -n $text ]]
 }
@@ -1314,14 +1314,14 @@ check_add() {
 # check_scan: every FR33 detection over the whole setup, into c_global and c_status. It reads file
 # existence only, never a value (FR31).
 check_scan() {
-	local name f k row text dir rest onpath=0 path files injected=" ${lend_env[LEND_INJECTED]-} "
+	local name f k row text dir rest onpath=0 path files injected=" ${lendk_env[LENDK_INJECTED]-} "
 	local -A mapped=()
 	c_global=()
 	declare -gA c_status=()
 	scan_map
 	set_self
 	if [[ ! -e $map ]]; then
-		check_add '' "$map does not exist" "map a command: lend add CMD KEY..."
+		check_add '' "$map does not exist" "map a command: lendk add CMD KEY..."
 	elif failure_text check_map_paths; then
 		check_add '' "$text" "chmod go-w it, or recreate it as your own"
 	fi
@@ -1342,48 +1342,48 @@ check_scan() {
 		rest=${rest#*:}
 		[[ $dir == "$shims" || (-d ${dir:-.} && ${dir:-.} -ef $shims) ]] && onpath=1 && break
 	done
-	((onpath)) || check_add '' "$shims is not on PATH" "set up PATH: lend init sh >> ~/.profile, then log in again"
+	((onpath)) || check_add '' "$shims is not on PATH" "set up PATH: lendk init sh >> ~/.profile, then log in again"
 	failure_text check_gnupg && check_add '' "$text" "upgrade GnuPG"
 	for name in "${m_cmds[@]}"; do mapped[$name]=1; done
 	shim_files
 	for f in "${files[@]}"; do
 		name=${f##*/}
 		if is_shim "$f"; then
-			[[ -n ${mapped[$name]-} ]] || check_add '' "$f is a stray shim" "lend sync" "lend sync"
+			[[ -n ${mapped[$name]-} ]] || check_add '' "$f is a stray shim" "lendk sync" "lendk sync"
 		elif [[ -n ${mapped[$name]-} ]]; then
-			check_add "$name" "$f is not a lend shim" "move it out of $shims"
+			check_add "$name" "$f is not a lendk shim" "move it out of $shims"
 		else
-			check_add '' "$f is not a lend shim" "move it out of $shims"
+			check_add '' "$f is not a lendk shim" "move it out of $shims"
 		fi
 	done
 	for name in "${m_groups[@]}" "${m_cmds[@]}"; do
 		for k in ${m_keys[$name]}; do
 			backend_has "$k" || check_add "$name" "$prefix/$k is not in the store" "pass insert $prefix/$k"
-			if [[ -n ${lend_env[$k]-} && $injected != *" $k "* ]]; then
+			if [[ -n ${lendk_env[$k]-} && $injected != *" $k "* ]]; then
 				check_add "$name" "$k is set in the environment, which overrides the store" "unset it where it is exported"
 			fi
 		done
 		[[ $name == @* ]] && continue
 		f=$shims/$name
 		if [[ ! -e $f && ! -L $f ]]; then
-			check_add "$name" "no shim" "lend sync" "lend sync"
+			check_add "$name" "no shim" "lendk sync" "lendk sync"
 		elif is_shim "$f"; then
 			shim_text "$name"
 			read_file "$f"
 			if [[ $content != "$shim" ]] || ! shim_mode_ok "$f"; then
 				path=${content#*$'\n'*$'\n'}
 				path=${path%%$'\n'*}
-				path=${path#lend=\'}
+				path=${path#lendk=\'}
 				path=${path%\'}
 				path=${path//\'\\\'\'/\'}
 				if [[ -f $path && -x $path ]]; then
-					check_add "$name" "stale shim" "lend sync" "lend sync"
+					check_add "$name" "stale shim" "lendk sync" "lendk sync"
 				else
-					check_add "$name" "the shim runs $path, which is not executable" "lend sync" "lend sync"
+					check_add "$name" "the shim runs $path, which is not executable" "lendk sync" "lendk sync"
 				fi
 			fi
 		fi
-		failure_text resolve "$name" && check_add "$name" "$text" "install it, or unmap it: lend rm $name"
+		failure_text resolve "$name" && check_add "$name" "$text" "install it, or unmap it: lendk rm $name"
 		((onpath)) || continue
 		rest=$PATH:
 		while [[ -n $rest ]]; do
@@ -1392,7 +1392,7 @@ check_scan() {
 			[[ $dir == "$shims" || (-d ${dir:-.} && ${dir:-.} -ef $shims) ]] && break
 			f=${dir:-.}/$name
 			if [[ -f $f && -x $f ]]; then
-				check_add "$name" "shadowed by $f" "put $shims first on PATH, or call: lend run -- $name" "lend run -- $name"
+				check_add "$name" "shadowed by $f" "put $shims first on PATH, or call: lendk run -- $name" "lendk run -- $name"
 				break
 			fi
 		done
@@ -1439,7 +1439,7 @@ check_name() {
 	elif [[ $1 != [A-Za-z0-9_+]* || $1 == *[!A-Za-z0-9._+-]* ]]; then
 		fail usage "'$1' is not a valid command name"
 	elif [[ " ${reserved_cmds[*]} " == *" $1 "* ]]; then
-		fail usage "$1 is lend's own runtime and cannot be mapped"
+		fail usage "$1 is lendk's own runtime and cannot be mapped"
 	fi
 	return 0
 }
@@ -1526,13 +1526,13 @@ edit_map() {
 		fi
 	done
 	(($1)) || out+=$2$'\n'
-	lend_maptmp=$dir/.lend-map.$$
-	if ! { (builtin umask 077 && builtin printf '%s' "$out" >"$lend_maptmp") &&
-		command -p mv -f -- "$lend_maptmp" "$file"; } 2>/dev/null; then
-		command -p rm -f -- "$lend_maptmp"
+	lendk_maptmp=$dir/.lendk-map.$$
+	if ! { (builtin umask 077 && builtin printf '%s' "$out" >"$lendk_maptmp") &&
+		command -p mv -f -- "$lendk_maptmp" "$file"; } 2>/dev/null; then
+		command -p rm -f -- "$lendk_maptmp"
 		fail write "$file: cannot be written" PATH="$file"
 	fi
-	lend_maptmp=
+	lendk_maptmp=
 }
 
 # edit_end NAME: sync under the lock, release it, then print NAME's rows in check format (FR24).
@@ -1582,7 +1582,7 @@ add_verb() {
 		edit_map "$n" "$trim ${new[*]}${line:${#trim}}"
 	fi
 	if [[ -z $g ]] && is_guarded "$name"; then
-		printf 'lend: notice: %s runs other programs, so its keys reach all of them.\n' "$name" >&2
+		printf 'lendk: notice: %s runs other programs, so its keys reach all of them.\n' "$name" >&2
 	fi
 	edit_end "$name"
 }
@@ -1601,12 +1601,12 @@ rm_verb() {
 	edit_begin rm_check "$name" "$@"
 	n=${m_line[$name]-}
 	if [[ -z $n ]]; then
-		printf 'lend: notice: %s is not in %s, so nothing changed.\n' "$name" "$map" >&2
+		printf 'lendk: notice: %s is not in %s, so nothing changed.\n' "$name" "$map" >&2
 		edit_end "$name"
 	fi
 	for w in "$@"; do
 		[[ " ${m_words[$name]} " == *" $w "* ]] ||
-			printf 'lend: notice: %s does not hold %s, so nothing changed for it.\n' "$name" "$w" >&2
+			printf 'lendk: notice: %s does not hold %s, so nothing changed for it.\n' "$name" "$w" >&2
 	done
 	if (($#)); then
 		for w in ${m_words[$name]}; do
@@ -1636,27 +1636,27 @@ init_verb() {
 	[[ $dir == /* ]] || dir=$PWD/${dir#./}
 	check_dir "$dir"
 	if [[ $1 == systemd ]]; then
-		printf '# >>> lend >>>\nPATH=%s:${PATH}\n# <<< lend <<<\n' "$dir"
+		printf '# >>> lendk >>>\nPATH=%s:${PATH}\n# <<< lendk <<<\n' "$dir"
 		exit 0
 	fi
 	q="'${dir//\'/\'\\\'\'}'"
 	# The loop keeps every other entry, empty ones included, in order.
-	front="lend_p=; lend_r=\${PATH:+\$PATH:}
-while [ -n \"\$lend_r\" ]; do
-	lend_d=\${lend_r%%:*}; lend_r=\${lend_r#*:}
-	[ \"\$lend_d\" = $q ] || lend_p=\$lend_p:\$lend_d
+	front="lendk_p=; lendk_r=\${PATH:+\$PATH:}
+while [ -n \"\$lendk_r\" ]; do
+	lendk_d=\${lendk_r%%:*}; lendk_r=\${lendk_r#*:}
+	[ \"\$lendk_d\" = $q ] || lendk_p=\$lendk_p:\$lendk_d
 done
-PATH=$q\$lend_p; export PATH
-unset lend_p lend_r lend_d"
+PATH=$q\$lendk_p; export PATH
+unset lendk_p lendk_r lendk_d"
 	case $1 in
-	sh) printf '# >>> lend >>>\n%s\n# <<< lend <<<\n' "$front" ;;
+	sh) printf '# >>> lendk >>>\n%s\n# <<< lendk <<<\n' "$front" ;;
 	bash)
-		hook='case ";${PROMPT_COMMAND-};" in *";__lend_path;"*) ;; *) PROMPT_COMMAND="__lend_path${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;; esac'
-		printf '# >>> lend >>>\n__lend_path() {\n%s\nhash -r\n}\n__lend_path\n%s\n# <<< lend <<<\n' "$front" "$hook"
+		hook='case ";${PROMPT_COMMAND-};" in *";__lendk_path;"*) ;; *) PROMPT_COMMAND="__lendk_path${PROMPT_COMMAND:+;$PROMPT_COMMAND}" ;; esac'
+		printf '# >>> lendk >>>\n__lendk_path() {\n%s\nhash -r\n}\n__lendk_path\n%s\n# <<< lendk <<<\n' "$front" "$hook"
 		;;
 	zsh)
-		hook='(( ${+precmd_functions} )) || typeset -ga precmd_functions; (( ${precmd_functions[(Ie)__lend_path]} )) || precmd_functions+=(__lend_path)'
-		printf '# >>> lend >>>\n__lend_path() {\n%s\nrehash\n}\n__lend_path\n%s\n# <<< lend <<<\n' "$front" "$hook"
+		hook='(( ${+precmd_functions} )) || typeset -ga precmd_functions; (( ${precmd_functions[(Ie)__lendk_path]} )) || precmd_functions+=(__lendk_path)'
+		printf '# >>> lendk >>>\n__lendk_path() {\n%s\nrehash\n}\n__lendk_path\n%s\n# <<< lendk <<<\n' "$front" "$hook"
 		;;
 	esac
 	exit 0
@@ -1664,7 +1664,7 @@ unset lend_p lend_r lend_d"
 
 main() {
 	case ${1-} in
-	--version) (($# == 1)) || fail usage "--version takes no arguments"; printf 'lend %s\n' "$LEND_VERSION" ;;
+	--version) (($# == 1)) || fail usage "--version takes no arguments"; printf 'lendk %s\n' "$LENDK_VERSION" ;;
 	--help) (($# == 1)) || fail usage "--help takes no arguments"; print_help ;;
 	*)
 		load_env
