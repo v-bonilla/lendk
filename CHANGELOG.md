@@ -12,7 +12,7 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 - Per-command key injection from pass through PATH shims, with key groups in one map file.
 - Fail-fast behavior without a terminal: the `locked` class, `LENDK_PROMPT` and `LENDK_TIMEOUT`.
 - A one-line stderr contract, `lendk: CLASS: TEXT. FIX`, with separate fixes for callers without a terminal.
-- `make install` and `make uninstall` without root.
+- `make install` and `make uninstall` without root, and `install.sh`, a checksum-verifying installer for the latest release.
 - Linux and macOS support; macOS needs bash and GnuPG from Homebrew.
 
 [Unreleased]: https://github.com/v-bonilla/lendk/compare/v1.0.0...HEAD

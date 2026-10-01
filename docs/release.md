@@ -14,7 +14,12 @@
    git tag -a vX.Y.Z -m 'lendk X.Y.Z'
    git push origin main vX.Y.Z
    ```
-6. Create the GitHub release for the tag, with the version's CHANGELOG entry as its notes:
+6. Build the release assets from the tagged commit: `make dist` writes `dist/lendk.tar.gz` (the git tree at HEAD under `lendk-X.Y.Z/`) and `dist/SHA256SUMS`.
+7. Create the GitHub release for the tag with both assets, and the version's CHANGELOG entry as its notes. `install.sh` downloads them through `releases/latest/download/`, so the release must not be a draft or a prerelease:
    ```
-   gh release create vX.Y.Z --title 'lendk X.Y.Z' --notes-file NOTES.md
+   gh release create vX.Y.Z --title 'lendk X.Y.Z' --notes-file NOTES.md dist/lendk.tar.gz dist/SHA256SUMS
+   ```
+8. Check the installer against the new release in a scratch HOME:
+   ```
+   curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | HOME=$(mktemp -d) bash -s -- --yes --no-modify-path
    ```

@@ -213,6 +213,32 @@ The first FIX shows in a terminal, the second without one.
 
 Install only from this repository. Same-named npm and crates.io packages are unrelated.
 
+### Installation for humans
+
+```
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
+```
+
+The installer downloads the latest release and its `SHA256SUMS`, verifies the checksum, and installs `lendk` into `~/.local/bin` without root. It checks for bash 4.4 or later, GnuPG 2.4 or later, pass, curl or wget, tar and a SHA-256 tool, and prints the package manager command for any that are missing. It then appends a `# >>> lendk-install >>>` block to your login file (`~/.bash_profile` or `~/.profile`, plus `~/.zshenv` for zsh and `~/.zprofile` for zsh on macOS) that puts `~/.local/bin` on PATH and the shim directory first, and on Linux with a systemd user session writes `~/.config/environment.d/99-lendk.conf`. It prints each change. Rerunning it upgrades lendk and changes nothing else.
+
+Pass options after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
+
+```
+--version X.Y.Z    install release X.Y.Z instead of the latest
+--prefix DIR       install into DIR/bin (default ~/.local)
+--yes              never prompt (also implied when stdin is not a terminal)
+--install-deps     run the package manager command for missing dependencies
+--no-modify-path   leave login files and the environment.d file alone
+--skill-dir DIR    copy the lendk agent skill to DIR/lendk
+--uninstall        remove what this installer added, never the map or the pass store
+```
+
+The last line of its output is `lendk-install: ok: TEXT`, or `lendk-install: CLASS: TEXT` with CLASS one of `usage`, `unsupported-os`, `missing-deps`, `download`, `checksum`, `install` or `path`. `LENDK_INSTALL_BASE_URL` replaces `https://github.com/v-bonilla/lendk/releases`, for tests and mirrors.
+
+Uninstall: `curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --uninstall`. It removes its login file blocks, the environment.d file, lendk's shims and the installed `lendk`, never the map or the store.
+
+### From source
+
 ```
 git clone https://github.com/v-bonilla/lendk
 make -C lendk install                  # PREFIX defaults to ~/.local; DESTDIR is honored
@@ -230,7 +256,7 @@ Uninstall: delete the `# >>> lendk >>>` blocks from your rc files and the enviro
 - GnuPG 2.4 or later
 - pass 1.7 or later, with a store initialized by `pass init`
 - POSIX utilities
-- `git` and `make` to install
+- `git` and `make` to install from source
 
 lendk supports Linux and macOS; CI runs the full test suite on both. On macOS it needs bash and GnuPG from Homebrew (`brew install bash gnupg pass`), since the system bash is 3.2. Homebrew's bash must come first on the login PATH: `/etc/profile` puts `/usr/bin` first, so keep `eval "$(brew shellenv)"` in `~/.profile` (or `~/.bash_profile`) and `~/.zprofile`, above lendk's blocks. Development needs Docker for `make check-docker` and `uv` for shellcheck; `make deps` fetches bats-core.
 
