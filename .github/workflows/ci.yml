@@ -49,10 +49,12 @@ jobs:
       - run: brew install bash gnupg pass
       - name: diag
         run: |
-          bash --version | head -1; gpg --version | head -1
-          d=$(mktemp -d); export HOME=$d/home LENDK_SHIMS=$d/shims PASSWORD_STORE_DIR=$d/store
-          mkdir -p $HOME/.config/lendk $d/store/env; chmod 700 $HOME/.config/lendk; echo K >$d/store/env/K1.gpg
-          ln -s /bin/ls $d/ls1; export PATH=$d:$PATH
-          bash -x bin/lendk add ls1 K1 2>&1 | tail -80 || true
-          ls -la $d/shims || true
+          d=$(mktemp -d); mkdir -m 700 $d/shims; t=$d/shims/.tmp.1
+          set -x
+          (builtin umask 077 && builtin printf '%s' hi >"$t"); echo "printf=$?"
+          command -p chmod 755 -- "$t"; echo "chmod=$?"
+          command -p mv -f -- "$t" $d/shims/x; echo "mv=$?"
+          command -p ls -ln -- $d/shims/x; echo "ls=$?"
+          command -V chmod mv ls; getconf PATH || true
+          true
       - run: make test
