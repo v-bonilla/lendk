@@ -232,7 +232,7 @@ Uninstall: delete the `# >>> lendk >>>` blocks from your rc files and the enviro
 - POSIX utilities
 - `git` and `make` to install
 
-lendk is tested on Linux. macOS is untested; there it needs bash 4.4 or later and GnuPG 2.4 or later from Homebrew, since the system bash is 3.2. Development needs Docker for `make check-docker` and `uv` for shellcheck; `make deps` fetches bats-core.
+lendk supports Linux and macOS; CI runs the full test suite on both. On macOS it needs bash and GnuPG from Homebrew (`brew install bash gnupg pass`), since the system bash is 3.2. Homebrew's bash must come first on the login PATH: `/etc/profile` puts `/usr/bin` first, so keep `eval "$(brew shellenv)"` in `~/.profile` (or `~/.bash_profile`) and `~/.zprofile`, above lendk's blocks. Development needs Docker for `make check-docker` and `uv` for shellcheck; `make deps` fetches bats-core.
 
 ## License
 
