@@ -95,10 +95,10 @@ Never retry `locked`, `timeout` or `canceled` in a loop. Every failure stops bef
 - Never use `--force` unless the user asked for it.
 - On `locked`, stop and ask a human to run `lendk unlock` in a terminal. Do not try to unlock it yourself.
 - Never edit the map, the shim files or GnuPG settings by hand without the user's approval.
-- One exemption: an installation test the user approved, with a throwaway key and exactly these commands:
+- One exemption: an installation test the user approved, with a throwaway key and exactly these commands, the cleanup run even when the test fails:
   ```
   printf 'lendk-test\n' | pass insert -m env/DEMO_TOKEN
-  lendk run DEMO_TOKEN -- sh -c 'test -n "$DEMO_TOKEN" && echo received'
+  ~/.local/bin/lendk run DEMO_TOKEN -- sh -c 'test -n "$DEMO_TOKEN" && echo received'
   pass rm -f env/DEMO_TOKEN
   ```
 

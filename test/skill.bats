@@ -47,7 +47,7 @@ classes_of() { grep -oE '^\| `[a-z-]+` \|' "$1" | sed 's/^| `//; s/` |$//' | sor
 
 @test "FR38: the skill exempts exactly the README's approved installation test, and sync is safe" {
 	local cmd cmds
-	cmds=$(sed -n '/^- One exemption:/,/^$/p' "$SKILL" | grep -E '^  (printf|lendk|pass) ')
+	cmds=$(sed -n '/^- One exemption:/,/^$/p' "$SKILL" | grep -E '^  (printf|~/\.local/bin/lendk|pass) ')
 	assert_eq "$(wc -l <<<"$cmds")" 3
 	while IFS= read -r cmd; do
 		grep -qF -e "${cmd#  }" "$ROOT/README.md" || { echo "README prompt lacks: $cmd" >&2; return 1; }

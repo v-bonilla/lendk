@@ -53,9 +53,12 @@ agent_prompt() {
 		'--skill-dir ~/.claude/skills' 'Ask me before rerunning with --install-deps or running' 'anything with sudo' \
 		'gpg --quick-generate-key' 'pass init' 'lendk --version' 'bash -lc' '~/.local/share/lendk/shims' \
 		'lendk check' 'Only if I agree' 'lendk run ' 'never run pass show' 'never print the environment' \
-		'Finish with a short report' 'lendk-install: ok: TEXT'; do
+		'Finish with a short report' 'lendk-install: ok: TEXT' 'even when the run fails' \
+		'~/.local/bin/lendk run DEMO_TOKEN' '~/.local/bin/lendk unlock DEMO_TOKEN'; do
 		grep -qF -e "$point" <<<"$prompt" || { echo "agent prompt lacks: $point" >&2; return 1; }
 	done
+	# The agent's shell predates the PATH change, so it runs lendk by path or in a login shell.
+	if grep -E '(^|[ "])lendk (run|unlock|check|--version)' <<<"$prompt"; then return 1; fi
 	# The installer URL is the one install.sh names for itself.
 	grep -qF "$(sed -n 2p "$ROOT/install.sh" | grep -oE 'curl -fsSL [^ ]+')" <<<"$prompt"
 	for opt in $(grep -oE -e '--[a-z][a-z-]+' <<<"$prompt" | sort -u); do

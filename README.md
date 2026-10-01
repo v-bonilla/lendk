@@ -99,11 +99,13 @@ pass only to the commands mapped to them.
    - bash -lc 'lendk check' prints its report without decrypting. On a fresh install it prints the
      "# map", "# shims" and "# store" lines and the notice "no command is mapped yet", and exits 0;
      that is expected. Relay any "# problem" line or other row it shows.
-   - Only if I agree: an end-to-end test with a throwaway key. Run
-     printf 'lendk-test\n' | pass insert -m env/DEMO_TOKEN, then
-     lendk run DEMO_TOKEN -- sh -c 'test -n "$DEMO_TOKEN" && echo received', then
-     pass rm -f env/DEMO_TOKEN. On a "lendk: locked:" line, ask me to run lendk unlock DEMO_TOKEN
-     in a terminal, then retry once.
+   - Only if I agree: an end-to-end test with a throwaway key, with the path to lendk, since your
+     shell predates the PATH change:
+       printf 'lendk-test\n' | pass insert -m env/DEMO_TOKEN
+       ~/.local/bin/lendk run DEMO_TOKEN -- sh -c 'test -n "$DEMO_TOKEN" && echo received'
+       pass rm -f env/DEMO_TOKEN
+     Run the cleanup, pass rm -f env/DEMO_TOKEN, even when the run fails. On a "lendk: locked:"
+     line, ask me to run ~/.local/bin/lendk unlock DEMO_TOKEN in a terminal, retry once, then clean up.
 4. Never read or print a secret, never run pass show, and never print the environment.
 5. Finish with a short report: what you installed and which files changed, each check's result,
    and what I still have to do (open a new login shell, store keys with pass insert env/KEY, map
