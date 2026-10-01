@@ -152,6 +152,9 @@ stop_lendk() {
 }
 
 @test "FR17: a pipeline neighbor that reads the terminal during a loopback prompt resumes afterwards" {
+	# On macOS lendk hands the terminal back and resumes the neighbor, which then reads, but the
+	# interactive bash above still counts the neighbor as stopped and reclaims the terminal.
+	[[ $(uname -s) != Darwin ]] || skip 'macOS bash misses the neighbor resuming after SIGTTIN'
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub | { sleep 0.5; IFS= read -r x </dev/tty; echo neighbor=\$x; }" @2 typed-secret @1.5 neighbor-line @1 exit
 	assert_line "$output" neighbor=neighbor-line
