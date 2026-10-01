@@ -9,7 +9,6 @@ permissions:
 
 jobs:
   check:
-    if: github.ref != 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -20,7 +19,6 @@ jobs:
       - run: make check
 
   docker:
-    if: github.ref != 'refs/heads/dev'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -29,7 +27,6 @@ jobs:
       - run: make check-docker
 
   bench:
-    if: github.ref != 'refs/heads/dev'
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -41,21 +38,11 @@ jobs:
 
   macos:
     runs-on: macos-latest
-    continue-on-error: true
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
       - run: brew install bash gnupg pass
-      - name: diag
-        timeout-minutes: 3
-        continue-on-error: true
-        env:
-          BATS_TEST_TIMEOUT: 40
-        run: |
-          test/lib/bats-core/bin/bats --filter 'pipeline neighbor that reads' test/signals.bats || true
-          cut -c1-120 /tmp/lendk-diag
+      - run: bash --version | head -n 1 && gpg --version | head -n 1
       - run: make test
-        timeout-minutes: 20
-        env:
-          BATS_TEST_TIMEOUT: 60
