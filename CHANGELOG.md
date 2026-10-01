@@ -4,7 +4,7 @@ All notable changes to lend are documented here. The format follows [Keep a Chan
 
 ## [Unreleased]
 
-## [1.0.0] - YYYY-MM-DD
+## [1.0.0] - 2026-10-01
 
 ### Added
 
