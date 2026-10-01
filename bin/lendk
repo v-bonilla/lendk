@@ -1265,7 +1265,7 @@ write_shims() {
 			[[ $content != "$shim" ]] || ! shim_mode_ok "$f" || continue
 		fi
 		if ! { (builtin umask 077 && builtin printf '%s' "$shim" >"$lendk_synctmp") &&
-			command -p chmod 755 -- "$lendk_synctmp" && command -p mv -f -- "$lendk_synctmp" "$f"; } 2>/dev/null; then
+			command -p chmod -- 755 "$lendk_synctmp" && command -p mv -f -- "$lendk_synctmp" "$f"; } 2>/dev/null; then
 			command -p rm -f -- "$lendk_synctmp"
 			class_line write "$f: cannot be written" PATH="$f"
 			wlines+=("$line")
