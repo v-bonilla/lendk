@@ -33,6 +33,7 @@ before_tenths() {
 	local t=${elapsed/./}
 	t=$((10#$t))
 	printf '%s\n' "$elapsed" >>"${BATS_FR16_TIMES:-/dev/null}"
+	printf '# FR16 elapsed %s s\n' "$elapsed" >&3
 	((t < $1 * 100)) || { echo "took $elapsed s, expected under $(($1 / 10)).$(($1 % 10)) s" >&2; return 1; }
 }
 
