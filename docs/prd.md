@@ -60,9 +60,11 @@ lendk --help | --version
 
 ```
 # ~/.config/lendk/map
-@aws        AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+@search     EXA_API_KEY BRAVE_API_KEY    # a group of keys
+claude      @search                      # Claude Code and Codex get both keys
+codex       @search
+opencode    BRAVE_API_KEY                # one key, mapped directly
 gh          GH_TOKEN
-terraform   @aws CLOUDFLARE_API_TOKEN    # trailing comment
 ```
 
 - One entry per line; fields split on blanks; `#` starts a comment anywhere; blank lines are ignored.
@@ -71,7 +73,7 @@ terraform   @aws CLOUDFLARE_API_TOKEN    # trailing comment
 - KEY matches `[A-Za-z_][A-Za-z0-9_]*`; its value is the first line of store entry `PREFIX/KEY`. Denied, as they steer lendk, pass, gpg, the shell or the loader, reach the backend (FR8), or bash rejects them: prefixes `BASH LENDK_ PASSWORD_STORE_ GNUPG GPG_ LD_ DYLD_ LC_ XDG_`; names `PATH HOME SHELL ENV IFS CDPATH PS4 PROMPT_COMMAND TMPDIR USER LOGNAME LANG TERM DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS PINENTRY_USER_DATA SHELLOPTS UID EUID PPID GROUPS RANDOM SRANDOM SECONDS LINENO HISTCMD EPOCHSECONDS EPOCHREALTIME FUNCNAME DIRSTACK PIPESTATUS OPTIND OPTARG`. `LENDK_` is denied in any case, since lendk's own variables carry it.
 - Each CMD and group appears once; a group may be used before its definition.
 - Expansion follows word order, inlines groups, and drops duplicates, keeping the first.
-- Guarded CMD, which `add` maps only with `--force`: shells `sh dash zsh ksh mksh fish csh tcsh busybox`; interpreters `python* pypy* node nodejs deno bun perl* ruby* php* lua* java`; launchers `env sudo doas su xargs nohup setsid timeout nice make tmux screen`; package tools `npm npx pnpm yarn pip pip3 pipx uv uvx`; agent CLIs `aider claude codex gemini goose opencode`.
+- Guarded CMD, which `add` maps only with `--force`: shells `sh dash zsh ksh mksh fish csh tcsh busybox`; interpreters `python* pypy* node nodejs deno bun perl* ruby* php* lua* java`; launchers `env sudo doas su xargs nohup setsid timeout nice make tmux screen`; package tools `npm npx pnpm yarn pip pip3 pipx uv uvx`; agent CLIs `aider claude codex gemini goose opencode`. The example's `claude`, `codex` and `opencode` are guarded, so `add` needs `--force` for them.
 
 ### 4.3 PATH setup
 
