@@ -1,18 +1,46 @@
 # lendk
 
-`export OPENAI_API_KEY=...` in a shell rc file gives every key to every process you start: AI coding agents, package install scripts, any tool you try once. lendk keeps your API keys in [pass](https://www.passwordstore.org/) and gives each one only to the commands that need it, only while they run. You type `gh`; `gh` gets `GH_TOKEN`; nothing else does. A shim per mapped command sits first on PATH, so shells, scripts, Python subprocesses and agents all get the same behavior with no prefix command.
+lendk gives each API key only to the commands you choose, and only while they run. You type `gh`, `gh` gets `GH_TOKEN`, and nothing else does.
+
+The common habit is a line like `export OPENAI_API_KEY=...` in a shell startup file. That hands every key to every program you start: AI coding agents, package install scripts, any tool you try once. With lendk, your keys stay encrypted in [pass](https://www.passwordstore.org/), a password manager that keeps each secret in a GPG-encrypted file. You tell lendk once which command gets which key. After that you run the command as you always do, and lendk decrypts its key for that run.
+
+## Contents
+
+- [Key features](#key-features)
+- [Quick start for humans](#quick-start-for-humans)
+- [Examples](#examples)
+  - [gh with a GitHub token](#gh-with-a-github-token)
+  - [A group of keys for Claude Code or Codex](#a-group-of-keys-for-claude-code-or-codex)
+- [Installation](#installation)
+  - [For humans](#for-humans)
+  - [For AI agents](#for-ai-agents)
+- [Uninstall](#uninstall)
+- [Daily use](#daily-use)
+  - [Map file](#map-file)
+- [How it works](#how-it-works)
+  - [Security model](#security-model)
+  - [Decrypt speed and `s2k-count`](#decrypt-speed-and-s2k-count)
+- [PATH setup](#path-setup)
+- [Callers that skip PATH](#callers-that-skip-path)
+  - [Git credential helper](#git-credential-helper)
+  - [cron, systemd units, MCP servers](#cron-systemd-units-mcp-servers)
+  - [Other PATH-bypassing launchers](#other-path-bypassing-launchers)
+- [Troubleshooting](#troubleshooting)
+- [Agent contract](#agent-contract)
+- [Requirements](#requirements)
+- [License](#license)
 
 ## Key features
 
-- Per-command keys: `gh` gets `GH_TOKEN`, and no other process gets any key.
-- No prefix command: shims first on PATH serve shells, scripts, subprocesses and AI agents alike.
-- Keys stay in pass, never in rc files, argv, files, logs or lendk's output.
-- Built for agents: no hung passphrase prompts, one stable stderr class line per failure.
-- `lendk check` finds shadowed shims, missing keys and PATH mistakes without decrypting.
-- One bash file: no daemon, no cache of values, no network access, no telemetry.
-- Linux and macOS, installed by a checksum-verifying script without root.
+- **One key, one command.** `gh` gets `GH_TOKEN`. Your shell and the other programs you start from it get no key.
+- **Nothing new to type.** You keep running `gh`. lendk puts a small script named `gh`, called a shim, in a directory your system searches first. The shim gets the key, then starts the real `gh`. Scripts and AI agents that run `gh` get the same result.
+- **Keys stay encrypted.** They live in pass, not in your shell startup files. lendk never writes a key to a file, a log, a command line or its own output.
+- **Works with AI agents.** A call without a terminal never waits at a passphrase prompt nobody can answer. Every failure is one line that names the problem and the fix.
+- **`lendk check` shows what is wrong.** It lists which command gets which key, and reports missing keys and setup mistakes, without decrypting anything.
+- **Small and quiet.** One bash file. No background service, no saved copy of a decrypted key, no network access, no telemetry.
+- **Linux and macOS, no root needed.** The install script checks the download against its checksum before it installs anything.
 
-## Quick start
+## Quick start for humans
 
 You need a GPG key and a pass store initialized for it; the installer prints the steps when the store is missing.
 
@@ -26,6 +54,45 @@ lendk add gh GH_TOKEN
 <!-- quickstart -->
 
 Now `gh` gets `GH_TOKEN`, and `echo "$GH_TOKEN"` in your shell prints nothing.
+
+To have an AI agent install lendk, give it the prompt under [For AI agents](#for-ai-agents).
+
+## Examples
+
+### gh with a GitHub token
+
+Store the token, map it to `gh`, then run `gh` as you always do:
+
+```
+pass insert env/GH_TOKEN       # pass asks for the token and encrypts it
+lendk add gh GH_TOKEN          # gh gets GH_TOKEN from here on
+gh repo list                   # works: gh received the token
+echo "${GH_TOKEN:-not set}"    # prints "not set": the shell itself has no GH_TOKEN
+```
+
+### A group of keys for Claude Code or Codex
+
+Claude Code and Codex both need two web search keys here. Store the keys, name them as a group, then give the group to each agent:
+
+```
+pass insert env/EXA_API_KEY
+pass insert env/BRAVE_API_KEY
+lendk add @search EXA_API_KEY BRAVE_API_KEY    # a group of keys named search
+lendk add --force claude @search               # Claude Code gets both keys
+lendk add --force codex @search                # Codex gets the same group
+```
+
+These commands add three lines to the map file, `~/.config/lendk/map`:
+
+```
+@search EXA_API_KEY BRAVE_API_KEY
+claude @search
+codex @search
+```
+
+`--force` is needed because an agent CLI starts other programs: shell commands, scripts, MCP servers. The keys reach everything it runs, so `lendk add` refuses until you confirm with `--force`.
+
+A tighter setup leaves the agent unmapped and gives the key only to the MCP server that needs it: in the agent's MCP config, start the server through lendk by its absolute path, as `/home/alice/.local/bin/lendk run EXA_API_KEY -- some-mcp-server`. See [cron, systemd units, MCP servers](#cron-systemd-units-mcp-servers).
 
 ## Installation
 
@@ -51,8 +118,6 @@ The installer options go after `bash -s --`, for example `curl -fsSL .../install
 
 With `--install-deps` and no terminal, sudo runs as `sudo -n` and fails when it needs a password; run `sudo -v` first, or run the printed command yourself.
 
-Uninstall: `curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --uninstall`. It removes its login file blocks, the environment.d file, lendk's shims and the installed `lendk`, never the map or the store.
-
 #### From source
 
 ```
@@ -63,8 +128,6 @@ make -C lendk install                  # PREFIX defaults to ~/.local; DESTDIR is
 `make install` renames a new file over the old one, so a running lendk keeps reading its copy.
 
 Upgrade: `git pull`, then `make install`. With versioned install directories behind a stable symlink, run `lendk sync` once through the symlink.
-
-Uninstall: delete the `# >>> lendk >>>` blocks from your rc files and the environment.d file, then `make -C lendk uninstall`. It removes lendk's shims, the shim directory and lendk's data directory if empty, and the installed file when it is lendk's, never the map, the store or your rc files.
 
 ### For AI agents
 
@@ -105,11 +168,33 @@ pass only to the commands mapped to them.
 ```
 <!-- agent-prompt -->
 
+## Uninstall
+
+After an install with the installer:
+
+```
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --uninstall
+```
+
+- It removes the installer's blocks from your login files, the environment.d file, lendk's shims and the installed `lendk`.
+- It never removes the map or the pass store.
+- Add `--skill-dir DIR` to remove the skill copy at `DIR/lendk` too.
+- Add the `--prefix DIR` you installed with, when you used one.
+- Blocks you added yourself with `lendk init` stay. Delete the lines from `# >>> lendk >>>` to `# <<< lendk <<<` in those files.
+
+After an install from source, delete the `# >>> lendk >>>` blocks from your rc files and the environment.d file, then run:
+
+```
+make -C lendk uninstall
+```
+
+It removes lendk's shims, the shim directory and lendk's data directory if empty, and the installed file when it is lendk's, never the map, the store or your rc files.
+
 ## Daily use
 
 ```
 lendk run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys
-lendk add [--force] CMD|@GROUP KEY|@GROUP...   # map KEY to a CMD (or a group of keys to a group of cmds), then sync
+lendk add [--force] CMD|@GROUP KEY|@GROUP...   # map keys to a CMD (or define a group of keys), then sync
 lendk rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync
 lendk check [NAME...]                          # diagnose without decrypting
 lendk sync                                     # write shims to match the map
@@ -130,15 +215,18 @@ lendk --help | --version
 `~/.config/lendk/map`:
 
 ```
-@aws        AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+@search     EXA_API_KEY BRAVE_API_KEY    # a group of keys
+claude      @search                      # Claude Code and Codex get both keys
+codex       @search
+opencode    BRAVE_API_KEY                # one key, mapped directly
 gh          GH_TOKEN
-terraform   @aws CLOUDFLARE_API_TOKEN    # trailing comment
 ```
 
-- One entry per line; `#` starts a comment. `@NAME KEY...` defines a group; `CMD WORD...` maps a command, WORD being a key or `@NAME`.
+- One entry per line; `#` starts a comment. `@NAME KEY...` defines a group of keys; `CMD WORD...` maps a command, WORD being a key or `@NAME`.
+- There are no groups of commands: two commands share keys by naming the same group.
 - Groups inline in word order; duplicates are dropped, keeping the first.
 - lendk refuses keys that steer lendk, pass, gpg, the shell or the loader, and refuses to map its own runtime.
-- Guarded commands run other programs, so their keys reach everything they run. `lendk add` maps them only with `--force`, and prints a notice.
+- Guarded commands run other programs, so their keys reach everything they run. `lendk add` maps them only with `--force`, and prints a notice. `claude`, `codex` and `opencode` above are guarded.
 
 The name lists, as `lendk --help` prints them:
 
