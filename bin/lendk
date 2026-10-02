@@ -119,7 +119,7 @@ lendk_listing=
 
 set -u -o pipefail
 
-LENDK_VERSION=1.0.0
+LENDK_VERSION=1.1.0
 
 # lint: tables begin
 grammar=(
