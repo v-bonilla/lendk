@@ -4,7 +4,7 @@ This plan takes lendk from 1.0.0 to 1.1.0 by adding the verb `lendk upgrade` as 
 
 ## 1. Scope
 
-In scope: `upgrade` in `bin/lendk`, its tests, the lint region for the download tools, the README, skill and CHANGELOG text, and the release preparation.
+In scope: `upgrade` in `bin/lendk`, its tests, the lint region for the download tools, the README, skill and CHANGELOG text, and the release preparation short of the release commit.
 
 Non-goals: choosing a release, downgrade, rollback, signature checks; refreshing PATH setup, the environment.d file or a skill copy; any change to `install.sh`, the `Makefile`, the Docker images or the CI workflow; any refactor of `read_values`, `backend_read` or `allow_env`; tagging, pushing and publishing, which stay with the maintainer.
 
@@ -30,7 +30,7 @@ Before S1: the branch is rebased onto `dev`. FR37 conflicts on that rebase, sinc
 | `skills/lendk/SKILL.md` | verb line, class row | | full text | |
 | `skills/lendk/references/setup.md`, `.claude/CLAUDE.md` | | | text | |
 | `test/readme.bats`, `test/skill.bats` | | | FR37, FR38 topics | |
-| `CHANGELOG.md` | | | Unreleased entry | 1.1.0 entry |
+| `CHANGELOG.md` | | | Unreleased entry | |
 | `docs/release.md` | | | | new steps |
 
 ## 4. Test strategy
@@ -139,10 +139,10 @@ Sizes: S fits a short pass, M a full one.
 ### S4 Release preparation (S)
 
 - `LENDK_VERSION=1.1.0` in `bin/lendk`.
-- `CHANGELOG.md`: the Unreleased entries move under `## [1.1.0] - YYYY-MM-DD` with the release date; the comparison links gain 1.1.0.
+- `CHANGELOG.md` keeps its entries under Unreleased: the release date is the tag's, so the release commit moves them, as `docs/release.md` says.
 - `docs/release.md` gains three things: before the commit step, "delete `docs/plan.md` when the release had one"; in the release step, `lendk upgrade` reads the same `releases/latest/download/` assets as `install.sh`; after the installer check, a check of the verb against the published release, in a scratch HOME that the installer filled: `lendk upgrade` prints `lendk X.Y.Z is up to date: the latest release is X.Y.Z`. That check is the only run of the real download path, since the suite stubs the tools.
 - The three gates of `docs/release.md`: `make check`, `make check-docker`, `make bench`, each exit 0.
-- Done: `bin/lendk --version` prints `lendk 1.1.0`; the three gates exit 0; `docs/release.md` holds the three additions. The release commit, which deletes this file, the tag, the push and the GitHub release are the maintainer's.
+- Done: `bin/lendk --version` prints `lendk 1.1.0`; the three gates exit 0; `docs/release.md` holds the three additions. The release commit, which dates the CHANGELOG entry and deletes this file, the tag, the push and the GitHub release are the maintainer's.
 
 ## 6. Implementation rules
 
