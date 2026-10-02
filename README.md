@@ -16,18 +16,14 @@
 
 You need a GPG key and a pass store initialized for it; the installer prints the steps when the store is missing.
 
-Four commands, bash on Linux:
-
 <!-- quickstart -->
 ```
 curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
-exec bash -l
+exec bash -l   # PATH setup
 pass insert env/GH_TOKEN
 lendk add gh GH_TOKEN
 ```
 <!-- quickstart -->
-
-Command 2 starts a login shell, which reads the PATH block the installer added. Desktop apps see the shims after the next desktop login. For zsh, systemd and macOS, see [PATH setup](#path-setup).
 
 Now `gh` gets `GH_TOKEN`, and `echo "$GH_TOKEN"` in your shell prints nothing.
 
@@ -41,9 +37,7 @@ Install only from this repository.
 curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
 ```
 
-The installer downloads the latest release and its `SHA256SUMS`, verifies the checksum, and installs `lendk` into `~/.local/bin` without root. It checks for bash 4.4 or later, GnuPG 2.4 or later, pass, curl or wget, tar and a SHA-256 tool, and prints the package manager command for any that are missing. It then appends a `# >>> lendk-install >>>` block to your login file (`~/.bash_profile` or `~/.profile`, plus `~/.zshenv` for zsh and `~/.zprofile` for zsh on macOS) that puts `~/.local/bin` on PATH and the shim directory first, and on Linux with a systemd user session writes `~/.config/environment.d/99-lendk.conf`. It prints each change. Rerunning it upgrades lendk and changes nothing else.
-
-Options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
+The installer options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
 
 ```
 --version X.Y.Z    install release X.Y.Z instead of the latest
@@ -54,8 +48,6 @@ Options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s 
 --skill-dir DIR    copy the lendk agent skill to DIR/lendk
 --uninstall        remove what this installer added, never the map or the pass store
 ```
-
-Except with `--help`, the last line of its output is `lendk-install: ok: TEXT`, or `lendk-install: CLASS: TEXT` with CLASS one of `usage`, `unsupported-os`, `missing-deps`, `download`, `checksum`, `install` or `path`. `LENDK_INSTALL_BASE_URL` replaces `https://github.com/v-bonilla/lendk/releases`, for tests and mirrors: it must start with `https://` or `file:///`, and must serve `BASE/latest/download/lendk.tar.gz` and `BASE/latest/download/SHA256SUMS`, or `BASE/download/vX.Y.Z/` with the same two files for `--version X.Y.Z`.
 
 With `--install-deps` and no terminal, sudo runs as `sudo -n` and fails when it needs a password; run `sudo -v` first, or run the printed command yourself.
 
@@ -117,11 +109,11 @@ pass only to the commands mapped to them.
 
 ```
 lendk run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys
-lendk add [--force] CMD|@GROUP KEY|@GROUP...   # map, then sync
+lendk add [--force] CMD|@GROUP KEY|@GROUP...   # map KEY to a CMD (or a group of keys to a group of cmds), then sync
 lendk rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync
 lendk check [NAME...]                          # diagnose without decrypting
 lendk sync                                     # write shims to match the map
-lendk unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere
+lendk unlock [KEY|@GROUP...]                   # unlock in a terminal so gpg cache is warm; probe elsewhere
 lendk init sh|bash|zsh|systemd                 # print PATH setup
 lendk --help | --version
 ```
