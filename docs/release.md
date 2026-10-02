@@ -8,7 +8,7 @@
    make check-docker
    make bench
    ```
-4. First release only: create the GitHub repository `v-bonilla/lendk` as private, push `main`, and wait for the CI workflow to pass. Making the repository public needs the maintainer's approval.
+4. First release only: create the GitHub repository `v-bonilla/lendk` as private, push `main`, and wait for the CI workflow to pass. The macOS job skips on branch pushes while the repository is private, so run the workflow by hand with `gh workflow run ci.yml --ref main` and wait for that run to pass too. Making the repository public needs the maintainer's approval.
 5. Commit, then create an annotated tag and push it:
    ```
    git tag -a vX.Y.Z -m 'lendk X.Y.Z'
