@@ -214,7 +214,8 @@ pm_cmd() {
 deps() {
 	pm=
 	if [ "$os" = Darwin ]; then
-		command -v brew >/dev/null 2>&1 && pm=brew
+		# brew names the packages even when Homebrew is absent, for the hint below.
+		pm=brew
 	else
 		for m in apt-get dnf pacman zypper apk brew; do
 			command -v "$m" >/dev/null 2>&1 && { pm=$m; break; }
@@ -225,6 +226,8 @@ deps() {
 	detect
 	[ -n "$missing" ] || { say "found bash 4.4 or later at $good_bash"; return 0; }
 	[ -n "$pm" ] || finish missing-deps "missing:$missing; no supported package manager found, install them by hand"
+	[ "$os" != Darwin ] || command -v brew >/dev/null 2>&1 ||
+		finish missing-deps "missing:$missing; Homebrew is required on macOS: install it from https://brew.sh, then run: brew install$pkgs, and rerun this installer"
 	hint=$(pm_cmd "$sudo")
 	say "missing:$missing"
 	[ "$install_deps" = 1 ] || finish missing-deps "missing:$missing; run: $hint (or rerun with --install-deps)"

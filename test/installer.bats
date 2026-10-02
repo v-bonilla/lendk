@@ -222,6 +222,16 @@ login() {
 	assert_eq "$final" "lendk-install: missing-deps: missing: bash>=4.4; no supported package manager found, install them by hand"
 }
 
+@test "FR41: installer: on macOS without Homebrew it points to brew.sh and installs nothing" {
+	stub uname 'echo Darwin'
+	rm "$STUB/pass"
+	inst --install-deps
+	assert_eq "$status" 1
+	assert_eq "$final" "lendk-install: missing-deps: missing: pass; Homebrew is required on macOS: install it from https://brew.sh, then run: brew install pass, and rerun this installer"
+	[[ ! -e $HOME/.local/bin/lendk ]]
+	[[ $output != *running:* ]]
+}
+
 @test "FR42: installer: --no-modify-path and --prefix leave every login file alone" {
 	inst --no-modify-path --prefix "$SB/p"
 	assert_eq "$status" 0
