@@ -133,6 +133,35 @@ lint_copy() {
 	lint_copy "/proc or ps outside the terminal-owner test"
 }
 
+@test "NFR6: lint-repo.bash allows curl and wget only in the network region" {
+	scratch
+	awk '{ print } /^# lint: network begin$/ { print "curl -s x || wget x" }' "$ROOT/bin/lendk" >"$COPY/bin/lendk"
+	run bash "$ROOT/test/lint-repo.bash" "$COPY"
+	refute_contains "$output" "network region"
+	local line
+	for line in 'curl -s x' '# falls back to wget' "x=\$(nc host 80)" 'exec 3<>/dev/tcp/host/80' 'exec 3<>/dev/udp/host/53' \
+		$'# lint: network begin\ncurl -s x\n# lint: network end' $' # lint: network begin\nwget x\n # lint: network end'; do
+		cp "$ROOT/bin/lendk" "$COPY/bin/lendk"
+		printf '%s\n' "$line" >>"$COPY/bin/lendk"
+		run bash "$ROOT/test/lint-repo.bash" "$COPY"
+		assert_eq "$status" 1
+		case $line in
+		'# lint: network begin'*)
+			# A second region exempts nothing.
+			assert_line "$output" "lint-repo: bin/lendk: not exactly one network region"
+			[[ $output == *": curl or wget outside the network region"* ]]
+			assert_eq "$(wc -l <<<"$output")" 2
+			continue
+			;;
+		esac
+		assert_eq "$(wc -l <<<"$output")" 1
+		case $line in
+		*curl* | *wget*) [[ $output == "lint-repo: bin/lendk:"*": curl or wget outside the network region" ]] ;;
+		*) [[ $output == "lint-repo: bin/lendk:"*": network tool" ]] ;;
+		esac
+	done
+}
+
 @test "NFR3: lint-repo.bash flags script outside the test helpers" {
 	scratch
 	printf '%s -qc true /dev/null\n' script >>"$COPY/test/lint.bats"

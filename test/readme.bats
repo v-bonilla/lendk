@@ -106,6 +106,39 @@ section() { sed -n "/^$1\$/,/^##/p" "$README"; }
 	assert_eq "$n" 1
 }
 
+@test "FR37: the Upgrade section sits between Installation and Uninstall and covers the verb, its trust and the installer's part" {
+	local heading n last=0 own topic
+	for heading in '## Installation' '## Upgrade' '## Uninstall'; do
+		n=$(headings | grep -nxF -e "$heading" | cut -d: -f1)
+		if ! [[ $n =~ ^[0-9]+$ ]] || ((n <= last)); then
+			echo "README heading missing, repeated or out of order: $heading" >&2
+			return 1
+		fi
+		last=$n
+	done
+	own=$(section '## Upgrade')
+	assert_line "$own" 'lendk upgrade'
+	assert_line "$own" 'From a checkout: `git pull`, then `make install`.'
+	for topic in 'the installed `lendk`' 'It leaves everything else alone: the map, the pass store, your login files, the environment.d file and a skill copy.' \
+		'`--skill-dir DIR`' '`--version X.Y.Z`' 'rerun the installer' 'a symlink' 'a directory you cannot write' \
+		'tar, gzip, `sha256sum` or `shasum`, and curl or wget' '`LENDK_TIMEOUT`' '`LENDK_INSTALL_BASE_URL`' \
+		"trusts this project's GitHub releases over HTTPS" 'whoever serves the URL' '(#security-model)'; do
+		grep -qF -e "$topic" <<<"$own" || { echo "the Upgrade section lacks: $topic" >&2; return 1; }
+	done
+	grep -qF -e 'The checksum comes from the same release' <<<"$(section '### Security model')"
+	assert_line "$(section '## Agent contract')" '- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.'
+}
+
+@test "FR37: the README's statements about network use name lendk upgrade alone" {
+	local line
+	grep -qF -e 'It uses the network only when you run `lendk upgrade`.' <<<"$(section '## Key features')"
+	grep -qF -e 'lendk uses the network only in `lendk upgrade`, and only when you run it.' <<<"$(section '## How it works')"
+	# Every other line that speaks of the network sits in the Upgrade section or names the installer.
+	while IFS= read -r line; do
+		[[ $line == *'`lendk upgrade`'* ]] || { echo "README line on network use without lendk upgrade: $line" >&2; return 1; }
+	done < <(awk '/^## / { own = ($0 == "## Upgrade") } !own' "$README" | grep -i -e network)
+}
+
 # agent_prompt: the README's fenced prompt for AI agents.
 agent_prompt() {
 	sed -n '/^<!-- agent-prompt -->$/,/^<!-- agent-prompt -->$/p' "$README" | grep -v -e '^<!--' -e '^```'

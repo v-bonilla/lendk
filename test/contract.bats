@@ -24,7 +24,7 @@ prd_list() {
 		assert_line "$HELP" "  ${line% (4.3)}"
 		n=$((n + 1))
 	done < <(sed -n '/^### 4.1 Verbs/,/^### 4.2/p' "$PRD" | sed -n '/^```$/,/^```$/p' | grep '^lendk ')
-	assert_eq "$n" 8
+	assert_eq "$n" 9
 }
 
 @test "NFR8: every name list of PRD 4.2 is in --help, word for word" {
@@ -42,7 +42,7 @@ prd_list() {
 		assert_line "$(grep -oE '^  [a-z-]+ \([0-9]+\)' <<<"$HELP")" "  $class $hint)"
 		n=$((n + 1))
 	done < <(sed -n '/^### 5.3/,/^## 6/p' "$PRD" | grep -oE '^- `[a-z-]+` \([0-9]+' | sed 's/^- //; s/`//g')
-	assert_eq "$n" 15
+	assert_eq "$n" 16
 }
 
 @test "NFR8: every FIX of PRD 5.3, interactive and not, is in --help" {
@@ -51,7 +51,7 @@ prd_list() {
 		[[ $HELP == *"$fix"* ]] || { echo "missing FIX: $fix" >&2; return 1; }
 		n=$((n + 1))
 	done < <(sed -n '/^### 5.3/,/^## 6/p' "$PRD" | grep -oE '`(See|To map|Define it|Put|Upgrade|Run the|Retry;|Fix|Map it|Add it|Set it|Create it|Add a mapped|Install|Ask the user|Stop and)[^`]*`' | tr -d '`')
-	assert_eq "$n" 21
+	assert_eq "$n" 24
 }
 
 @test "NFR8: every variable of PRD section 8 is in --help" {
@@ -60,7 +60,7 @@ prd_list() {
 		assert_line "$(grep -oE '^  [A-Z_]+ ' <<<"$HELP" | sed 's/ *$//')" "  $name"
 		n=$((n + 1))
 	done < <(sed -n '/^## 8\./,/^## 9\./p' "$PRD" | grep -oE 'LENDK_[A-Z_]+|PASSWORD_STORE_DIR|XDG_[A-Z_]+_HOME|GPG_TTY' | sort -u)
-	assert_eq "$n" 10
+	assert_eq "$n" 11
 }
 
 @test "NFR8: the README's name lists and classes are the lines --help prints" {
@@ -69,7 +69,7 @@ prd_list() {
 	want=$(sed -n '/^Name lists:/,/^$/p; /^Classes:/,/^$/p' <<<"$HELP" | grep -E '^  [a-z]' | grep -v '^  notice:')
 	got=$(grep -E '^  ((reserved|denied|guarded) [a-zA-Z ]+: |[a-z-]+ \([0-9]+\): )' <<<"$readme")
 	assert_eq "$(sort <<<"$got")" "$(sort <<<"$want")"
-	assert_eq "$(wc -l <<<"$want")" 28
+	assert_eq "$(wc -l <<<"$want")" 31
 }
 
 @test "NFR8: sync writes FR29's shim text" {

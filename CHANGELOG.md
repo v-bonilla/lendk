@@ -4,6 +4,18 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+
+- `lendk upgrade`: replaces lendk with the latest release, checked against its checksum, by a rename, then runs `lendk sync`. It leaves the map, the store, PATH setup and a skill copy as they are.
+- The `upgrade` class, for a failed `lendk upgrade`; lendk's own file is unchanged.
+- `LENDK_INSTALL_BASE_URL` is read by lendk, in `lendk upgrade`, as `install.sh` reads it.
+
+### Changed
+
+- lendk uses the network in `lendk upgrade` only, when the user runs it; no other verb does.
+- `LENDK_TIMEOUT` also bounds the fetch of `lendk upgrade`.
+- `install.sh` points macOS users without Homebrew to brew.sh.
+
 ## [1.0.0] - 2026-10-01
 
 ### Added

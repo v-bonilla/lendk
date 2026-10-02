@@ -63,6 +63,34 @@ setup() {
 	assert_eq "$status" 0
 }
 
+@test "run_lendk: refuses upgrade on the working tree's lendk, and the sandbox's download tools fail" {
+	run run_lendk upgrade
+	assert_eq "$status" 1
+	assert_eq "$output" "run_lendk refuses upgrade on the working tree's bin/lendk"
+	ln -s "$ROOT/bin/lendk" "$SB/link"
+	# shellcheck disable=SC2030,SC2031
+	LENDK=$SB/link run run_lendk upgrade
+	assert_eq "$status" 1
+	assert_eq "$output" "run_lendk refuses upgrade on the working tree's bin/lendk"
+	local tool
+	for tool in curl wget; do
+		assert_eq "$(command -v "$tool")" "$SB/bin/$tool"
+		run "$tool" https://example.org
+		assert_eq "$status" 7
+	done
+	assert_eq "$(<"$SB/log/net")" $'curl https://example.org\nwget https://example.org'
+}
+
+@test "run_lendk: rejects a call that started one of the sandbox's download tools" {
+	printf '#!/bin/sh\ncurl -s https://example.org\nexit 0\n' >"$SB/bin/fake-lendk"
+	chmod +x "$SB/bin/fake-lendk"
+	# shellcheck disable=SC2030,SC2031,SC2034
+	LENDK=$SB/bin/fake-lendk
+	run run_lendk init bash
+	assert_eq "$status" 1
+	assert_eq "$output" "lendk started a download tool: curl -s https://example.org"
+}
+
 @test "run_lendk: captures stdout, stderr and status with stdin at /dev/null" {
 	printf '#!/bin/sh\ncat; echo out; echo "lendk: map: m:1: bad. Fix the line, then run: lendk check" >&2; exit 125\n' >"$SB/bin/fake-lendk"
 	chmod +x "$SB/bin/fake-lendk"

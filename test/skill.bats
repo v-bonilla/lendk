@@ -55,3 +55,12 @@ classes_of() { grep -oE '^\| `[a-z-]+` \|' "$1" | sed 's/^| `//; s/` |$//' | sor
 	grep -q '^`lendk check`.*`lendk sync` is safe too' "$SKILL"
 	refute_contains "$(<"$SKILL")" 'Never edit the map, the shims '
 }
+
+@test "FR38: the skill says upgrade leaves its copy as it is, names --skill-dir to refresh it, and carries the agent rule" {
+	assert_line "$(<"$SKILL")" '`lendk upgrade` leaves a skill copy as it is. Rerunning `install.sh --skill-dir DIR` refreshes it.'
+	assert_line "$(<"$SKILL")" '- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.'
+	assert_line "$(<"$ROOT/README.md")" '- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.'
+	grep -qE '^description: Use when .*upgrade it' "$SKILL"
+	grep -qxF -e '## Upgrade' "$SETUP"
+	grep -qF -e 'bash -s -- --yes --skill-dir DIR' <<<"$(sed -n '/^## Upgrade$/,/^## /p' "$SETUP")"
+}

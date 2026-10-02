@@ -5,7 +5,8 @@
 setup_file() {
 	export BATS_LENDK_REL=$BATS_FILE_TMPDIR/rel BATS_LENDK_SYS=$BATS_FILE_TMPDIR/sys
 	local REL=$BATS_LENDK_REL SYS=$BATS_LENDK_SYS
-	local src=$BATS_FILE_TMPDIR/src d
+	local src=$BATS_FILE_TMPDIR/src d version
+	version=$(sed -n 's/^LENDK_VERSION=//p' "$BATS_TEST_DIRNAME/../bin/lendk")
 	# sys: every command on PATH except the ones a test stubs or hides.
 	mkdir -p "$SYS"
 	local IFS=:
@@ -22,9 +23,9 @@ setup_file() {
 	git -C "$src" add -A
 	git -C "$src" -c user.name=test -c user.email=test commit -qm src
 	make -s -C "$src" dist >/dev/null
-	mkdir -p "$REL/latest/download" "$REL/download/v1.0.0"
+	mkdir -p "$REL/latest/download" "$REL/download/v$version"
 	cp "$src"/dist/* "$REL/latest/download/"
-	cp "$src"/dist/* "$REL/download/v1.0.0/"
+	cp "$src"/dist/* "$REL/download/v$version/"
 }
 
 setup() {
@@ -124,7 +125,7 @@ login() {
 }
 
 @test "FR40: installer: --version picks the release by tag, and a missing release is a download failure" {
-	inst --version 1.0.0
+	inst --version "$VERSION"
 	assert_eq "$status" 0
 	inst --version 9.9.9
 	assert_eq "$status" 1
