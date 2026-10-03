@@ -83,6 +83,6 @@ Process level:
 - Tests parse the docs, so keep their shapes: in the PRD, the 4.1 verb block, the 4.2 backticked lists after their labels, the 5.3 class bullets and backticked FIX texts, the section 8 variable names, FR29's fenced shim and the `- FRn ` bullets; in the README, the `<!-- quickstart -->` and `<!-- agent-prompt -->` markers and the list lines `--help` prints; in the skill, the class table, the `Options:` line and the 250-line limit of `SKILL.md`.
 - `bin/lendk` ends with `main "$@"; exit $?` on one line: bash reads a script as it runs, and `sandbox` builds `lendk-fn` by dropping that line to call single functions.
 - The reasons behind the decrypt path, the timeout watchdog, the terminal handoff and the lock are rules R1 to R15 of the v1 plan (`git show 3644a1f:docs/plan.md`). Read them before changing those parts; the PRD and the code win where they differ.
-- The `macos` CI job runs `make test` on release tags and manual runs only while the repository is private: a macOS minute costs about 10 Linux minutes of quota (comment in `.github/workflows/ci.yml`). Keep macOS out of per-push CI, and keep Actions pinned by commit SHA.
+- The `macos` CI job runs `make test` on every event, as every other job does (NFR3, AC6). Keep Actions pinned by commit SHA.
 - Releases follow `docs/release.md`. Prepare one when asked; only the maintainer tags, pushes, publishes or changes the repository's visibility.
 - `dist/`, `test/bench/out/` and `.claude/worktrees/` are ignored by git and skipped by the lint. Never commit them.
