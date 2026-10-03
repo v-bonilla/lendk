@@ -37,10 +37,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pass gnupg
       - run: make bench
 
-  # A macOS minute costs about 10 Linux minutes of a private repository's Actions quota, so while
-  # the repository is private this job runs on release tags and manual runs only.
   macos:
-    if: ${{ !github.event.repository.private || github.event_name == 'workflow_dispatch' || startsWith(github.ref, 'refs/tags/') }}
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
