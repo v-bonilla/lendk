@@ -8,11 +8,13 @@
    make check-docker
    make bench
    ```
-4. First release only: create the GitHub repository `v-bonilla/lendk` as private, push `main`, and wait for the CI workflow to pass. The macOS job skips on branch pushes while the repository is private, so run the workflow by hand with `gh workflow run ci.yml --ref main` and wait for that run to pass too. Making the repository public needs the maintainer's approval.
-5. Commit, then create an annotated tag and push it:
+4. Commit on `dev`, merge `dev` into `main` with a pull request or a fast-forward push, and wait for the CI workflow to pass on `main`, every job, macOS included (AC6).
+5. Check out the `main` commit that passed, create an annotated tag on it by name, and push the tag. A ruleset blocks deleting or moving a `v*` tag, so the tag names its commit:
    ```
-   git tag -a vX.Y.Z -m 'lendk X.Y.Z'
-   git push origin main vX.Y.Z
+   git fetch origin
+   git checkout --detach origin/main
+   git tag -a vX.Y.Z -m 'lendk X.Y.Z' origin/main
+   git push origin vX.Y.Z
    ```
 6. Build the release assets from the tagged commit: `make dist` writes `dist/lendk.tar.gz` (the git tree at HEAD under `lendk-X.Y.Z/`) and `dist/SHA256SUMS`.
 7. Create the GitHub release for the tag with both assets, and the version's CHANGELOG entry as its notes. `install.sh` downloads them through `releases/latest/download/`, so the release must not be a draft or a prerelease:
