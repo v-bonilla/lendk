@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # FR16: LENDK_TIMEOUT bounds all backend work of a call, cleanup included.
-# shellcheck disable=SC2016,SC2030,SC2031,SC2034
+# shellcheck disable=SC2016,SC2030,SC2031,SC2034,SC2154
 
 setup() {
 	load helpers/common
@@ -12,20 +12,6 @@ setup() {
 	chmod 600 "$HOME/.config/lendk/map"
 	local k
 	for k in K1 K2 K3; do printf 'value-%s\n' "$k" >"$SB/store/env/$k.gpg"; done
-}
-
-# timed_lendk ARG...: run_lendk ARG..., with its wall time in seconds in elapsed.
-timed_lendk() {
-	local TIMEFORMAT=%R
-	{ time run_lendk "$@"; } 2>"$SB/time"
-	elapsed=$(<"$SB/time")
-}
-
-# within LOW HIGH: LOW <= elapsed < HIGH, in whole and tenth seconds.
-within() {
-	local t=${elapsed/./}
-	t=$((10#${t:0:${#t}-2}))
-	((t >= $1 * 10 && t < $2 * 10)) || { echo "took $elapsed s, expected [$1, $2)" >&2; return 1; }
 }
 
 # before_tenths N: elapsed < N tenths of a second; appends elapsed to BATS_FR16_TIMES when set.

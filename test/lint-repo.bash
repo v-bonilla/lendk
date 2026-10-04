@@ -34,25 +34,33 @@ if ! grep -q '^MIT License' LICENSE 2>/dev/null || ! grep -q 'v-bonilla' LICENSE
 bins=(bin/*)
 [[ ${#bins[@]} -eq 1 && ${bins[0]} == bin/lendk ]] || problem "bin/: holds ${bins[*]}, not only bin/lendk"
 
-# NFR3 on bin/lendk, skipping the name-list tables and the terminal-owner test.
+# NFR3 and NFR6 on bin/lendk, skipping the name-list tables, the terminal-owner test and the network region.
 # cmdpos WORD [START]: WORD in command position; START matches the line start.
 cmdpos() { printf '(%s|[;&|(]|[$][(])[[:space:]]*%s([^A-Za-z0-9_=-]|$)' "${2:-^}" "$1"; }
 if [[ -f bin/lendk ]]; then
 	body=$(awk '
 		/# lint: tables begin/ { t = 1 } /# lint: tables end/ { t = 0; next }
 		/# lint: tty-owner begin/ { o = 1 } /# lint: tty-owner end/ { o = 0; next }
+		/^# lint: network begin$/ { n = (++regions == 1) } /^# lint: network end$/ { n = 0; next }
 		/^backend_(has|read)\(\) \{/ { b = 1 }
-		{ print (t ? "#" : (o ? "O" : (b ? "B" : " "))) NR ":" $0 }
+		{ print (n ? "N" : (t ? "#" : (o ? "O" : (b ? "B" : " ")))) NR ":" $0 }
 		b && /^\}/ { b = 0 }' bin/lendk)
 	code=$(grep -v '^#' <<<"$body")
-	start='^[ OB][0-9]+:'
+	start='^[ OBN][0-9]+:'
 	# NFR7: only the backend functions name pass or the store.
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: pass or the store outside backend_has and backend_read"; done < <(
-		grep -E -e "$(cmdpos pass '^[ O][0-9]+:')|[\$][{]?store([^A-Za-z0-9_]|\$)" <<<"$code" | grep -v '^B')
+		grep -E -e "$(cmdpos pass '^[ ON][0-9]+:')|[\$][{]?store([^A-Za-z0-9_]|\$)" <<<"$code" | grep -v '^B')
 	for word in stat 'readlink[[:space:]]+-f' timeout flock setsid 'sed[[:space:]]+-i' 'date[[:space:]]+[+]%N'; do
 		while IFS= read -r hit; do problem "bin/lendk:${hit:1}: non-portable command"; done < <(grep -E -e "$(cmdpos "$word" "$start")" <<<"$code")
 	done
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: bash 5 variable"; done < <(grep -E -e '[$](EPOCHREALTIME|SRANDOM)|[$][{](EPOCHREALTIME|SRANDOM)([^-]|$)' <<<"$code")
+	# NFR6: one network region, opened and closed once; comments and tables count too.
+	[[ $(grep -c '^# lint: network begin$' bin/lendk) == 1 && $(grep -c '^# lint: network end$' bin/lendk) == 1 ]] ||
+		problem "bin/lendk: not exactly one network region"
+	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: curl or wget outside the network region"; done < <(
+		grep -E -e '[^A-Za-z0-9_-](curl|wget)([^A-Za-z0-9_-]|$)' <<<"$body" | grep -v '^N')
+	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: network tool"; done < <(
+		{ grep -E -e "$(cmdpos nc "$start")" <<<"$code"; grep -E -e '/dev/(tcp|udp)' <<<"$body"; } | sort -u)
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: /proc or ps outside the terminal-owner test"; done < <(grep -E -e "/proc|$(cmdpos ps "$start")" <<<"$code" | grep -v '^O')
 fi
 for f in "${files[@]}"; do

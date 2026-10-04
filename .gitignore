@@ -1,2 +1,3 @@
 test/bench/out/
 dist/
+.claude/worktrees/

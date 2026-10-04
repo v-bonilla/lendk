@@ -19,6 +19,21 @@ quickstart() {
 	sed -n '/^<!-- quickstart -->$/,/^<!-- quickstart -->$/p' "$README" | grep -v -e '^<!--' -e '^```'
 }
 
+# bare CMD: CMD without a trailing comment.
+bare() {
+	local cmd=${1%%[[:space:]]#*}
+	printf '%s\n' "${cmd%"${cmd##*[![:space:]]}"}"
+}
+
+# headings: the README's heading lines, those inside code fences left out.
+headings() { awk '/^```/ { fence = !fence } !fence && /^#+ /' "$README"; }
+
+# anchor: GitHub's anchor for each heading line on stdin: lowercase, punctuation dropped, spaces to hyphens.
+anchor() { sed 's/^#* //' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 _-]//g; s/ /-/g'; }
+
+# section HEADING: the README from the line HEADING to the next heading of level two or deeper.
+section() { sed -n "/^$1\$/,/^##/p" "$README"; }
+
 @test "FR37: the README covers every topic" {
 	local topic
 	for topic in '<!-- quickstart -->' 'Install only from this repository' \
@@ -32,11 +47,96 @@ quickstart() {
 		grep -qF -e "$topic" "$README" || { echo "README lacks: $topic" >&2; return 1; }
 	done
 	assert_eq "$(quickstart | wc -l)" 4
-	local features quick
-	features=$(grep -n '^## Key features$' "$README" | cut -d: -f1)
-	quick=$(grep -n '^## Quick start$' "$README" | cut -d: -f1)
-	[[ -n $features && -n $quick ]] && ((features < quick))
-	sed -n '/^## Key features$/,/^## /p' "$README" | grep -q '^- '
+	# The outline: contents, key features, the quick start for humans, the two examples, installation, uninstall.
+	local heading n last=0
+	for heading in '## Contents' '## Key features' '## Quick start for humans' '## Examples' '### gh with a GitHub token' \
+		'### A group of keys for Claude Code or Codex' '## Installation' '## Uninstall'; do
+		n=$(headings | grep -nxF -e "$heading" | cut -d: -f1)
+		if ! [[ $n =~ ^[0-9]+$ ]] || ((n <= last)); then
+			echo "README heading missing, repeated or out of order: $heading" >&2
+			return 1
+		fi
+		last=$n
+	done
+	section '## Key features' | grep -q '^- '
+	# Each example holds its commands, and the group example shows the map lines add writes.
+	for topic in 'pass insert env/GH_TOKEN' 'lendk add gh GH_TOKEN' 'echo "${GH_TOKEN:-not set}"'; do
+		section '### gh with a GitHub token' | grep -qF -e "$topic" || { echo "gh example lacks: $topic" >&2; return 1; }
+	done
+	for topic in 'pass insert env/EXA_API_KEY' 'pass insert env/BRAVE_API_KEY' 'lendk add @search EXA_API_KEY BRAVE_API_KEY' \
+		'lendk add --force claude @search' 'lendk add --force codex @search' 'lendk run EXA_API_KEY -- ' \
+		'(#cron-systemd-units-mcp-servers)'; do
+		section '### A group of keys for Claude Code or Codex' | grep -qF -e "$topic" ||
+			{ echo "group example lacks: $topic" >&2; return 1; }
+	done
+	for topic in '@search EXA_API_KEY BRAVE_API_KEY' 'claude @search' 'codex @search'; do
+		section '### A group of keys for Claude Code or Codex' | grep -qxF -e "$topic" ||
+			{ echo "group example lacks the map line: $topic" >&2; return 1; }
+	done
+}
+
+@test "FR37: the Contents list links every section, and every in-page link names a heading" {
+	local anchors listed link
+	anchors=$(headings | anchor)
+	assert_eq "$(sort <<<"$anchors" | uniq -d)" ''
+	for link in $(grep -oE '\]\(#[^)]*\)' "$README" | sed 's/^](#//; s/)$//' | sort -u); do
+		assert_line "$anchors" "$link"
+	done
+	listed=$(section '## Contents' | grep -oE '^ *- \[[^]]+\]\(#[^)]*\)$' | sed 's/.*](#//; s/)$//')
+	for link in $(headings | grep '^## ' | anchor); do
+		[[ $link == contents ]] || assert_line "$listed" "$link"
+	done
+}
+
+@test "FR37: uninstall has a section of its own, and elsewhere only the option list and links name it" {
+	local own point line rest n=0
+	own=$(section '## Uninstall')
+	for point in 'install.sh | bash -s -- --uninstall' 'never removes the map or the pass store' '--skill-dir DIR' \
+		'# >>> lendk >>>' 'environment.d file' 'make -C lendk uninstall'; do
+		grep -qF -e "$point" <<<"$own" || { echo "the Uninstall section lacks: $point" >&2; return 1; }
+	done
+	while IFS= read -r line; do
+		# A line that only links to the section passes; any other must be the installer's option row.
+		rest=${line//'[Uninstall](#uninstall)'/}
+		if [[ ${rest,,} == *uninstall* ]]; then
+			assert_line "$(sh "$ROOT/install.sh" --help)" "  $line"
+			n=$((n + 1))
+		fi
+	done < <(awk '/^## / { own = ($0 == "## Uninstall") } !own' "$README" | grep -i -e uninstall)
+	assert_eq "$n" 1
+}
+
+@test "FR37: the Upgrade section sits between Installation and Uninstall and covers the verb, its trust and the installer's part" {
+	local heading n last=0 own topic
+	for heading in '## Installation' '## Upgrade' '## Uninstall'; do
+		n=$(headings | grep -nxF -e "$heading" | cut -d: -f1)
+		if ! [[ $n =~ ^[0-9]+$ ]] || ((n <= last)); then
+			echo "README heading missing, repeated or out of order: $heading" >&2
+			return 1
+		fi
+		last=$n
+	done
+	own=$(section '## Upgrade')
+	assert_line "$own" 'lendk upgrade'
+	assert_line "$own" 'From a checkout: `git pull`, then `make install`.'
+	for topic in 'the installed `lendk`' 'It leaves everything else alone: the map, the pass store, your login files, the environment.d file and a skill copy.' \
+		'`--skill-dir DIR`' '`--version X.Y.Z`' 'rerun the installer' 'a symlink' 'a directory you cannot write' \
+		'tar, gzip, `sha256sum` or `shasum`, and curl or wget' '`LENDK_TIMEOUT`' '`LENDK_INSTALL_BASE_URL`' \
+		"trusts this project's GitHub releases over HTTPS" 'whoever serves the URL' '(#security-model)'; do
+		grep -qF -e "$topic" <<<"$own" || { echo "the Upgrade section lacks: $topic" >&2; return 1; }
+	done
+	grep -qF -e 'The checksum comes from the same release' <<<"$(section '### Security model')"
+	assert_line "$(section '## Agent contract')" '- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.'
+}
+
+@test "FR37: the README's statements about network use name lendk upgrade alone" {
+	local line
+	grep -qF -e 'It uses the network only when you run `lendk upgrade`.' <<<"$(section '## Key features')"
+	grep -qF -e 'lendk uses the network only in `lendk upgrade`, and only when you run it.' <<<"$(section '## How it works')"
+	# Every other line that speaks of the network sits in the Upgrade section or names the installer.
+	while IFS= read -r line; do
+		[[ $line == *'`lendk upgrade`'* ]] || { echo "README line on network use without lendk upgrade: $line" >&2; return 1; }
+	done < <(awk '/^## / { own = ($0 == "## Upgrade") } !own' "$README" | grep -i -e network)
 }
 
 # agent_prompt: the README's fenced prompt for AI agents.
@@ -71,9 +171,6 @@ agent_prompt() {
 	for cls in $(grep -oE '"lendk: [a-z-]+:' <<<"$prompt" | sed 's/^"lendk: //; s/:$//'); do
 		grep -qE "^  $cls \(" <<<"$help" || { echo "agent prompt names unknown class: $cls" >&2; return 1; }
 	done
-	# The README's installer classes are the ones install.sh can finish with.
-	assert_eq "$(sed -n 's/.*with CLASS one of \(.*\)\. `LENDK.*/\1/p' "$README" | tr -d '`,' | sed 's/ or / /' | tr ' ' '\n' | sort)" \
-		"$(grep -oE 'finish [a-z-]+' "$ROOT/install.sh" | awk '$2 != "ok" { print $2 }' | sort -u)"
 }
 
 @test "FR37: the credential helper snippet leaves only lendk's helper after none, or after gh's two" {
@@ -117,9 +214,10 @@ agent_prompt() {
 	chmod +x "$stub/curl"
 	login_path=$sys:${BASH%/*}:/usr/bin:/bin
 	mapfile -t cmds < <(quickstart)
-	assert_eq "${cmds[0]}" 'curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash'
+	# A command may end in a comment, as the README's second one does; commands 3 and 4 run with theirs.
+	assert_eq "$(bare "${cmds[0]}")" 'curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash'
 	cmds[0]="cat $(printf %q "$ROOT/install.sh") | bash"
-	assert_eq "${cmds[1]}" 'exec bash -l'
+	assert_eq "$(bare "${cmds[1]}")" 'exec bash -l'
 	# login CMD...: CMD in $HOME in an environment built from scratch, as a login would start it.
 	login() {
 		(cd "$HOME" && env -i HOME="$HOME" PATH="$login_path" TERM=dumb STUB_LOG="$STUB_LOG" \

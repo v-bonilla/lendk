@@ -14,6 +14,7 @@ Human who uses pass and GnuPG, on Linux first:
 - H3 Rotate a key in one place, with no follow-up step.
 - H4 See which command gets which key, and what is broken.
 - H5 Run a script once with specific keys.
+- H6 Move to the latest release in one command, with the map, the store and PATH setup untouched.
 
 AI coding agent running commands via `bash -c`, `zsh -c` or a login shell, with or without a pseudo-terminal:
 - A1 Run the same commands with the same syntax.
@@ -24,18 +25,20 @@ AI coding agent running commands via `bash -c`, `zsh -c` or a login shell, with 
 
 Goals:
 - G1 Per-command least privilege with no prefix: every process that finds a mapped command through PATH gets its keys, whether or not it read an rc file (4.3).
-- G2 Bounded behavior without a terminal: a call spends at most `LENDK_TIMEOUT` + 2 s on backend work and cleanup, leaves no process behind, and reports every failure in one `lendk: CLASS:` line.
+- G2 Bounded behavior without a terminal: a call spends at most `LENDK_TIMEOUT` + 2 s on backend work, or on `upgrade`'s fetch, and cleanup, leaves no process behind, and reports every failure in one `lendk: CLASS:` line.
 - G3 Setup in five commands (4.4); no state beyond the map and the shims.
-- G4 Install and uninstall without root, fully reversible.
+- G4 Install, upgrade and uninstall without root; install is fully reversible.
 
-Non-goals for v1: sandboxing; writing to the store; other backends; store paths other than `PREFIX/KEY`; multi-line values; per-directory scoping; subshells holding keys; fish; Windows; daemons or value caches; packaging beyond `make install`; bash before 4.4 and GnuPG before 2.4, which get `unsupported` (FR22).
+Non-goals for v1: sandboxing; writing to the store; other backends; store paths other than `PREFIX/KEY`; multi-line values; per-directory scoping; subshells holding keys; fish; Windows; daemons or value caches; packaging beyond `make install`; signature checks on releases; in `upgrade`, rollback, and choosing a release, downgrading, or refreshing PATH setup or a skill copy, which `install.sh` does; bash before 4.4 and GnuPG before 2.4, which get `unsupported` (FR22).
 
 Protects against: ambient exposure (keys reach only mapped commands, `run` targets and their descendants); plaintext keys in rc files; keys in argv, in files, or in the environment of lendk's helpers; agents waiting on prompts.
 
 Does not protect against:
-- Same-user processes: while gpg-agent holds the passphrase, any of them, an AI agent included, can run `pass show`, read `/proc/PID/environ`, or edit the map, shims or PATH. lendk keeps keys out of an agent's context; it does not stop an agent that fetches them.
+- Same-user processes: while gpg-agent holds the passphrase, any of them, an AI agent included, can run `pass show`, read `/proc/PID/environ`, edit the map, shims or PATH, or replace lendk itself. lendk keeps keys out of an agent's context; it does not stop an agent that fetches them.
 - Descendants of a mapped command, for their lifetime; root. A mapped shell, interpreter, launcher or agent CLI hands its keys to everything it runs, hence `--force` (4.2). Running processes keep old values after a rotation.
 - Callers that bypass PATH (absolute paths, `npx`, `npm run`, `uv run`, services): they run without lendk's keys and fail, or act under the tool's own stored credentials (gh's `hosts.yml`, `~/.aws/credentials`).
+
+Upgrade trust: `lendk upgrade` replaces lendk, which reads every mapped key, with the file the latest release holds. It trusts the project's GitHub releases over HTTPS, as `install.sh` does. `SHA256SUMS` comes from the same release, so the checksum catches a corrupt or truncated download, not a compromised release or account. The download tool reads the user's own configuration, such as `~/.curlrc`, as it does for `install.sh`. `LENDK_INSTALL_BASE_URL` moves that trust to whoever serves the URL, so `upgrade` names a set base in a notice, and an agent never sets it.
 
 Decrypt cost: gpg-agent caches the passphrase, not the unlocked key, so every decrypt re-runs the KDF, which by default can approach one second per key on slow machines. The README's tuning (`s2k-count 8388608`, then `gpg --passwd`) cuts that to tens of milliseconds but makes passphrase guessing about 20 times cheaper for anyone holding the secret key file: strong passphrases only. lendk never changes GnuPG settings.
 
@@ -51,18 +54,21 @@ lendk check [NAME...]                          # diagnose without decrypting
 lendk sync                                     # write shims to match the map
 lendk unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere
 lendk init sh|bash|zsh|systemd                 # print PATH setup (4.3)
+lendk upgrade                                  # replace lendk with the latest release, then sync
 lendk --help | --version
 ```
 
-`--force` is the only flag. Shims call `lendk run -- CMD`. After a hand edit of the map, run `lendk sync`. `gpgconf --reload gpg-agent` locks the store.
+`--force` is the only flag. Shims call `lendk run -- CMD`. After a hand edit of the map, run `lendk sync`. `gpgconf --reload gpg-agent` locks the store. `upgrade` is the only verb that uses the network (NFR6).
 
 ### 4.2 Map file
 
 ```
 # ~/.config/lendk/map
-@aws        AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+@search     EXA_API_KEY BRAVE_API_KEY    # a group of keys
+claude      @search                      # Claude Code and Codex get both keys
+codex       @search
+opencode    BRAVE_API_KEY                # one key, mapped directly
 gh          GH_TOKEN
-terraform   @aws CLOUDFLARE_API_TOKEN    # trailing comment
 ```
 
 - One entry per line; fields split on blanks; `#` starts a comment anywhere; blank lines are ignored.
@@ -71,7 +77,7 @@ terraform   @aws CLOUDFLARE_API_TOKEN    # trailing comment
 - KEY matches `[A-Za-z_][A-Za-z0-9_]*`; its value is the first line of store entry `PREFIX/KEY`. Denied, as they steer lendk, pass, gpg, the shell or the loader, reach the backend (FR8), or bash rejects them: prefixes `BASH LENDK_ PASSWORD_STORE_ GNUPG GPG_ LD_ DYLD_ LC_ XDG_`; names `PATH HOME SHELL ENV IFS CDPATH PS4 PROMPT_COMMAND TMPDIR USER LOGNAME LANG TERM DISPLAY WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS PINENTRY_USER_DATA SHELLOPTS UID EUID PPID GROUPS RANDOM SRANDOM SECONDS LINENO HISTCMD EPOCHSECONDS EPOCHREALTIME FUNCNAME DIRSTACK PIPESTATUS OPTIND OPTARG`. `LENDK_` is denied in any case, since lendk's own variables carry it.
 - Each CMD and group appears once; a group may be used before its definition.
 - Expansion follows word order, inlines groups, and drops duplicates, keeping the first.
-- Guarded CMD, which `add` maps only with `--force`: shells `sh dash zsh ksh mksh fish csh tcsh busybox`; interpreters `python* pypy* node nodejs deno bun perl* ruby* php* lua* java`; launchers `env sudo doas su xargs nohup setsid timeout nice make tmux screen`; package tools `npm npx pnpm yarn pip pip3 pipx uv uvx`; agent CLIs `aider claude codex gemini goose opencode`.
+- Guarded CMD, which `add` maps only with `--force`: shells `sh dash zsh ksh mksh fish csh tcsh busybox`; interpreters `python* pypy* node nodejs deno bun perl* ruby* php* lua* java`; launchers `env sudo doas su xargs nohup setsid timeout nice make tmux screen`; package tools `npm npx pnpm yarn pip pip3 pipx uv uvx`; agent CLIs `aider claude codex gemini goose opencode`. The example's `claude`, `codex` and `opencode` are guarded, so `add` needs `--force` for them.
 
 ### 4.3 PATH setup
 
@@ -125,7 +131,7 @@ Classification reads the low 16 bits of the first `ERROR` status value, never tr
 
 ### 5.3 Stderr contract and exit codes
 
-Before exec, every stderr line is `lendk: CLASS: TEXT. FIX` or `lendk: notice: TEXT.`; a notice reports a change or a risk, never a failure. Backend stderr never passes through raw; `env` stands for the prefix. A nested shim's line reaches the caller through the outer command's stderr.
+Before exec, every stderr line is `lendk: CLASS: TEXT. FIX` or `lendk: notice: TEXT.`; a notice reports a change or a risk, never a failure. Backend stderr and the output of `upgrade`'s tools never pass through raw; `env` stands for the prefix. A nested shim's line reaches the caller through the outer command's stderr.
 
 The CLASS is the contract. Exit codes are hints, not unique: after exec the target's codes pass through, CPython exits 120 when flushing stdout fails, and docker, coreutils `env` and `timeout`, and `git bisect run` give 125 to 127 their own meanings. 0 is success; 1 means `check` found a problem.
 
@@ -142,11 +148,12 @@ CLASS (hint): TEXT. Interactive FIX.
 - `decrypt` (125): `env/KEY: gpg says: TEXT.`, TEXT being gpg's last stderr line. `See gpg's error: lendk unlock KEY`
 - `unsafe` (125): `PATH is writable by others.` or `PATH is owned by another user.` `Fix it: chmod go-w PATH, or recreate it as your own`
 - `write` (125): `PATH: TEXT.` `Fix it, then run: lendk sync`
+- `upgrade` (125, with lendk's own file unchanged): `cannot download URL.`, `fetching the release did not finish within N s.`, `lendk.tar.gz has SHA-256 SUM, but SHA256SUMS lists SUM.`, `lendk.tar.gz holds no lendk-X.Y.Z/bin/lendk.` or `the downloaded lendk does not run under bash V.` `Retry; on a slow connection raise LENDK_TIMEOUT.` For an install it refuses (FR48), `PATH is a symlink, so another tool manages this install.`, `PATH is not lendk's own file.`, `PATH has version V, not a release's X.Y.Z.` or `DIR cannot be written.` `Upgrade lendk the way it was installed.` For a local failure, `TOOL is not on PATH outside SHIMS.` or `PATH: TEXT.` `Fix it, then run: lendk upgrade`
 - `exec` (126): `PATH is not executable.` `Fix it, or unmap it: lendk rm CMD`
 - `not-found` (127): `CMD is not on PATH outside SHIMS.` `Install it, or unmap it: lendk rm CMD`
 - `lendk-missing` (127): printed by shims (FR29) for every caller.
 
-Non-interactive FIX: `usage` and `lendk-missing` unchanged; `locked`, `timeout`, `decrypt`: `Ask the user to run 'lendk unlock KEY' in a terminal, then retry.`; `not-found`: `Install CMD, or ask the user.`; the rest: `Stop and ask the user.` So no non-interactive message suggests `lendk add`, `lendk rm`, `lendk run` with keys, `pass`, or printing the environment; no message suggests installing lendk from a package registry.
+Non-interactive FIX: `usage` and `lendk-missing` unchanged; `locked`, `timeout`, `decrypt`: `Ask the user to run 'lendk unlock KEY' in a terminal, then retry.`; `not-found`: `Install CMD, or ask the user.`; the rest: `Stop and ask the user.` So no non-interactive message suggests `lendk add`, `lendk rm`, `lendk run` with keys, `lendk upgrade`, `pass`, or printing the environment; no message suggests installing lendk from a package registry.
 
 ## 6. Functional requirements
 
@@ -206,8 +213,8 @@ Shims:
 - FR34 `unlock` decrypts each named key (default: the first mapped key present), discards values, prints `unlocked`, and follows `run`'s interactivity, timeout and class rules; no mapped key present is `missing-key`. Stores with per-folder `.gpg-id` recipients need `unlock KEY` per recipient.
 - FR35 `init` reads no map and prints 4.3's block, holding the absolute shim directory: `sh` moves it to the front of PATH without duplicates; `bash` and `zsh` add a prompt hook repeating that plus `hash -r` or `rehash`, registered once even when the block runs twice; `systemd` prints `PATH=` with the absolute shim path, then `${PATH}`, as systemd's environment.d generator accepts.
 - FR36 `--help` prints verbs, map grammar, name lists, classes with exit hints and environment variables, exit 0; `--version` prints `lendk X.Y.Z`; no arguments or an unknown verb is `usage`.
-- FR37 The README covers: key features before the quick start; the 4.4 quick start; installation for humans (`install.sh`, its options and changes, `make install`, uninstall) and a fenced prompt for AI agents that runs the installer with `--yes`, asks before `--install-deps`, sudo, a GPG key or `pass init`, installs the skill with `--skill-dir`, verifies `--version`, the login PATH, `check` and, with consent, a throwaway `run`, never runs `pass show` or prints secrets, and ends with a report; the agent prompt names only options `install.sh --help` lists, classes it emits and verbs `--help` lists; installing only from the project repository; 4.3 for bash, zsh, systemd and macOS; the security model and `s2k-count` trade-off; cache TTLs and flushing; `lendk run -- CMD` by absolute path in cron, systemd and MCP configs; the git credential helper `!lendk run -- gh auth git-credential`, replacing the absolute path `gh auth setup-git` writes; PATH-bypassing launchers; the classes and name lists as `--help` prints them; an agent block: act on the `lendk: CLASS:` line; on `locked`, `timeout` or `canceled`, stop and ask the user; never run `pass`, `lendk add`, `lendk rm` or `lendk run` with keys, or print the environment.
-- FR38 `skills/lendk/SKILL.md` is an Agent Skill (frontmatter `name: lendk` and a `description` of when to load it) that teaches the mental model, every verb, the class table with what to do for each class, the agent rules of FR37, answers to common questions and troubleshooting with `check`. Its verbs and classes are exactly `--help`'s; `install.sh --skill-dir DIR` copies it to `DIR/lendk`.
+- FR37 The README covers: a table of contents whose links each name a heading; key features in plain language before the quick start; the 4.4 quick start, for humans; examples: `gh` with `GH_TOKEN`, and a group of keys mapped to an agent CLI with `--force`; installation for humans (`install.sh` and its options, `make install`) and a fenced prompt for AI agents that runs the installer with `--yes`, asks before `--install-deps`, sudo, a GPG key or `pass init`, installs the skill with `--skill-dir`, verifies `--version`, the login PATH, `check` and, with consent, a throwaway `run`, never runs `pass show` or prints secrets, and ends with a report; the agent prompt names only options `install.sh --help` lists, classes it emits and verbs `--help` lists; installing only from the project repository; uninstall in a section of its own, covering `install.sh --uninstall` and `make uninstall`, and named elsewhere only by the option list or a link; 4.3 for bash, zsh, systemd and macOS; the security model and `s2k-count` trade-off; cache TTLs and flushing; `lendk run -- CMD` by absolute path in cron, systemd and MCP configs; the git credential helper `!lendk run -- gh auth git-credential`, replacing the absolute path `gh auth setup-git` writes; PATH-bypassing launchers; the classes and name lists as `--help` prints them; an agent block: act on the `lendk: CLASS:` line; on `locked`, `timeout` or `canceled`, stop and ask the user; never run `pass`, `lendk add`, `lendk rm` or `lendk run` with keys, or print the environment. It has a section on upgrading, between installation and uninstall: `lendk upgrade`, the one file it replaces and what it leaves alone, what it trusts (section 3), when it refuses, the tools it needs, `LENDK_INSTALL_BASE_URL`, rerunning `install.sh` to refresh a skill copy or to pick a release, and `git pull` then `make install` from a checkout. Its statements about network use match NFR6, and the agent block adds: run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.
+- FR38 `skills/lendk/SKILL.md` is an Agent Skill (frontmatter `name: lendk` and a `description` of when to load it) that teaches the mental model, every verb, the class table with what to do for each class, the agent rules of FR37, answers to common questions and troubleshooting with `check`. Its verbs and classes are exactly `--help`'s; `install.sh --skill-dir DIR` copies it to `DIR/lendk`. It says that `lendk upgrade` leaves a skill copy as it is, and that rerunning `install.sh --skill-dir DIR` refreshes it.
 
 `install.sh`:
 - FR39 `install.sh` is POSIX sh: it runs under dash, busybox sh and macOS's bash 3.2, as a file or piped (`curl ... | bash`, `| sh`, `| bash -s -- OPTION...`). All work sits in functions and `main "$@"` is the last line, so a truncated download runs nothing. No command it runs reads its stdin.
@@ -217,16 +224,24 @@ Shims:
 - FR43 Except with `--help`, the last line is `lendk-install: ok: TEXT` (exit 0) or `lendk-install: CLASS: TEXT`, CLASS one of `usage` (exit 2), `unsupported-os`, `missing-deps`, `download`, `checksum`, `install` or `path` (exit 1), also on a bad HOME and on HUP, INT or TERM, after which its temporary directory is gone. It never prompts with `--yes` or without a terminal on stdin.
 - FR44 `--uninstall` removes the installer's blocks, an environment.d file starting with `# >>> lendk >>>`, marker-bearing shims, the skill copy under `--skill-dir`, and `PREFIX/bin/lendk` only when its second line is `bin/lendk`'s; never the map or the store. Its marker strings equal `bin/lendk`'s. `--skill-dir DIR` copies the release's `skills/lendk` to `DIR/lendk`.
 
+`upgrade` (tests run a copy of lendk installed in the sandbox against a release in `make dist`'s layout, served from `file://`, or for `https://` by stub `curl` and `wget`):
+- FR45 `upgrade` takes no arguments and replaces lendk's own file, the path lendk was invoked by (FR29), with `bin/lendk` of the latest release: it checks the install (FR48), fetches and verifies the release within a time bound (FR46, FR47, FR50), renames the new file into place and runs its `sync` (FR49). Success prints `upgraded lendk A.B.C to X.Y.Z at PATH` on stdout. It never fetches or runs `install.sh`, and writes no login file, environment.d file, map, store entry or skill copy: a snapshot of the sandbox differs only in lendk's file and in what `sync` writes. It makes no backend read (zero mock calls), never prompts and never reads stdin (FR21); a terminal changes only the FIX. An argument, or a bad variable (FR46), is `usage`; every other failure of its own steps is one `upgrade` line, and an `upgrade` line means lendk's file kept its bytes and inode.
+- FR46 The release base is `https://github.com/v-bonilla/lendk/releases`, or `LENDK_INSTALL_BASE_URL`, which no other verb reads; unset or empty means the default base. A value that does not start with `https://` or `file:///`, or that holds a blank or control character, is `usage`, and nothing is fetched; a set value prints the notice `the release comes from BASE, set by LENDK_INSTALL_BASE_URL.` `upgrade` fetches `BASE/latest/download/lendk.tar.gz` and `BASE/latest/download/SHA256SUMS`, the assets and layout of FR40: an `https://` URL with `curl -fsSL --proto '=https' --tlsv1.2`, or without curl with wget, adding `--https-only` where wget has it; a `file://` URL by copying. tar, gzip, `sha256sum` or `shasum` and, for an `https://` base, curl or wget are found on PATH outside the shim directory; one missing is `upgrade`, before anything is fetched. They run with that PATH and stdin `/dev/null`, and their output never reaches the caller, so a mapped `curl` runs without its shim and gets no key (the stubs record their arguments and environment; zero mock calls).
+- FR47 Before anything is replaced: the SHA-256 of `lendk.tar.gz` equals the one `SHA256SUMS` lists for it; the archive holds exactly one `lendk-X.Y.Z/bin/lendk`, a regular file whose second line is lendk's own; and that file, run with `--version` by the bash running `upgrade`, exits 0 and prints exactly `lendk X.Y.Z`, the X.Y.Z of its directory. Each number of a version has no leading zero and at most nine digits, so `099.00.0` and a number that overflows are refused, never compared. Each failure is `upgrade`: a download that fails or is cut short, a `SHA256SUMS` with another sum or without the asset (`lists nothing`), an archive without lendk or with another version in its directory than in its file, a lendk that exits 125; an archive that does not unpack, or a fetch that ends without a result, is a local failure. When X.Y.Z is not higher than the running version, compared number by number, `upgrade` changes nothing, prints `lendk A.B.C is up to date: the latest release is X.Y.Z` and exits 0, so an install ahead of the latest release is never downgraded.
+- FR48 Before fetching, `upgrade` refuses with `upgrade` when its own file is a symlink, as under section 9's versioned directories, is not a regular file whose second line is lendk's, has a version that is not X.Y.Z as FR47 writes it, or sits in a directory the user cannot write. A refusal fetches and creates nothing (the stub download tool is not called).
+- FR49 The new file is staged beside lendk's own file with mode 0755 and renamed over it, never written in place, so the path holds the old file or the new one, whole: the file gets a new inode, a descriptor opened on it before the upgrade still reads the old bytes, and a lendk call running across the rename finishes on the old file. No lock guards the rename: two concurrent `upgrade` calls both exit 0 and leave the release's file and no staged file. `upgrade` then execs the new file by its path with `sync`, as a shim runs it; `sync` holds FR26's lock, and its stderr lines and exit status are the call's. With an invalid map line the result is the new lendk, the `upgraded` line, `sync`'s `map` line and exit 125: the upgrade stands.
+- FR50 `LENDK_TIMEOUT`, with FR16's range and defaults, bounds the fetch: both downloads and FR47's checks together. On expiry lendk stops the download tool without `timeout(1)` and exits with `upgrade` no sooner than `LENDK_TIMEOUT` s and no later than `LENDK_TIMEOUT` + 2 s after the call started, even when the tool ignores TERM (a stub `curl` that never returns, `LENDK_TIMEOUT=2`). As in FR17, after expiry, TERM, INT or HUP to lendk, or TERM or KILL to lendk or its process group, the tool, its children and lendk's watchdog are gone within 2 s, and so are the temporary directory and the staged file (NFR5); a call stopped before the rename leaves lendk's file unchanged. A KILL before the watchdog starts, or after an expiry once the watchdog has finished, can leave the staged file and the temporary directory, which hold no value.
+
 ## 7. Non-functional requirements
 
 - NFR1 Shim overhead: with keys preset and a 50-entry map, shim exec to target exec exceeds a direct exec of the target by at most 20 ms median and 40 ms p95 over 200 runs (`make bench`).
 - NFR2 Decrypt cost: `run` makes one backend read per key the caller did not set, `unlock` one per key it names, in sequence; other verbs make none. With real GnuPG, a warm cache and a key protected at `s2k-count 8388608`, a 3-key call takes at most 500 ms median (`make bench`).
-- NFR3 Bash 4.4+ and GnuPG 2.4+ (FR22). Tier 1 is Linux (Debian 13, Ubuntu 24.04+, current Fedora): every change passes `make check` and `make check-docker` (AC1). macOS is supported with bash and GnuPG from Homebrew, Homebrew's bash first on the login PATH: `make test` passes on GitHub's macOS runner, where the strace, systemd and ETXTBSY checks skip because macOS lacks them, for every release tag and manual run while the repository is private and for every change once it is public. One limitation is macOS-only: after a loopback passphrase prompt inside a pipeline whose neighbor reads the terminal, the outer interactive bash can still show that neighbor as stopped; `fg` resumes it. `bin/lendk` uses POSIX utilities and options, plus `mktemp -d TEMPLATE`, plain `readlink` and fractional `sleep`, which GNU, BSD and busybox share; never `timeout`, `flock`, `stat`, `readlink -f` or `setsid`. It reads `/proc/PID/stat`, or runs `ps` where `/proc` is absent, only to learn whether its process group owns the terminal before a loopback prompt.
-- NFR4 Runtime dependencies: bash 4.4+, pass 1.7+, GnuPG 2.4+, POSIX utilities. Development: bats-core as a pinned git submodule, shellcheck pinned through `uvx` with zero findings, Docker for `make check-docker`; nothing else.
-- NFR5 lendk writes only the map (`add`, `rm`), the shim directory (`add`, `rm`, `sync`) and the lock: no caches or logs. Temporary files are mode 0600 in a 0700 directory, hold no value, and are gone before exit or exec, and within 2 s when lendk is killed.
-- NFR6 No network, telemetry or auto-update: every verb run under `strace -f --seccomp-bpf -e trace=connect` makes no AF_INET or AF_INET6 `connect`; the source has no `curl`, `wget`, `nc` or `/dev/tcp`. `check` is the self-report for drift, and a GnuPG status-code change fails FR18.
+- NFR3 Bash 4.4+ and GnuPG 2.4+ (FR22). Tier 1 is Linux (Debian 13, Ubuntu 24.04+, current Fedora): every change passes `make check` and `make check-docker` (AC1). macOS is supported with bash and GnuPG from Homebrew, Homebrew's bash first on the login PATH: every change passes `make test` on GitHub's macOS runner, where the strace, systemd and ETXTBSY checks skip because macOS lacks them. One limitation is macOS-only: after a loopback passphrase prompt inside a pipeline whose neighbor reads the terminal, the outer interactive bash can still show that neighbor as stopped; `fg` resumes it. `bin/lendk` uses POSIX utilities and options, plus `mktemp [-d] TEMPLATE`, plain `readlink` and fractional `sleep`, which GNU, BSD and busybox share, and in `upgrade` alone the tools of NFR4 with options those three share; never `timeout`, `flock`, `stat`, `readlink -f` or `setsid`. It reads `/proc/PID/stat`, or runs `ps` where `/proc` is absent, only to learn whether its process group owns the terminal before a loopback prompt.
+- NFR4 Runtime dependencies: bash 4.4+, pass 1.7+, GnuPG 2.4+, POSIX utilities. `upgrade` alone also needs tar, gzip, `sha256sum` or `shasum`, and, for an `https://` base, curl or wget; no other verb looks for them. Development: bats-core as a pinned git submodule, shellcheck pinned through `uvx` with zero findings, Docker for `make check-docker`; nothing else.
+- NFR5 lendk writes only the map (`add`, `rm`), the shim directory (`add`, `rm`, `sync`, and `upgrade` through the `sync` it ends with), the lock and, in `upgrade` alone, its own file: no caches or logs. Temporary files are mode 0600 in a 0700 directory, hold no value, and are gone before exit or exec, and within 2 s when lendk is killed. `upgrade` also stages the new file beside its own, as a rename needs; the staged file is renamed or removed before exit, and removed within 2 s when lendk is killed.
+- NFR6 No telemetry, no auto-update and no version check: lendk uses the network only in `lendk upgrade`, only when the user runs it, and only through the download tool it starts for the two assets of FR46. Every other verb, and `upgrade` from a `file://` base, run under `strace -f --seccomp-bpf -e trace=connect` makes no AF_INET or AF_INET6 `connect`. The source names `curl` and `wget` only inside one marked region, which the repo lint and this test exempt, and never `nc` or `/dev/tcp`. `check` is the self-report for drift, and a GnuPG status-code change fails FR18.
 - NFR7 One executable bash file. The backend is `backend_has KEY` and `backend_read KEY`; nothing else touches pass or the store.
-- NFR8 Verbs, `--force`, classes, exit-code hints, map grammar, name lists, environment variables and the shim text are stable within 1.x; 1.x only adds entries. `bin/lendk` holds the only copy of the name lists and the class table, and `--help` prints them. `test/contract.bats` checks that `--help` holds every entry this document lists, that the README's lists match `--help`, and that `sync` writes FR29's text.
+- NFR8 Verbs, `--force`, classes, exit-code hints, map grammar, name lists, environment variables and the shim text are stable within 1.x; 1.x only adds entries, and a release that adds one raises the minor version. `bin/lendk` holds the only copy of the name lists and the class table, and `--help` prints them. `test/contract.bats` checks that `--help` holds every entry this document lists, that the README's lists match `--help`, and that `sync` writes FR29's text.
 - NFR9 Repo: MIT license held by `v-bonilla`; no em-dashes, real keys, email addresses, or home paths other than `/home/alice`.
 
 ## 8. Files and configuration
@@ -234,14 +249,15 @@ Shims:
 - Map: `${XDG_CONFIG_HOME:-~/.config}/lendk/map`, or `LENDK_MAP`.
 - Shims: `${XDG_DATA_HOME:-~/.local/share}/lendk/shims`, or `LENDK_SHIMS`, set wherever lendk runs. Lock: `SHIMS.lock`.
 - Store: `~/.password-store`, or `PASSWORD_STORE_DIR`. Entry prefix: `env`, or `LENDK_PREFIX`.
-- `LENDK_PROMPT`: `auto` (default), `never`, `allow`. `LENDK_TIMEOUT`: seconds (FR16).
+- `LENDK_PROMPT`: `auto` (default), `never`, `allow`. `LENDK_TIMEOUT`: seconds (FR16, FR50).
+- Releases: `https://github.com/v-bonilla/lendk/releases`, or `LENDK_INSTALL_BASE_URL`, which `upgrade` (FR46) and `install.sh` (FR40) read.
 
 Relative XDG values are ignored. lendk sets `LENDK_INJECTED` for targets and `GPG_TTY` for the backend only. Cron, systemd units and MCP configs skip rc files and need any overrides set too.
 
 ## 9. Install, upgrade, uninstall
 
 - Install only from the project repository: `install.sh` (FR39 to FR44), or `make install` from a checkout. `make install` copies `bin/lendk` to a temporary file in `$PREFIX/bin`, makes it executable and renames it over `lendk`, so a running copy keeps reading the old file. `PREFIX` defaults to `$HOME/.local` and must be absolute; `DESTDIR` is honored.
-- Upgrade: `git pull`, then `make install`. With versioned install directories behind a stable symlink, run `lendk sync` once through the symlink.
+- Upgrade: `lendk upgrade` (FR45 to FR50), for a regular file that `install.sh` or `make install` placed in a directory the user can write. It replaces that file only; rerunning `install.sh` refreshes PATH setup and a skill copy, and installs a chosen release with `--version`. From a checkout: `git pull`, then `make install`. With versioned install directories behind a stable symlink, `upgrade` refuses the symlink: install the new version beside the old, move the symlink, and run `lendk sync` once through it.
 - Uninstall: delete the `# >>> lendk >>>` blocks and the environment.d file, then `make uninstall`: it removes marker-bearing shims, the shim directory and lendk's default data directory if empty, and the installed file only when its second line is `bin/lendk`'s, never the map, store or rc files.
 
 ## 10. Alternatives considered
@@ -255,13 +271,16 @@ gopass `env` (a whole subtree), fnox and secretspec (manifests), CyberArk summon
 - AC3 `make bench` meets NFR1 and NFR2 on the development host; CI reports it without gating.
 - AC4 Fresh HOME whose `.profile` and `.bashrc` mirror Debian's `/etc/skel` (`.bashrc` sourced before `~/.local/bin` joins PATH, and returning early when non-interactive), stub `gh` recording `GH_TOKEN`, `make install`, the 4.3 blocks, `add gh GH_TOKEN`: the key reaches `gh` from interactive bash under `script`; `bash -lc`; `zsh -c` under a parent that prepended a directory holding another `gh`; Python `subprocess` without a shell, started from `sh -lc` like a desktop session; a nested shim, with one decrypt. `/usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator` puts the shim directory first; the parent shell lacks `GH_TOKEN`; `make uninstall` leaves only the map.
 - AC5 G3: on the AC4 HOME with a scratch GnuPG key and store, the README's four quick-start commands run as written, except that command 1 runs the working tree's `install.sh` against a `make dist` release served from `file://` and command 3 reads the value from stdin; commands 3 and 4 run in `bash -l` shells, which command 2 starts. A stub `gh` run by `bash -lc gh` then receives `GH_TOKEN`. The README has every FR37 topic.
-- AC6 The GitHub Actions workflow passes on the private repository before it is made public, every job, macOS included.
+- AC6 The GitHub Actions workflow passes on every change, every job, macOS included.
+- AC7 H6: on a scratch HOME where the working tree's `install.sh` installed a `make dist` release from `file://` with `--skill-dir`, and a stub `gh` is mapped, `lendk upgrade` against a base whose latest release has a higher version replaces `~/.local/bin/lendk` with that release's file and exits 0. The login file, the map, the store and the skill copy keep their bytes; `lendk check gh` prints `ok`; `gh`, run through its shim, receives its key. A second `lendk upgrade` prints `is up to date` and changes nothing. FR50 also passes in bash 4.4 on busybox.
 
 ## 12. Failure signals
 
 Any of these reports means v1 failed, and the next release fixes it first:
-- An agent waiting in a lendk call past `LENDK_TIMEOUT` + 2 s, or a backend, watchdog or pinentry outliving its call.
+- An agent waiting in a lendk call past `LENDK_TIMEOUT` + 2 s, or a backend, download tool, watchdog or pinentry outliving its call.
 - A mapped command running without its keys after an upgrade or PATH change while `check` says `ok`.
 - A false `check` problem.
 - A secret value in lendk output, argv, a file, or a helper's environment.
 - An agent widening the map or printing a key after following a lendk message.
+- `lendk upgrade` leaving a lendk that does not run, a partly written file, or a changed login file, map, store or skill copy.
+- lendk using the network in any call but a `lendk upgrade` the user ran, or an agent upgrading lendk unasked after following a lendk message.

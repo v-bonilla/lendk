@@ -29,16 +29,6 @@ calls() {
 	printf '%s\n' "${#c[@]}"
 }
 
-# snapshot: every path under the sandbox except the logs, with its listing and checksum.
-snapshot() {
-	local p sum
-	while IFS= read -r p; do
-		sum=
-		[[ -f $p && ! -L $p ]] && sum=$(cksum <"$p")
-		printf '%s %s %s\n' "$p" "$(command ls -ldn "$p" | awk '{ print $1, $2, $3, $4, $5 }')" "$sum"
-	done < <(find "$SB" \( -path "$SB/log" -o -path "$SB/stderr" \) -prune -o -print | sort)
-}
-
 # verb ARG...: run_lendk ARG..., then TMPDIR is empty.
 verb() {
 	run_lendk "$@"

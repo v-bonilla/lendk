@@ -1,35 +1,99 @@
 # lendk
 
-`export OPENAI_API_KEY=...` in a shell rc file gives every key to every process you start: AI coding agents, package install scripts, any tool you try once. lendk keeps your API keys in [pass](https://www.passwordstore.org/) and gives each one only to the commands that need it, only while they run. You type `gh`; `gh` gets `GH_TOKEN`; nothing else does. A shim per mapped command sits first on PATH, so shells, scripts, Python subprocesses and agents all get the same behavior with no prefix command.
+lendk gives each API key only to the commands you choose, and only while they run. You type `gh`, `gh` gets `GH_TOKEN`, and nothing else does.
+
+The common habit is a line like `export OPENAI_API_KEY=...` in a shell startup file. That hands every key to every program you start: AI coding agents, package install scripts, any tool you try once. With lendk, your keys stay encrypted in [pass](https://www.passwordstore.org/), a password manager that keeps each secret in a GPG-encrypted file. You tell lendk once which command gets which key. After that you run the command as you always do, and lendk decrypts its key for that run.
+
+## Contents
+
+- [Key features](#key-features)
+- [Quick start for humans](#quick-start-for-humans)
+- [Examples](#examples)
+  - [gh with a GitHub token](#gh-with-a-github-token)
+  - [A group of keys for Claude Code or Codex](#a-group-of-keys-for-claude-code-or-codex)
+- [Installation](#installation)
+  - [For humans](#for-humans)
+  - [For AI agents](#for-ai-agents)
+- [Upgrade](#upgrade)
+- [Uninstall](#uninstall)
+- [Daily use](#daily-use)
+  - [Map file](#map-file)
+- [How it works](#how-it-works)
+  - [Security model](#security-model)
+  - [Decrypt speed and `s2k-count`](#decrypt-speed-and-s2k-count)
+- [PATH setup](#path-setup)
+- [Callers that skip PATH](#callers-that-skip-path)
+  - [Git credential helper](#git-credential-helper)
+  - [cron, systemd units, MCP servers](#cron-systemd-units-mcp-servers)
+  - [Other PATH-bypassing launchers](#other-path-bypassing-launchers)
+- [Troubleshooting](#troubleshooting)
+- [Agent contract](#agent-contract)
+- [Requirements](#requirements)
+- [License](#license)
 
 ## Key features
 
-- Per-command keys: `gh` gets `GH_TOKEN`, and no other process gets any key.
-- No prefix command: shims first on PATH serve shells, scripts, subprocesses and AI agents alike.
-- Keys stay in pass, never in rc files, argv, files, logs or lendk's output.
-- Built for agents: no hung passphrase prompts, one stable stderr class line per failure.
-- `lendk check` finds shadowed shims, missing keys and PATH mistakes without decrypting.
-- One bash file: no daemon, no cache of values, no network access, no telemetry.
-- Linux and macOS, installed by a checksum-verifying script without root.
+- **One key, one command.** `gh` gets `GH_TOKEN`. Your shell and the other programs you start from it get no key.
+- **Nothing new to type.** You keep running `gh`. lendk puts a small script named `gh`, called a shim, in a directory your system searches first. The shim gets the key, then starts the real `gh`. Scripts and AI agents that run `gh` get the same result.
+- **Keys stay encrypted.** They live in pass, not in your shell startup files. lendk never writes a key to a file, a log, a command line or its own output.
+- **Works with AI agents.** A call without a terminal never waits at a passphrase prompt nobody can answer. Every failure is one line that names the problem and the fix.
+- **`lendk check` shows what is wrong.** It lists which command gets which key, and reports missing keys and setup mistakes, without decrypting anything.
+- **Small and quiet.** One bash file. No background service, no saved copy of a decrypted key, no telemetry, no update check. It uses the network only when you run `lendk upgrade`.
+- **Linux and macOS, no root needed.** The install script checks the download against its checksum before it installs anything.
 
-## Quick start
+## Quick start for humans
 
 You need a GPG key and a pass store initialized for it; the installer prints the steps when the store is missing.
-
-Four commands, bash on Linux:
 
 <!-- quickstart -->
 ```
 curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
-exec bash -l
+exec bash -l   # PATH setup
 pass insert env/GH_TOKEN
 lendk add gh GH_TOKEN
 ```
 <!-- quickstart -->
 
-Command 2 starts a login shell, which reads the PATH block the installer added. Desktop apps see the shims after the next desktop login. For zsh, systemd and macOS, see [PATH setup](#path-setup).
-
 Now `gh` gets `GH_TOKEN`, and `echo "$GH_TOKEN"` in your shell prints nothing.
+
+To have an AI agent install lendk, give it the prompt under [For AI agents](#for-ai-agents).
+
+## Examples
+
+### gh with a GitHub token
+
+Store the token, map it to `gh`, then run `gh` as you always do:
+
+```
+pass insert env/GH_TOKEN       # pass asks for the token and encrypts it
+lendk add gh GH_TOKEN          # gh gets GH_TOKEN from here on
+gh repo list                   # works: gh received the token
+echo "${GH_TOKEN:-not set}"    # prints "not set": the shell itself has no GH_TOKEN
+```
+
+### A group of keys for Claude Code or Codex
+
+Claude Code and Codex both need two web search keys here. Store the keys, name them as a group, then give the group to each agent:
+
+```
+pass insert env/EXA_API_KEY
+pass insert env/BRAVE_API_KEY
+lendk add @search EXA_API_KEY BRAVE_API_KEY    # a group of keys named search
+lendk add --force claude @search               # Claude Code gets both keys
+lendk add --force codex @search                # Codex gets the same group
+```
+
+These commands add three lines to the map file, `~/.config/lendk/map`:
+
+```
+@search EXA_API_KEY BRAVE_API_KEY
+claude @search
+codex @search
+```
+
+`--force` is needed because an agent CLI starts other programs: shell commands, scripts, MCP servers. The keys reach everything it runs, so `lendk add` refuses until you confirm with `--force`.
+
+A tighter setup leaves the agent unmapped and gives the key only to the MCP server that needs it: in the agent's MCP config, start the server through lendk by its absolute path, as `/home/alice/.local/bin/lendk run EXA_API_KEY -- some-mcp-server`. See [cron, systemd units, MCP servers](#cron-systemd-units-mcp-servers).
 
 ## Installation
 
@@ -41,9 +105,7 @@ Install only from this repository.
 curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
 ```
 
-The installer downloads the latest release and its `SHA256SUMS`, verifies the checksum, and installs `lendk` into `~/.local/bin` without root. It checks for bash 4.4 or later, GnuPG 2.4 or later, pass, curl or wget, tar and a SHA-256 tool, and prints the package manager command for any that are missing. It then appends a `# >>> lendk-install >>>` block to your login file (`~/.bash_profile` or `~/.profile`, plus `~/.zshenv` for zsh and `~/.zprofile` for zsh on macOS) that puts `~/.local/bin` on PATH and the shim directory first, and on Linux with a systemd user session writes `~/.config/environment.d/99-lendk.conf`. It prints each change. Rerunning it upgrades lendk and changes nothing else.
-
-Options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
+The installer options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
 
 ```
 --version X.Y.Z    install release X.Y.Z instead of the latest
@@ -55,11 +117,7 @@ Options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s 
 --uninstall        remove what this installer added, never the map or the pass store
 ```
 
-Except with `--help`, the last line of its output is `lendk-install: ok: TEXT`, or `lendk-install: CLASS: TEXT` with CLASS one of `usage`, `unsupported-os`, `missing-deps`, `download`, `checksum`, `install` or `path`. `LENDK_INSTALL_BASE_URL` replaces `https://github.com/v-bonilla/lendk/releases`, for tests and mirrors: it must start with `https://` or `file:///`, and must serve `BASE/latest/download/lendk.tar.gz` and `BASE/latest/download/SHA256SUMS`, or `BASE/download/vX.Y.Z/` with the same two files for `--version X.Y.Z`.
-
 With `--install-deps` and no terminal, sudo runs as `sudo -n` and fails when it needs a password; run `sudo -v` first, or run the printed command yourself.
-
-Uninstall: `curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --uninstall`. It removes its login file blocks, the environment.d file, lendk's shims and the installed `lendk`, never the map or the store.
 
 #### From source
 
@@ -69,10 +127,6 @@ make -C lendk install                  # PREFIX defaults to ~/.local; DESTDIR is
 ```
 
 `make install` renames a new file over the old one, so a running lendk keeps reading its copy.
-
-Upgrade: `git pull`, then `make install`. With versioned install directories behind a stable symlink, run `lendk sync` once through the symlink.
-
-Uninstall: delete the `# >>> lendk >>>` blocks from your rc files and the environment.d file, then `make -C lendk uninstall`. It removes lendk's shims, the shim directory and lendk's data directory if empty, and the installed file when it is lendk's, never the map, the store or your rc files.
 
 ### For AI agents
 
@@ -113,16 +167,68 @@ pass only to the commands mapped to them.
 ```
 <!-- agent-prompt -->
 
+## Upgrade
+
+```
+lendk upgrade
+```
+
+It moves lendk to the latest release:
+
+- It downloads the release and checks it against its checksum, as the installer does. It also checks that the file inside is lendk and runs under your bash.
+- It replaces one file, the installed `lendk`, by renaming the release's file over it. A lendk that is running at that moment finishes on the old file.
+- It prints `upgraded lendk A.B.C to X.Y.Z at PATH`, then runs `lendk sync`, which writes the shims to match the map.
+- When the latest release is not higher than your version, it changes nothing and prints `lendk A.B.C is up to date: the latest release is X.Y.Z`. It never downgrades.
+
+It writes that one file and the shims `lendk sync` writes, nothing more. It leaves everything else alone: the map, the pass store, your login files, the environment.d file and a skill copy. It decrypts no key and never prompts. To refresh PATH setup or a skill copy (`--skill-dir DIR`), or to install a release you choose (`--version X.Y.Z`), rerun the installer with the options under [Installation](#installation).
+
+When the upgrade fails, the error is one `lendk: upgrade:` line, and lendk is unchanged:
+
+- A download that fails, a checksum that differs, or a release that holds no lendk your bash can run: retry.
+- An install it refuses to touch: a `lendk` that is a symlink, a file that is not lendk's own, a version that is not a release's `X.Y.Z`, or a directory you cannot write. Upgrade lendk the way it was installed. With versioned install directories behind a stable symlink, install the new version beside the old one, move the symlink, and run `lendk sync` once through it.
+- A missing tool. `lendk upgrade` needs tar, gzip, `sha256sum` or `shasum`, and curl or wget. It finds them on PATH outside the shim directory, so a `curl` you mapped runs without its shim and gets no key.
+
+`LENDK_TIMEOUT` bounds the download and the checks together: 60 s in a terminal, 10 s otherwise. On a slow connection, raise it: `LENDK_TIMEOUT=300 lendk upgrade`.
+
+`lendk upgrade` trusts this project's GitHub releases over HTTPS, as the installer does. `LENDK_INSTALL_BASE_URL` names another release base, an `https://` or `file:///` URL; any other value is a `usage` error. It moves that trust to whoever serves the URL, so lendk names a set base in a notice. See [Security model](#security-model).
+
+lendk 1.0.0 has no `upgrade`: rerun the installer once, and later versions upgrade themselves.
+
+From a checkout: `git pull`, then `make install`.
+
+## Uninstall
+
+After an install with the installer:
+
+```
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --uninstall
+```
+
+- It removes the installer's blocks from your login files, the environment.d file, lendk's shims and the installed `lendk`.
+- It never removes the map or the pass store.
+- Add `--skill-dir DIR` to remove the skill copy at `DIR/lendk` too.
+- Add the `--prefix DIR` you installed with, when you used one.
+- Blocks you added yourself with `lendk init` stay. Delete the lines from `# >>> lendk >>>` to `# <<< lendk <<<` in those files.
+
+After an install from source, delete the `# >>> lendk >>>` blocks from your rc files and the environment.d file, then run:
+
+```
+make -C lendk uninstall
+```
+
+It removes lendk's shims, the shim directory and lendk's data directory if empty, and the installed file when it is lendk's, never the map, the store or your rc files.
+
 ## Daily use
 
 ```
 lendk run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys
-lendk add [--force] CMD|@GROUP KEY|@GROUP...   # map, then sync
+lendk add [--force] CMD|@GROUP KEY|@GROUP...   # map keys to a CMD (or define a group of keys), then sync
 lendk rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync
 lendk check [NAME...]                          # diagnose without decrypting
 lendk sync                                     # write shims to match the map
-lendk unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere
+lendk unlock [KEY|@GROUP...]                   # unlock in a terminal so gpg cache is warm; probe elsewhere
 lendk init sh|bash|zsh|systemd                 # print PATH setup
+lendk upgrade                                  # replace lendk with the latest release, then sync
 lendk --help | --version
 ```
 
@@ -138,15 +244,18 @@ lendk --help | --version
 `~/.config/lendk/map`:
 
 ```
-@aws        AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
+@search     EXA_API_KEY BRAVE_API_KEY    # a group of keys
+claude      @search                      # Claude Code and Codex get both keys
+codex       @search
+opencode    BRAVE_API_KEY                # one key, mapped directly
 gh          GH_TOKEN
-terraform   @aws CLOUDFLARE_API_TOKEN    # trailing comment
 ```
 
-- One entry per line; `#` starts a comment. `@NAME KEY...` defines a group; `CMD WORD...` maps a command, WORD being a key or `@NAME`.
+- One entry per line; `#` starts a comment. `@NAME KEY...` defines a group of keys; `CMD WORD...` maps a command, WORD being a key or `@NAME`.
+- There are no groups of commands: two commands share keys by naming the same group.
 - Groups inline in word order; duplicates are dropped, keeping the first.
 - lendk refuses keys that steer lendk, pass, gpg, the shell or the loader, and refuses to map its own runtime.
-- Guarded commands run other programs, so their keys reach everything they run. `lendk add` maps them only with `--force`, and prints a notice.
+- Guarded commands run other programs, so their keys reach everything they run. `lendk add` maps them only with `--force`, and prints a notice. `claude`, `codex` and `opencode` above are guarded.
 
 The name lists, as `lendk --help` prints them:
 
@@ -167,7 +276,7 @@ The name lists, as `lendk --help` prints them:
 - `lendk run` reads the map lines for CMD, finds the real CMD on PATH after the shim directory, confirms every key exists, decrypts them all, exports them and `exec`s CMD with its own argv0 and exit status. Any failure stops before CMD starts.
 - Values never appear in argv, files, logs or lendk's output. pass and gpg run with an environment built from an allowlist (PATH without shims, HOME, locale, terminal and display variables, GNUPGHOME, `PASSWORD_STORE_*`), so no key or exported shell function reaches them.
 - Without a terminal, lendk adds `--pinentry-mode error`, so a locked store fails in milliseconds with a `locked` line instead of a prompt nobody sees. `LENDK_TIMEOUT` bounds all backend work of a call (default 60 s in a terminal, 10 s otherwise), and no process of a call outlives it.
-- No daemon, no cache of values, no network access, no telemetry. lendk writes only the map, the shim directory and its lock.
+- No daemon, no cache of values, no telemetry, no update check. lendk uses the network only in `lendk upgrade`, and only when you run it. It writes only the map, the shim directory and its lock, and in `lendk upgrade` its own file.
 
 ### Security model
 
@@ -175,10 +284,11 @@ lendk protects against ambient exposure: keys reach only mapped commands, `lendk
 
 It does not protect against:
 
-- Other processes running as you. While gpg-agent holds your passphrase, any of them, an AI agent included, can run `pass show`, read `/proc/PID/environ`, or edit the map, the shims or PATH. lendk keeps keys out of an agent's context; it does not stop an agent that goes looking for them.
+- Other processes running as you. While gpg-agent holds your passphrase, any of them, an AI agent included, can run `pass show`, read `/proc/PID/environ`, edit the map, the shims or PATH, or replace lendk itself. lendk keeps keys out of an agent's context; it does not stop an agent that goes looking for them.
 - A mapped command itself. It holds the key and can print it, as `gh auth token` does, so map only tools you trust with that key.
 - Descendants of a mapped command, for their lifetime, and root. Running processes keep old values after a rotation.
 - Callers that bypass PATH. They run without lendk's keys and fail, or act under the tool's own stored credentials, such as gh's `hosts.yml` or `~/.aws/credentials`.
+- A compromised release. `lendk upgrade` replaces lendk, which reads every mapped key, with the file the latest release holds. It trusts this project's GitHub releases over HTTPS, as the installer does. The checksum comes from the same release, so it catches a corrupt or cut-short download, not a compromised release or account. The download tool reads your own configuration, such as `~/.curlrc`.
 
 ### Decrypt speed and `s2k-count`
 
@@ -281,6 +391,9 @@ Every failure is one stderr line, `lendk: CLASS: TEXT. FIX`. The classes, as `le
   decrypt (125): See gpg's error: lendk unlock KEY | Ask the user to run 'lendk unlock KEY' in a terminal, then retry.
   unsafe (125): Fix it: chmod go-w PATH, or recreate it as your own | Stop and ask the user.
   write (125): Fix it, then run: lendk sync | Stop and ask the user.
+  upgrade (125): Retry; on a slow connection raise LENDK_TIMEOUT. | Stop and ask the user.
+  upgrade (125): Upgrade lendk the way it was installed. | Stop and ask the user.
+  upgrade (125): Fix it, then run: lendk upgrade | Stop and ask the user.
   exec (126): Fix it, or unmap it: lendk rm CMD | Stop and ask the user.
   not-found (127): Install it, or unmap it: lendk rm CMD | Install CMD, or ask the user.
   lendk-missing (127): The user must reinstall lendk from its project repository, then run: lendk sync | The user must reinstall lendk from its project repository, then run: lendk sync
@@ -292,6 +405,7 @@ The first FIX shows in a terminal, the second without one.
 - `locked` from a script, cron or an agent: run `lendk unlock` in a terminal.
 - `timeout`: a hardware token may be waiting for a touch, or gpg-agent is stuck; raise `LENDK_TIMEOUT` or run `lendk unlock KEY` to see gpg's own prompt.
 - `unsafe`: the map, its directory or the shim directory is writable by others or owned by someone else.
+- `upgrade`: lendk is unchanged. The TEXT names the cause; see [Upgrade](#upgrade).
 
 ## Agent contract
 
@@ -299,6 +413,7 @@ The first FIX shows in a terminal, the second without one.
 - On `locked`, `timeout` or `canceled`, stop and ask a human to run `lendk unlock` in a terminal. Do not retry in a loop.
 - Never run `pass`, `lendk add`, `lendk rm`, or `lendk run` with key names, and never print the environment. Relay the FIX to the user instead.
 - Run commands as usual: `gh pr list`, not `lendk run -- gh pr list`.
+- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.
 - `install.sh --skill-dir DIR` copies the lendk agent skill, which teaches all of this, to `DIR/lendk`.
 
 ## Requirements
@@ -307,6 +422,7 @@ The first FIX shows in a terminal, the second without one.
 - GnuPG 2.4 or later
 - pass 1.7 or later, with a store initialized by `pass init`
 - POSIX utilities
+- tar, gzip, `sha256sum` or `shasum`, and curl or wget, for `lendk upgrade` only
 - `git` and `make` to install from source
 
 lendk supports Linux and macOS; CI runs the full test suite on both. On macOS it needs bash and GnuPG from Homebrew (`brew install bash gnupg pass`), since the system bash is 3.2. Homebrew's bash must come first on the login PATH: `/etc/profile` puts `/usr/bin` first, so keep `eval "$(brew shellenv)"` in `~/.profile` (or `~/.bash_profile`) and `~/.zprofile`, above lendk's blocks. Development needs Docker for `make check-docker` and `uv` for shellcheck; `make deps` fetches bats-core.

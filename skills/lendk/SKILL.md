@@ -1,6 +1,6 @@
 ---
 name: lendk
-description: Use when a machine uses lendk to give API keys stored in pass to commands, when a command fails with a "lendk:" line on stderr, when a command lacks an API key it needs, or when the user asks to add, map, rotate or remove an API key, set up lendk on Linux or macOS, or uninstall it.
+description: Use when a machine uses lendk to give API keys stored in pass to commands, when a command fails with a "lendk:" line on stderr, when a command lacks an API key it needs, or when the user asks to add, map, rotate or remove an API key, set up lendk on Linux or macOS, upgrade it, or uninstall it.
 ---
 
 # lendk
@@ -33,6 +33,7 @@ lendk check [NAME...]                          # diagnose without decrypting
 lendk sync                                     # write shims to match the map
 lendk unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere
 lendk init sh|bash|zsh|systemd                 # print PATH setup
+lendk upgrade                                  # replace lendk with the latest release, then sync
 lendk --help | --version
 ```
 
@@ -51,6 +52,7 @@ lendk rm terraform CLOUDFLARE_API_TOKEN
 lendk run OPENAI_API_KEY -- ./script.sh   # user: one run with named keys
 lendk unlock                          # user, in a terminal: cache the passphrase
 lendk init sh                         # print the PATH block for a login file
+lendk upgrade                         # only when the user asks: move to the latest release
 ```
 
 `add` refuses guarded commands (shells, interpreters, launchers, package tools, agent CLIs) without `--force`, because their keys reach every program they run.
@@ -79,6 +81,7 @@ The class is the contract. Exit codes are hints only: after exec, the command's 
 | `decrypt` | 125 | Stop. Ask the user to run `lendk unlock KEY` in a terminal to see gpg's error. |
 | `unsafe` | 125 | Stop and ask the user; a file or directory is writable by others. |
 | `write` | 125 | Stop and ask the user; fix the reported path, then `lendk sync`. |
+| `upgrade` | 125 | Stop and ask the user; lendk itself is unchanged. |
 | `exec` | 126 | Stop and ask the user; the target exists but cannot run. |
 | `not-found` | 127 | Install the command, or ask the user. |
 | `lendk-missing` | 127 | Stop. The user must reinstall lendk, then run `lendk sync`. |
@@ -94,6 +97,7 @@ Never retry `locked`, `timeout` or `canceled` in a loop. Every failure stops bef
 - Never run `lendk add`, `lendk rm` or `lendk run` with key names on your own initiative. Propose the exact command and let the user run it or approve it.
 - Never use `--force` unless the user asked for it.
 - On `locked`, stop and ask a human to run `lendk unlock` in a terminal. Do not try to unlock it yourself.
+- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.
 - Never edit the map, the shim files or GnuPG settings by hand without the user's approval.
 - One exemption: an installation test the user approved, with a throwaway key and exactly these commands, the cleanup run even when the test fails:
   ```
@@ -123,6 +127,12 @@ Keys that travel together go in a group: `lendk add @aws AWS_ACCESS_KEY_ID AWS_S
 **Calls from cron, agents or scripts fail with `locked`.** gpg-agent has no cached passphrase. The user runs `lendk unlock` in a terminal; cache lifetime is `default-cache-ttl` and `max-cache-ttl` in `~/.gnupg/gpg-agent.conf`.
 
 **Decrypts are slow.** GnuPG's default `s2k-count` re-runs a costly key derivation on every decrypt. See [references/setup.md](references/setup.md); the user decides, since it weakens the key file against offline guessing.
+
+**Upgrade lendk.** When the user asks, run `lendk upgrade`. It replaces the installed `lendk` with the latest release and runs `lendk sync`; it is the only verb that uses the network. The map, the store and PATH setup stay as they are.
+
+`lendk upgrade` leaves a skill copy as it is. Rerunning `install.sh --skill-dir DIR` refreshes it.
+
+lendk 1.0.0 has no `upgrade`; rerunning the installer moves it up. See [references/setup.md](references/setup.md).
 
 **Set up Linux or macOS, or uninstall.** See [references/setup.md](references/setup.md).
 
