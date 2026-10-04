@@ -102,7 +102,7 @@ Install only from this repository.
 ### For humans
 
 ```
-curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --skill-dir DIR
 ```
 
 The installer options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
