@@ -4,6 +4,8 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-04
+
 ### Added
 
 - `lendk upgrade`: replaces lendk with the latest release, checked against its checksum, by a rename, then runs `lendk sync`. It leaves the map, the store, PATH setup and a skill copy as they are.
@@ -28,5 +30,6 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 - An agent skill, `skills/lendk`, that `install.sh --skill-dir` installs, and a README prompt that has an AI agent install and verify lendk.
 - Linux and macOS support; macOS needs bash and GnuPG from Homebrew.
 
-[Unreleased]: https://github.com/v-bonilla/lendk/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/v-bonilla/lendk/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/v-bonilla/lendk/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/v-bonilla/lendk/releases/tag/v1.0.0
