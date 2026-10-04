@@ -1,4 +1,4 @@
-# lendk setup, PATH and uninstall
+# lendk setup, PATH, upgrade and uninstall
 
 ## Install
 
@@ -66,6 +66,24 @@ s2k-count 8388608
 ```
 
 Then `gpgconf --reload gpg-agent` and `gpg --passwd KEYID` with the same passphrase. Only with a strong passphrase: a copied key file becomes about 20 times faster to attack.
+
+## Upgrade
+
+Only when the user asks:
+
+```
+lendk upgrade
+```
+
+- It downloads the latest release, checks it against `SHA256SUMS`, renames the release's file over the installed `lendk`, and runs `lendk sync`. It prints `upgraded lendk A.B.C to X.Y.Z at PATH`, or `lendk A.B.C is up to date: the latest release is X.Y.Z`.
+- It leaves the map, the store, the login files, the environment.d file and a skill copy as they are, reads no key and never prompts.
+- An argument is `usage`. Any other failure is one `lendk: upgrade:` line, and the installed file is unchanged. Stop and relay the line: the cause is a failed or slow download (`LENDK_TIMEOUT` bounds it), a checksum mismatch, a release without a usable lendk, an install another tool manages (a symlink, a version that is not a release's, or a directory the user cannot write), or a missing tar, gzip, `sha256sum` or `shasum`, curl or wget.
+- Never set `LENDK_INSTALL_BASE_URL`: it moves the trust in the release to whoever serves that URL. When the user set it, a notice names the base.
+- Rerunning the installer refreshes PATH setup, refreshes a skill copy with `--skill-dir DIR`, and installs a chosen release with `--version X.Y.Z`:
+  ```
+  curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --yes --skill-dir DIR
+  ```
+- From a checkout: `git pull`, then `make install`.
 
 ## Uninstall
 

@@ -13,11 +13,11 @@ A shim per mapped command sits first on PATH and calls `lendk run -- CMD`, which
 
 Code:
 - `bin/lendk` runs on bash 4.4 (NFR3): no bash 5 feature, and `EPOCHREALTIME` or `SRANDOM` only as `${VAR-}`. Its opening lines, up to the version test, also parse and run in bash 3.2 and POSIX sh (FR22).
-- POSIX utilities and options only, plus `mktemp -d TEMPLATE`, plain `readlink` and fractional `sleep`. The lint rejects `stat`, `readlink -f`, `timeout`, `flock`, `setsid`, `sed -i` and `date +%N`, and allows `/proc` and `ps` only between the `# lint: tty-owner` markers.
-- External utilities run through `command -p`, never through the caller's PATH or the shims. The run path avoids forks (NFR1): prefer expansions and globals to `$(...)` there.
+- POSIX utilities and options only, plus `mktemp [-d] TEMPLATE`, plain `readlink` and fractional `sleep`, and in `upgrade` alone tar, gzip, `sha256sum` or `shasum`, and curl or wget (NFR3). The lint rejects `stat`, `readlink -f`, `timeout`, `flock`, `setsid`, `sed -i` and `date +%N`, and allows `/proc` and `ps` only between the `# lint: tty-owner` markers.
+- External utilities run through `command -p`, never through the caller's PATH or the shims. `upgrade` alone finds tar, gzip, `sha256sum` or `shasum`, and curl or wget on the caller's PATH without the shim directory (FR46). The run path avoids forks (NFR1): prefer expansions and globals to `$(...)` there.
 - No `set -e`: check each failure and call `fail`. Read optional variables as `${VAR-}` under `set -u`.
-- Only `backend_has` and `backend_read` name `pass` or the store (NFR7). The source names no network tool: `curl`, `wget`, `nc`, `/dev/tcp` (NFR6).
-- Runtime needs bash, pass, GnuPG and POSIX utilities; development adds the bats-core submodule, shellcheck through `uvx` and Docker. Add no other dependency (NFR4).
+- Only `backend_has` and `backend_read` name `pass` or the store (NFR7). lendk uses the network only in `lendk upgrade`, only when the user runs it: the source names `curl` and `wget` only between the `# lint: network begin` and `# lint: network end` markers, which hold the one function `upgrade` downloads through, and never `nc` or `/dev/tcp` (NFR6).
+- Runtime needs bash, pass, GnuPG and POSIX utilities, and for `upgrade` alone the tools above; development adds the bats-core submodule, shellcheck through `uvx` and Docker. Add no other dependency (NFR4).
 - `install.sh` is POSIX sh for dash, busybox sh and bash 3.2: all work in functions, `main "$@"` as the last line, every ending through `finish CLASS TEXT` (FR39, FR43).
 - shellcheck reports zero findings (`make lint`). Tabs indent shell, bats, fixtures and the `Makefile`; LF, UTF-8 and a final newline everywhere (`.editorconfig`).
 - Functions are `snake_case`, and a verb's entry point is `NAME_verb`. Each has a header comment `# name ARG...: what it does`, naming the globals it sets and the PRD ID it serves, where there is one. Inside a function, comment only a reason the code cannot show: a platform quirk, a bash 4.4 limit, a measured cost.
@@ -25,7 +25,7 @@ Code:
 Tables and messages (NFR8):
 - The verbs, map grammar, name lists, class table and environment variables live once in code, between the `# lint: tables begin` and `# lint: tables end` markers of `bin/lendk`, and `--help` prints them.
 - A failure ends through `fail CLASS TEXT`, which takes the exit hint and the FIX for the call's mode from the `classes` rows. Each class has an interactive and a non-interactive FIX (PRD 5.3).
-- All of these, and the shim text, are stable within 1.x: add entries, never rename, remove or reword one.
+- All of these, and the shim text, are stable within 1.x: add entries, never rename or remove one, and change a description only to keep it true. A release that adds an entry raises the minor version.
 
 Tests:
 - A test name starts with the PRD ID it proves: `FR24: ...`, `FR4, FR20: ...`, `NFR8: ...`, `AC5: ...`. Line 2 of a test file says what the file covers.
@@ -59,17 +59,19 @@ Git:
 ## Failure signals for every task
 
 Product level, PRD section 12:
-- A lendk call waiting past `LENDK_TIMEOUT` + 2 s, or a backend, watchdog or pinentry outliving its call.
+- A lendk call waiting past `LENDK_TIMEOUT` + 2 s, or a backend, download tool, watchdog or pinentry outliving its call.
 - A mapped command running without its keys while `check` says `ok`, or a false `check` problem.
 - A secret value in lendk output, argv, a file or a helper's environment.
-- A lendk message that leads an agent to widen the map or print a key.
+- A lendk message that leads an agent to widen the map, print a key or upgrade lendk unasked.
+- `lendk upgrade` leaving a lendk that does not run, a partly written file, or a changed login file, map, store or skill copy.
+- lendk using the network in any call but a `lendk upgrade` the user ran.
 
 Process level:
 - A test weakened, skipped or deleted to get green, or a count in `test/contract.bats` changed with no PRD change behind it.
 - An assertion on an exit code alone or on gpg's translated text, or a host skip counted as a pass.
 - A doc that narrates its own history, or a README or skill statement the code no longer backs.
 - A name list, class table or verb list copied where no test compares it with `lendk --help`.
-- A new dependency, a second file in `bin/`, a non-portable utility or a network tool.
+- A new dependency, a second file in `bin/`, a non-portable utility, or a network tool outside the network region.
 - A gate reported as passed without its command and result.
 - A tag, push, release or visibility change made without the maintainer.
 - The developer's own pass store or GnuPG home read or written.
@@ -78,8 +80,8 @@ Process level:
 
 - `make deps` checks out the bats-core submodule; a fresh clone or worktree has none, and `make test` stops with that hint. One file: `test/lib/bats-core/bin/bats test/NAME.bats`.
 - `require` skips a test whose tool the host lacks (strace, zsh, `script`, systemd's environment.d generator) and fails it in the Ubuntu image, whose `TEST_REQUIRE` lists them. Read the skip lines before calling a host run complete.
-- Exercise lendk through the suite, never by hand against your own environment: `sandbox` and `gpg_setup` build a private HOME, store and GnuPG home, and `gpg_guard` refuses anything else.
-- `install.sh` reaches users from `main` the moment `main` moves; `bin/lendk` and `skills/` reach them only in a release archive (`make dist`, a `git archive` of HEAD). An installer change must work with the latest released archive. The marker strings sit in `bin/lendk`, `install.sh` and the `Makefile`, and `test/installer.bats` holds them equal.
+- Exercise lendk through the suite, never by hand against your own environment: `sandbox` and `gpg_setup` build a private HOME, store and GnuPG home, and `gpg_guard` refuses anything else. `run_lendk` refuses `upgrade` on the working tree's `bin/lendk`, and every sandbox holds `curl` and `wget` stubs that fail, so no test replaces the source or reaches the network.
+- `install.sh` reaches users from `main` the moment `main` moves; `bin/lendk` and `skills/` reach them only in a release archive (`make dist`, a `git archive` of HEAD), which `install.sh` and `lendk upgrade` both read from `releases/latest/download/`. An installer change must work with the latest released archive. The marker strings sit in `bin/lendk`, `install.sh` and the `Makefile`, and `test/installer.bats` holds them equal.
 - Tests parse the docs, so keep their shapes: in the PRD, the 4.1 verb block, the 4.2 backticked lists after their labels, the 5.3 class bullets and backticked FIX texts, the section 8 variable names, FR29's fenced shim and the `- FRn ` bullets; in the README, the `<!-- quickstart -->` and `<!-- agent-prompt -->` markers and the list lines `--help` prints; in the skill, the class table, the `Options:` line and the 250-line limit of `SKILL.md`.
 - `bin/lendk` ends with `main "$@"; exit $?` on one line: bash reads a script as it runs, and `sandbox` builds `lendk-fn` by dropping that line to call single functions.
 - The reasons behind the decrypt path, the timeout watchdog, the terminal handoff and the lock are rules R1 to R15 of the v1 plan (`git show 3644a1f:docs/plan.md`). Read them before changing those parts; the PRD and the code win where they differ.

@@ -3,8 +3,8 @@
 ROOT=$(cd "$BATS_TEST_DIRNAME/.." && pwd)
 LENDK=$ROOT/bin/lendk
 FIXTURES=$ROOT/test/fixtures
-CLASSES='usage|guarded|unsupported|locked|canceled|timeout|map|unmapped|missing-key|decrypt|unsafe|write|exec|not-found|lendk-missing'
-FORBIDDEN='lendk add|lendk rm|lendk run [A-Z@]|pass |printenv|env -0|export -p|npm|cargo|pip install|brew'
+CLASSES='usage|guarded|unsupported|locked|canceled|timeout|map|unmapped|missing-key|decrypt|unsafe|write|upgrade|exec|not-found|lendk-missing'
+FORBIDDEN='lendk add|lendk rm|lendk run [A-Z@]|lendk upgrade|pass |printenv|env -0|export -p|npm|cargo|pip install|brew'
 sandbox() {
 	local name
 	for name in $(compgen -e); do
@@ -13,6 +13,12 @@ sandbox() {
 	SB=$BATS_TEST_TMPDIR
 	mkdir -p "$SB/home" "$SB/tmp" "$SB/store/env" "$SB/log" "$SB/bin"
 	ln -s "$FIXTURES/fake-pass" "$SB/bin/pass"
+	# No test reaches the network: the download tools fail, and record each call in $SB/log/net,
+	# unless a test replaces them.
+	for name in curl wget; do
+		printf '#!/bin/sh\necho "%s $*" >>%q\nexit 7\n' "$name" "$SB/log/net" >"$SB/bin/$name"
+		chmod +x "$SB/bin/$name"
+	done
 	export HOME=$SB/home TMPDIR=$SB/tmp PASSWORD_STORE_DIR=$SB/store PATH=$SB/bin:$PATH STUB_LOG=$SB/log
 	SENTINEL=lendk-sentinel-$RANDOM$RANDOM$RANDOM
 	# lendk-fn FUNCTION ARG...: call one of lendk's functions, the file's definitions loaded.
@@ -20,9 +26,13 @@ sandbox() {
 	chmod +x "$SB/bin/lendk-fn"
 }
 
-# run_lendk ARG...: status, output (stdout), stderr; every stderr line must follow PRD 5.3.
+# run_lendk ARG...: status, output (stdout), stderr; every stderr line must follow PRD 5.3, and the
+# sandbox's download stubs must stay unused.
 run_lendk() {
 	local line
+	# upgrade replaces the file it runs from, so it only ever runs on a copy.
+	[[ ${1-} != upgrade || ! $LENDK -ef $ROOT/bin/lendk ]] ||
+		{ echo "run_lendk refuses upgrade on the working tree's bin/lendk" >&2; return 1; }
 	status=0
 	output=$("$LENDK" "$@" </dev/null 2>"$SB/stderr") || status=$?
 	stderr=$(<"$SB/stderr")
@@ -32,6 +42,8 @@ run_lendk() {
 		[[ ${LENDK_PROMPT-} == allow || ! $line =~ $FORBIDDEN ]] ||
 			{ echo "non-interactive line suggests a forbidden action: $line" >&2; return 1; }
 	done <"$SB/stderr"
+	# NFR6: the sandbox's download stubs record their calls, and no call of the suite may start one.
+	[[ ! -e $SB/log/net ]] || { echo "lendk started a download tool: $(<"$SB/log/net")" >&2; return 1; }
 }
 assert_eq() { [[ $1 == "$2" ]] || { printf 'expected: %q\nactual:   %q\n' "$2" "$1" >&2; return 1; }; }
 assert_line() { [[ $'\n'$1$'\n' == *$'\n'"$2"$'\n'* ]] || { printf 'no line %q in:\n%s\n' "$2" "$1" >&2; return 1; }; }
@@ -110,4 +122,45 @@ none_within() {
 	done
 	echo "still running: $left" >&2
 	return 1
+}
+# snapshot: every path under the sandbox except the logs, with its listing and checksum.
+snapshot() {
+	local p sum
+	while IFS= read -r p; do
+		sum=
+		[[ -f $p && ! -L $p ]] && sum=$(cksum <"$p")
+		printf '%s %s %s\n' "$p" "$(command ls -ldn "$p" | awk '{ print $1, $2, $3, $4, $5 }')" "$sum"
+	done < <(find "$SB" \( -path "$SB/log" -o -path "$SB/stderr" \) -prune -o -print | sort)
+}
+# timed_lendk ARG...: run_lendk ARG..., with its wall time in seconds in elapsed.
+timed_lendk() {
+	local TIMEFORMAT=%R
+	{ time run_lendk "$@"; } 2>"$SB/time"
+	elapsed=$(<"$SB/time")
+}
+# within LOW HIGH: LOW <= elapsed < HIGH, in whole and tenth seconds.
+within() {
+	local t=${elapsed/./}
+	t=$((10#${t:0:${#t}-2}))
+	((t >= $1 * 10 && t < $2 * 10)) || { echo "took $elapsed s, expected [$1, $2)" >&2; return 1; }
+}
+# sha256 FILE: its SHA-256 line, as sha256sum prints it.
+sha256() {
+	if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi
+}
+# pack SRC DIR: a release in make dist's layout under DIR, from the lendk-X.Y.Z tree in SRC.
+pack() {
+	mkdir -p "$2/latest/download"
+	(cd "$1" && tar -cf - lendk-*) | gzip >"$2/latest/download/lendk.tar.gz"
+	(cd "$2/latest/download" && sha256 lendk.tar.gz >SHA256SUMS)
+}
+# release DIR VERSION: pack the working tree's lendk as VERSION, with LICENSE and skills, under DIR.
+release() {
+	local src=$1.src/lendk-$2
+	mkdir -p "$src/bin"
+	sed "s/^LENDK_VERSION=.*/LENDK_VERSION=$2/" "$ROOT/bin/lendk" >"$src/bin/lendk"
+	chmod 755 "$src/bin/lendk"
+	cp "$ROOT/LICENSE" "$src/"
+	cp -R "$ROOT/skills" "$src/"
+	pack "$1.src" "$1"
 }

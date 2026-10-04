@@ -119,7 +119,7 @@ lendk_listing=
 
 set -u -o pipefail
 
-LENDK_VERSION=1.0.0
+LENDK_VERSION=1.1.0
 
 # lint: tables begin
 grammar=(
@@ -185,6 +185,9 @@ classes=(
 	"decrypt|125|See gpg's error: lendk unlock KEY|$unlock_fix"
 	"unsafe|125|Fix it: chmod go-w PATH, or recreate it as your own|$stop_fix"
 	"write|125|Fix it, then run: lendk sync|$stop_fix"
+	"upgrade|125|Retry; on a slow connection raise LENDK_TIMEOUT.|$stop_fix"
+	"upgrade:install|125|Upgrade lendk the way it was installed.|$stop_fix"
+	"upgrade:local|125|Fix it, then run: lendk upgrade|$stop_fix"
 	"exec|126|Fix it, or unmap it: lendk rm CMD|$stop_fix"
 	"not-found|127|Install it, or unmap it: lendk rm CMD|Install CMD, or ask the user."
 	"lendk-missing|127|The user must reinstall lendk from its project repository, then run: lendk sync|The user must reinstall lendk from its project repository, then run: lendk sync"
@@ -537,7 +540,7 @@ backend_exit() {
 # watchdog: W, started before J (FR16, FR17), whose PID it reads from the temporary directory. Every 0.1 s it
 # wakes lendk in interactive calls, then checks. At LENDK_TIMEOUT it marks the timeout, and when lendk
 # is gone it notes that. Either way it stops the job's group, with KILL after 0.3 s, and removes a
-# gone lendk's temporary directory once the job can write no more.
+# gone lendk's temporary directory, and upgrade's staged file when given, once the job can write no more.
 watchdog() {
 	local ticks=0 i abandon=0 start now jpid='' tfd=''
 	builtin umask 077
@@ -579,7 +582,8 @@ watchdog() {
 		builtin kill -KILL -- "-$jpid" 2>/dev/null
 	fi
 	[[ -z $tfd ]] || builtin exec {tfd}<&-
-	((abandon == 0)) || command -p rm -rf -- "$lendk_tmp"
+	builtin kill -0 "$$" 2>/dev/null || abandon=1
+	((abandon == 0)) || command -p rm -rf -- "$lendk_tmp" ${1:+"$1"}
 	return 0
 }
 # watchdog_rescue: a watchdog that died of an error ends the call as a timeout at once, so the
@@ -597,7 +601,7 @@ watchdog_rescue() {
 		command -p sleep 0.3
 		builtin kill -KILL -- "-$jpid" 2>/dev/null
 	fi
-	builtin kill -0 "$$" 2>/dev/null || command -p rm -rf -- "$lendk_tmp"
+	builtin kill -0 "$$" 2>/dev/null || command -p rm -rf -- "$lendk_tmp" ${1:+"$1"}
 }
 # watchdog_tick: about 0.1 s.
 watchdog_tick() {
@@ -952,6 +956,7 @@ verbs=(
 	'lendk sync                                     # write shims to match the map'
 	'lendk unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere'
 	'lendk init sh|bash|zsh|systemd                 # print PATH setup'
+	'lendk upgrade                                  # replace lendk with the latest release, then sync'
 	'lendk --help | --version'
 )
 
@@ -961,7 +966,8 @@ variables=(
 	'LENDK_SHIMS|shim directory, set wherever lendk runs; default ${XDG_DATA_HOME:-~/.local/share}/lendk/shims; lock: SHIMS.lock'
 	'LENDK_PREFIX|store entry prefix; default env'
 	'LENDK_PROMPT|auto (default), never or allow'
-	'LENDK_TIMEOUT|seconds of backend work per call, 1 to 3600; default 60 interactive, 10 otherwise'
+	"LENDK_TIMEOUT|seconds of backend work, or of upgrade's fetch, per call, 1 to 3600; default 60 interactive, 10 otherwise"
+	'LENDK_INSTALL_BASE_URL|release base for upgrade and install.sh, https:// or file:///; default https://github.com/v-bonilla/lendk/releases'
 	'LENDK_INJECTED|set by lendk for targets: the names injected, space-separated'
 	'PASSWORD_STORE_DIR|store; default ~/.password-store'
 	'XDG_CONFIG_HOME|base of the default map; relative values are ignored'
@@ -996,7 +1002,7 @@ print_help() {
 	printf '\nExit: 0 success; 1 check found a problem; after exec, the command'"'"'s own status.\n'
 	printf '\nEnvironment:\n'
 	for line in "${variables[@]}"; do
-		printf '  %-18s %s\n' "${line%%|*}" "${line#*|}"
+		printf '  %-22s %s\n' "${line%%|*}" "${line#*|}"
 	done
 }
 
@@ -1716,6 +1722,221 @@ unset lendk_p lendk_r lendk_d"
 	exit 0
 }
 
+# The second line of lendk's own file, which FR47 asks of the new file and FR48 of the installed one.
+upgrade_mark='# lendk: give API keys stored in pass to the commands that need them.'
+# A version number: no leading zero and at most nine digits, so it compares in base 10 without overflow.
+upgrade_n='(0|[1-9][0-9]{0,8})'
+upgrade_version="^lendk ${upgrade_n}[.]${upgrade_n}[.]${upgrade_n}\$"
+
+# lint: network begin
+# upgrade_download [URL OUT]: fetch an https URL to OUT (FR46). Without arguments, set dl to the
+# download tool found on upath, or fail with problem naming the missing one.
+upgrade_download() {
+	local help
+	if (($# == 0)); then
+		dl=$(PATH=$upath type -P curl) || dl=$(PATH=$upath type -P wget) || { problem=curl && return 1; }
+		return 0
+	fi
+	if [[ ${dl##*/} == curl ]]; then
+		"$dl" -fsSL --proto '=https' --tlsv1.2 -o "$2" "$1"
+		return
+	fi
+	# The help text is matched whole: a reader that stops at the match would end wget with SIGPIPE.
+	help=$("$dl" --help 2>&1)
+	if [[ $help == *--https-only* ]]; then
+		"$dl" -q --https-only -O "$2" "$1"
+	else
+		"$dl" -q -O "$2" "$1"
+	fi
+}
+# lint: network end
+
+# upgrade_result WORD...: write the fetch's one result line and end the fetch.
+upgrade_result() {
+	builtin printf '%s\n' "$*" >"$lendk_tmp/result"
+	builtin exit 0
+}
+
+# upgrade_fetch: J, both assets and FR47's checks, run as a job under the watchdog (FR50). The tools run
+# with PATH upath, stdin /dev/null and their output in the temporary directory (FR46). The result line
+# is "ok X.Y.Z" with the staged file filled, "same X.Y.Z", or "fail CLASS[:FORM] TEXT".
+upgrade_fetch() {
+	local url=$base/latest/download a line want='' got member='' n=0 i higher=0 file=$lendk_tmp/lendk
+	local sum='^([0-9a-f]{64}) +[*]?lendk[.]tar[.]gz$'
+	local -a v
+	builtin trap 'builtin exit 143' TERM
+	builtin trap 'builtin exit 130' INT
+	builtin trap 'builtin exit 129' HUP
+	builtin umask 077
+	builtin printf '%s\n' "$BASHPID" >"$lendk_tmp/pid"
+	exec </dev/null >"$lendk_tmp/out" 2>&1
+	PATH=$upath
+	for a in lendk.tar.gz SHA256SUMS; do
+		if [[ $url == file://* ]]; then
+			command -p cp -- "${url#file://}/$a" "$lendk_tmp/$a"
+		else
+			upgrade_download "$url/$a" "$lendk_tmp/$a"
+		fi || upgrade_result fail upgrade "cannot download $url/$a"
+	done
+	while IFS= builtin read -r line || [[ -n $line ]]; do
+		[[ $line =~ $sum ]] && want=${BASH_REMATCH[1]}
+	done <"$lendk_tmp/SHA256SUMS"
+	if [[ ${sha##*/} == shasum ]]; then
+		got=$("$sha" -a 256 "$lendk_tmp/lendk.tar.gz")
+	else
+		got=$("$sha" "$lendk_tmp/lendk.tar.gz")
+	fi
+	got=${got%% *}
+	[[ $got =~ ^[0-9a-f]{64}$ ]] || upgrade_result fail upgrade:local "$sha: cannot compute a SHA-256"
+	[[ $got == "$want" ]] || upgrade_result fail upgrade "lendk.tar.gz has SHA-256 $got, but SHA256SUMS lists ${want:-nothing}"
+	# Only the one member is read out of the archive, to a file: nothing else of it is written.
+	"$gzip" -dc "$lendk_tmp/lendk.tar.gz" | "$tar" -tf - >"$lendk_tmp/list" ||
+		upgrade_result fail upgrade:local "${TMPDIR:-/tmp}: cannot unpack lendk.tar.gz"
+	while IFS= builtin read -r line; do
+		[[ "lendk ${line%/bin/lendk}" =~ ^lendk\ lendk-(.*)$ && $line == */bin/lendk && "lendk ${BASH_REMATCH[1]}" =~ $upgrade_version ]] &&
+			member=$line && n=$((n + 1))
+	done <"$lendk_tmp/list"
+	line=
+	if ((n == 1)); then
+		"$gzip" -dc "$lendk_tmp/lendk.tar.gz" | "$tar" -xOf - "$member" >"$file" ||
+			upgrade_result fail upgrade:local "${TMPDIR:-/tmp}: cannot unpack lendk.tar.gz"
+		{ IFS= builtin read -r line && IFS= builtin read -r line; } <"$file"
+	fi
+	[[ $line == "$upgrade_mark" ]] || upgrade_result fail upgrade "lendk.tar.gz holds no lendk-X.Y.Z/bin/lendk"
+	# Run by this bash, as a file it reads: a TMPDIR mounted noexec does not matter.
+	got=$("$BASH" "$file" --version 2>/dev/null) && [[ $got =~ $upgrade_version ]] ||
+		upgrade_result fail upgrade "the downloaded lendk does not run under bash ${BASH_VERSION%%[!0-9.]*}"
+	v=("${BASH_REMATCH[@]:1}")
+	got=${got#lendk }
+	[[ $member == "lendk-$got/bin/lendk" ]] || upgrade_result fail upgrade "lendk.tar.gz holds no lendk-$got/bin/lendk"
+	for i in 0 1 2; do
+		((v[i] == running[i])) && continue
+		((v[i] > running[i])) && higher=1
+		break
+	done
+	((higher)) || upgrade_result same "$got"
+	if ! command -p cp -- "$file" "$lendk_staged" || ! command -p chmod 755 "$lendk_staged"; then
+		upgrade_result fail upgrade:install "${lendk_staged%/*} cannot be written"
+	fi
+	upgrade_result ok "$got"
+}
+
+# upgrade_signal SIGNAL: lendk's trap from the first file upgrade creates to the last it removes. It
+# kills the job's group, removes the temporary directory and the staged file, which no watchdog does
+# before W starts or after W ends, and re-raises SIGNAL. The job is killed first, at once: W reads the
+# job's PID from the directory removed here. Between the fork of J and its PID's assignment, $! is J.
+# shellcheck disable=SC2329 # called from traps
+upgrade_signal() {
+	local j=$lendk_jpid
+	[[ $j != fork ]] || j=$!
+	builtin trap '' USR1
+	# bash would report the killed job on stderr.
+	exec 2>/dev/null
+	[[ -z $j ]] || builtin kill -KILL -- "-$j"
+	builtin set +m
+	command -p rm -rf -- ${lendk_tmp:+"$lendk_tmp"} ${lendk_staged:+"$lendk_staged"}
+	builtin trap - "$1"
+	builtin kill "-$1" "$$"
+	builtin exit 1
+}
+
+# upgrade_pause WHERE: tests hold lendk at WHERE, start (both files created, no watchdog yet) or
+# rename (staged, not renamed). A builtin loop, so a signal to lendk meets lendk.
+upgrade_pause() {
+	local i
+	[[ ${LENDK_TEST_PAUSE-} =~ ^[0-9]$ && ${LENDK_TEST_AT-rename} == "$1" ]] || return 0
+	i=$((SECONDS + LENDK_TEST_PAUSE))
+	while ((SECONDS < i)); do :; done
+}
+
+# upgrade_verb: FR45 to FR50. Checks the install (FR48) and the tools before anything is created,
+# fetches and verifies the release in the job J under the watchdog W, as read_values runs the backend,
+# renames the staged file over lendk's own and execs its sync (FR49).
+upgrade_verb() {
+	local base=${LENDK_INSTALL_BASE_URL-} dir line tar gzip sha dl='' upath problem='' result=''
+	local lendk_tmp='' lendk_staged='' lendk_jpid='' wpid
+	local -a benv running
+	(($# == 0)) || fail usage "upgrade takes no arguments"
+	if [[ -z $base ]]; then
+		base=https://github.com/v-bonilla/lendk/releases
+	elif [[ ($base != https://* && $base != file:///*) || $base == *[[:space:][:cntrl:]]* ]]; then
+		fail usage "LENDK_INSTALL_BASE_URL is '${base//[![:graph:]]/?}'; use an https:// or file:/// URL"
+	fi
+	set_self
+	dir=${self%/*}
+	[[ -n $dir ]] || dir=/
+	[[ ! -L $self ]] || fail upgrade:install "$self is a symlink, so another tool manages this install"
+	line=
+	[[ -f $self ]] && { IFS= read -r line && IFS= read -r line; } <"$self" 2>/dev/null
+	[[ $line == "$upgrade_mark" ]] || fail upgrade:install "$self is not lendk's own file"
+	[[ "lendk $LENDK_VERSION" =~ $upgrade_version ]] ||
+		fail upgrade:install "$self has version ${LENDK_VERSION//[![:graph:]]/?}, not a release's X.Y.Z"
+	running=("${BASH_REMATCH[@]:1}")
+	[[ -w $dir ]] || fail upgrade:install "$dir cannot be written"
+	allow_env
+	upath=${benv[0]#PATH=}
+	tar=$(PATH=$upath type -P tar) || fail upgrade:local "tar is not on PATH outside $shims"
+	gzip=$(PATH=$upath type -P gzip) || fail upgrade:local "gzip is not on PATH outside $shims"
+	sha=$(PATH=$upath type -P sha256sum) || sha=$(PATH=$upath type -P shasum) ||
+		fail upgrade:local "sha256sum is not on PATH outside $shims"
+	[[ $base != https://* ]] || upgrade_download || fail upgrade:local "$problem is not on PATH outside $shims"
+	[[ -z ${LENDK_INSTALL_BASE_URL-} ]] ||
+		printf 'lendk: notice: the release comes from %s, set by LENDK_INSTALL_BASE_URL.\n' "$base" >&2
+	builtin trap 'upgrade_signal TERM' TERM
+	builtin trap 'upgrade_signal INT' INT
+	builtin trap 'upgrade_signal HUP' HUP
+	lendk_tmp=$(builtin umask 077 && command -p mktemp -d "${TMPDIR:-/tmp}/lendk.XXXXXX" 2>/dev/null) ||
+		fail upgrade:local "${TMPDIR:-/tmp}: cannot create a temporary directory"
+	lendk_staged=$(builtin umask 077 && command -p mktemp "$dir/.lendk.XXXXXX" 2>/dev/null) || {
+		command -p rm -rf -- "$lendk_tmp"
+		fail upgrade:install "$dir cannot be written"
+	}
+	upgrade_pause start
+	builtin trap : USR1
+	# From set -m to set +m only builtins run: an external command would be a job taking the terminal.
+	builtin set -m
+	{ (watchdog "$lendk_staged") || watchdog_rescue "$lendk_staged"; } </dev/null >/dev/null 2>&1 &
+	wpid=$!
+	lendk_jpid=fork
+	(upgrade_fetch) </dev/null >/dev/null 2>&1 &
+	lendk_jpid=$!
+	while :; do
+		wait "$lendk_jpid" 2>/dev/null
+		builtin kill -0 "$lendk_jpid" 2>/dev/null || break
+	done
+	lendk_jpid=
+	builtin trap '' USR1
+	builtin set +m
+	{ IFS= read -r result <"$lendk_tmp/result"; } 2>/dev/null
+	[[ ! -e $lendk_tmp/timeout ]] || result=expired
+	if [[ $result == 'ok '* ]]; then
+		upgrade_pause rename
+		command -p mv -f -- "$lendk_staged" "$self" 2>/dev/null || result="fail upgrade:install $dir cannot be written"
+	fi
+	# The rename and the removals run while W lives, so a KILL at any moment still finds W to clean up;
+	# W is stopped last. After an expiry W ends by itself, once the job's group is gone.
+	command -p rm -rf -- "$lendk_tmp" "$lendk_staged"
+	[[ $result == expired ]] || builtin kill -KILL -- "-$wpid" 2>/dev/null
+	wait "$wpid" 2>/dev/null
+	builtin trap - TERM INT HUP USR1
+	case $result in
+	'ok '*)
+		printf 'upgraded lendk %s to %s at %s\n' "$LENDK_VERSION" "${result#ok }" "$self"
+		exec "$self" sync
+		;;
+	'same '*)
+		printf 'lendk %s is up to date: the latest release is %s\n' "$LENDK_VERSION" "${result#same }"
+		exit 0
+		;;
+	'fail '*)
+		result=${result#fail }
+		fail "${result%% *}" "${result#* }"
+		;;
+	expired) fail upgrade "fetching the release did not finish within $timeout s" ;;
+	esac
+	fail upgrade:local "${TMPDIR:-/tmp}: the fetch ended without a result"
+}
+
 main() {
 	case ${1-} in
 	--version) (($# == 1)) || fail usage "--version takes no arguments"; printf 'lendk %s\n' "$LENDK_VERSION" ;;
@@ -1730,6 +1951,7 @@ main() {
 		[[ $1 == add ]] && shift && add_verb "$@"
 		[[ $1 == rm ]] && shift && rm_verb "$@"
 		[[ $1 == init ]] && shift && init_verb "$@"
+		[[ $1 == upgrade ]] && shift && upgrade_verb "$@"
 		fail usage "unknown verb '$1'"
 		;;
 	esac
