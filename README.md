@@ -11,6 +11,8 @@ The common habit is a line like `export OPENAI_API_KEY=...` in a shell startup f
 - [Examples](#examples)
   - [gh with a GitHub token](#gh-with-a-github-token)
   - [A group of keys for Claude Code or Codex](#a-group-of-keys-for-claude-code-or-codex)
+  - [A new key in a group](#a-new-key-in-a-group)
+  - [A new key for a mapped command](#a-new-key-for-a-mapped-command)
 - [Installation](#installation)
   - [For humans](#for-humans)
   - [For AI agents](#for-ai-agents)
@@ -94,6 +96,24 @@ codex @search
 `--force` is needed because an agent CLI starts other programs: shell commands, scripts, MCP servers. The keys reach everything it runs, so `lendk add` refuses until you confirm with `--force`.
 
 A tighter setup leaves the agent unmapped and gives the key only to the MCP server that needs it: in the agent's MCP config, start the server through lendk by its absolute path, as `/home/alice/.local/bin/lendk run EXA_API_KEY -- some-mcp-server`. See [cron, systemd units, MCP servers](#cron-systemd-units-mcp-servers).
+
+### A new key in a group
+
+`lendk add` on a group that exists appends the new keys and keeps the others. Every command mapped to `@search` gets the new key on its next run:
+
+```
+pass insert env/TAVILY_API_KEY
+lendk add @search TAVILY_API_KEY    # the map line becomes: @search EXA_API_KEY BRAVE_API_KEY TAVILY_API_KEY
+```
+
+### A new key for a mapped command
+
+A command works the same way. Codex keeps `@search` and also gets `OPENAI_API_KEY`:
+
+```
+pass insert env/OPENAI_API_KEY
+lendk add --force codex OPENAI_API_KEY    # the map line becomes: codex @search OPENAI_API_KEY
+```
 
 ## Installation
 
