@@ -47,6 +47,8 @@ lendk --help                          # name lists, classes, environment variabl
 lendk add gh GH_TOKEN                 # user: map gh to GH_TOKEN and write its shim
 lendk add @aws AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY
 lendk add terraform @aws CLOUDFLARE_API_TOKEN
+lendk add @aws AWS_SESSION_TOKEN      # user: append a key to a group
+lendk add terraform GITHUB_TOKEN      # user: append a key to a mapped command
 lendk rm gh                           # user: unmap gh and remove its shim
 lendk rm terraform CLOUDFLARE_API_TOKEN
 lendk run OPENAI_API_KEY -- ./script.sh   # user: one run with named keys
