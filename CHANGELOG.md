@@ -4,6 +4,10 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Changed
+
+- The README's quick start and its Installation section show one install command, which also copies the agent skill to `~/.claude/skills/lendk` with `--skill-dir`.
+
 ## [1.1.0] - 2026-10-04
 
 ### Added

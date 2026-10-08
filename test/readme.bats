@@ -75,6 +75,12 @@ section() { sed -n "/^$1\$/,/^##/p" "$README"; }
 	done
 }
 
+@test "FR37: the install command for humans is the quick start's first command" {
+	local cmd
+	cmd=$(section '### For humans' | awk '/^```/ { if (fence) exit; fence = 1; next } fence')
+	assert_eq "$cmd" "$(quickstart | head -n 1)"
+}
+
 @test "FR37: the Contents list links every section, and every in-page link names a heading" {
 	local anchors listed link
 	anchors=$(headings | anchor)
@@ -215,8 +221,9 @@ agent_prompt() {
 	login_path=$sys:${BASH%/*}:/usr/bin:/bin
 	mapfile -t cmds < <(quickstart)
 	# A command may end in a comment, as the README's second one does; commands 3 and 4 run with theirs.
-	assert_eq "$(bare "${cmds[0]}")" 'curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash'
-	cmds[0]="cat $(printf %q "$ROOT/install.sh") | bash"
+	assert_eq "$(bare "${cmds[0]}")" \
+		'curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --skill-dir ~/.claude/skills'
+	cmds[0]="cat $(printf %q "$ROOT/install.sh") | ${cmds[0]#*'| '}"
 	assert_eq "$(bare "${cmds[1]}")" 'exec bash -l'
 	# login CMD...: CMD in $HOME in an environment built from scratch, as a login would start it.
 	login() {
@@ -226,6 +233,7 @@ agent_prompt() {
 	login env PATH="$login_path:$stub" LENDK_INSTALL_BASE_URL="file://$rel" bash -c "${cmds[0]}" </dev/null >"$SB/install.out" ||
 		{ cat "$SB/install.out" >&2; return 1; }
 	[[ $(tail -n 1 "$SB/install.out") == 'lendk-install: ok: '* ]]
+	grep -qx 'name: lendk' "$HOME/.claude/skills/lendk/SKILL.md"
 	printf '%s\n%s\n' "$SENTINEL" "$SENTINEL" | login bash -lc "${cmds[2]}" >/dev/null
 	login bash -lc "${cmds[3]}" </dev/null >/dev/null
 	[[ -f $PASSWORD_STORE_DIR/env/GH_TOKEN.gpg ]]

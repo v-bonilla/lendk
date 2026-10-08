@@ -49,7 +49,7 @@ You need a GPG key and a pass store initialized for it; the installer prints the
 
 <!-- quickstart -->
 ```
-curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --skill-dir ~/.claude/skills
 exec bash -l   # PATH setup
 pass insert env/GH_TOKEN
 lendk add gh GH_TOKEN
@@ -57,6 +57,8 @@ lendk add gh GH_TOKEN
 <!-- quickstart -->
 
 Now `gh` gets `GH_TOKEN`, and `echo "$GH_TOKEN"` in your shell prints nothing.
+
+`--skill-dir ~/.claude/skills` copies the lendk agent skill where Claude Code finds it. For another agent, name its skills directory, or leave the option out.
 
 To have an AI agent install lendk, give it the prompt under [For AI agents](#for-ai-agents).
 
@@ -122,7 +124,7 @@ Install only from this repository.
 ### For humans
 
 ```
-curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --skill-dir DIR
+curl -fsSL https://raw.githubusercontent.com/v-bonilla/lendk/main/install.sh | bash -s -- --skill-dir ~/.claude/skills
 ```
 
 The installer options go after `bash -s --`, for example `curl -fsSL .../install.sh | bash -s -- --yes`:
