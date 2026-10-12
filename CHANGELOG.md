@@ -4,6 +4,10 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 
 ## [Unreleased]
 
+### Added
+
+- The README's Troubleshooting section lists common failures, among them a passphrase prompt that opens on the machine's display instead of the SSH terminal, with two fixes.
+
 ### Changed
 
 - The README's quick start and its Installation section show one install command, which also copies the agent skill to `~/.claude/skills/lendk` with `--skill-dir`.

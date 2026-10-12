@@ -29,6 +29,7 @@ The common habit is a line like `export OPENAI_API_KEY=...` in a shell startup f
   - [cron, systemd units, MCP servers](#cron-systemd-units-mcp-servers)
   - [Other PATH-bypassing launchers](#other-path-bypassing-launchers)
 - [Troubleshooting](#troubleshooting)
+  - [Common failures](#common-failures)
 - [Agent contract](#agent-contract)
 - [Requirements](#requirements)
 - [License](#license)
@@ -423,11 +424,35 @@ Every failure is one stderr line, `lendk: CLASS: TEXT. FIX`. The classes, as `le
 
 The first FIX shows in a terminal, the second without one.
 
+### Common failures
+
 - A mapped command runs without its key: `lendk check NAME`. Usually the shim directory is missing from PATH or another entry shadows it; rerun the matching `lendk init`.
 - `locked` from a script, cron or an agent: run `lendk unlock` in a terminal.
-- `timeout`: a hardware token may be waiting for a touch, or gpg-agent is stuck; raise `LENDK_TIMEOUT` or run `lendk unlock KEY` to see gpg's own prompt.
+- `timeout` with no passphrase prompt in sight: over SSH, the prompt may be open on the machine's display; see [No passphrase prompt over SSH](#no-passphrase-prompt-over-ssh).
+- `timeout` otherwise: a hardware token may be waiting for a touch, or gpg-agent is stuck; raise `LENDK_TIMEOUT` or run `lendk unlock KEY` to see gpg's own prompt.
 - `unsafe`: the map, its directory or the shim directory is writable by others or owned by someone else.
 - `upgrade`: lendk is unchanged. The TEXT names the cause; see [Upgrade](#upgrade).
+
+#### No passphrase prompt over SSH
+
+Over SSH to a machine that also runs a desktop session, a call that needs your passphrase shows no prompt, waits, then fails:
+
+```
+lendk: timeout: env/GH_TOKEN: gpg did not finish within 60 s. Retry; a hardware token may need a touch, or raise LENDK_TIMEOUT.
+```
+
+gpg-agent, not lendk, chooses the program that asks for the passphrase, called a pinentry. A graphical pinentry, such as `pinentry-gnome3`, opens its prompt on the machine's display, in the desktop session, not in your SSH terminal. Nobody answers it there, so the call times out and the prompt closes. Retrying, raising `LENDK_TIMEOUT` and `lendk unlock` all reach the same pinentry, so none of them helps.
+
+Fix it one of two ways:
+
+- Use a terminal pinentry. Add this line to `~/.gnupg/gpg-agent.conf`, with the path `command -v pinentry-curses` prints, then run `gpgconf --reload gpg-agent`:
+
+  ```
+  pinentry-program /usr/bin/pinentry-curses
+  ```
+
+  lendk points it at the terminal the call runs in. At the desktop, the prompt then also shows in the terminal instead of a window. `pass` itself finds the terminal only with `export GPG_TTY=$(tty)` in your shell's rc file.
+- Unlock at the desktop: run `lendk unlock` in a terminal there, or answer the prompt on its screen. The desktop and your SSH sessions share one gpg-agent, so its cache serves both.
 
 ## Agent contract
 
