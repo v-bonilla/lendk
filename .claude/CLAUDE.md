@@ -87,3 +87,17 @@ Process level:
 - The reasons behind the decrypt path, the timeout watchdog, the terminal handoff and the lock are rules R1 to R15 of the v1 plan (`git show 3644a1f:docs/plan.md`). Read them before changing those parts; the PRD and the code win where they differ.
 - Releases follow `docs/release.md`. Prepare one when asked; only the maintainer tags, pushes, publishes or changes the repository's visibility.
 - `dist/`, `test/bench/out/` and `.claude/worktrees/` are ignored by git and skipped by the lint. Never commit them.
+
+## Agent skills
+
+### Issue tracker
+
+Issues live in the GitHub Issues of `v-bonilla/lendk`, through the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five canonical roles, each label named after its role: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: one `CONTEXT.md` and `docs/adr/` at the repository root, both below `docs/prd.md`. See `docs/agents/domain.md`.
