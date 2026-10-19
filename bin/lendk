@@ -103,9 +103,10 @@ set_paths() {
 	prefix=${LENDK_PREFIX:-env}
 }
 
-# For shim overhead: the owner and mode listing of a plain map and its directory starts first and runs while bash does the
-# rest; check_map_paths reads it. Helpers come from the system path, never from the shims. The
-# paths stay local here, so the snapshot below still sees any caller variables of their names.
+# For shim overhead: the owner and mode listing of a plain map and its directory starts first
+# and runs while bash does the rest; check_map_paths reads it. Helpers come from the system
+# path, never from the shims. The paths stay local here, so the snapshot below still sees any
+# caller variables of their names.
 # shellcheck disable=SC2034
 start_listing() {
 	local map shims store prefix
@@ -195,7 +196,8 @@ classes=(
 
 # lint: tables end
 
-# set_interactive: whether the call may prompt, from LENDK_PROMPT and the terminal. An invalid LENDK_PROMPT counts as non-interactive until validated.
+# set_interactive: whether the call may prompt, from LENDK_PROMPT and the terminal. An invalid
+# LENDK_PROMPT counts as non-interactive until validated.
 set_interactive() {
 	interactive=0
 	case ${LENDK_PROMPT-auto} in
@@ -661,7 +663,7 @@ backend_fail() {
 }
 
 # read_values KEY...: lendk_values[KEY] for each KEY, read by the backend job J under the watchdog W:
-# bounded by LENDK_TIMEOUT, leaving no process behind, classified by failure class.
+# bounded by LENDK_TIMEOUT, leaving no process behind, and ends a failure through its class.
 read_values() {
 	local err out line wpid jpid i st k ecode last
 	local -a f keys=("$@")
@@ -1025,7 +1027,7 @@ first_mapped_key() {
 	return 0
 }
 
-# unlock_verb [WORD...]: decrypting under run's rules and discarding the values.
+# unlock_verb [WORD...]: decrypts the keys under run's rules, which unlocks GnuPG, and discards the values.
 unlock_verb() {
 	local k key lendk_tmp lendk_gpg_tty lendk_jpid lendk_noloop=0
 	local -A lendk_values=()
@@ -1366,7 +1368,7 @@ check_add() {
 	fi
 }
 
-# check_scan: every check detection over the whole setup, into c_global and c_status. It reads file
+# check_scan: runs every check over the whole setup and records the problems in c_global and c_status. It reads file
 # existence only, never a value.
 check_scan() {
 	local name f k row text dir rest onpath=0 path files injected=" ${lendk_env[LENDK_INJECTED]-} "
@@ -1568,7 +1570,7 @@ rm_check() {
 	return 0
 }
 
-# edit_map N [TEXT]: Replace map line N with TEXT, delete it without TEXT, or append TEXT when
+# edit_map N [TEXT]: replace map line N with TEXT, delete it without TEXT, or append TEXT when
 # N is 0. The new map is a private file beside the map, after following a symlink, renamed over it.
 edit_map() {
 	local file dir out='' i
@@ -1609,7 +1611,7 @@ edit_end() {
 	exit 0
 }
 
-# add_verb [--force] NAME WORD...: add an entry or words, validated first.
+# add_verb [--force] NAME WORD...: add a map entry or words, validated first.
 add_verb() {
 	local force=0 name g='' w have line code trim n new=()
 	[[ ${1-} == --force ]] && force=1 && shift
@@ -1647,7 +1649,7 @@ add_verb() {
 	edit_end "$name"
 }
 
-# rm_verb NAME [WORD...]: remove an entry or words, validated first.
+# rm_verb NAME [WORD...]: remove a map entry or words, validated first.
 rm_verb() {
 	local name g='' w n line rest kept=()
 	(($#)) || fail usage "rm needs a command or @group"
@@ -1849,7 +1851,7 @@ upgrade_pause() {
 	while ((SECONDS < i)); do :; done
 }
 
-# upgrade_verb: Checks the install and the tools before anything is created,
+# upgrade_verb: checks the install and the tools before anything is created,
 # fetches and verifies the release in the job J under the watchdog W, as read_values runs the backend,
 # renames the staged file over lendk's own and execs its sync.
 upgrade_verb() {
