@@ -1,6 +1,7 @@
 #!/bin/bash
 # PROTOTYPE for lendk #34, throwaway, never merged: walks a human through #34's claims on a throwaway macOS account and logs every result.
-# Usage: ./probe.sh build|gui|ssh|ssh-again|settings|cleanup; README.md gives the order.
+# Usage: ./probe.sh build|gui|ssh|ssh-again|settings|cleanup by hand, ./probe.sh ci on a CI runner; README.md gives the order.
+# With PROBE_CI set nobody answers: questions are logged, and a call still waiting after 8 s gets a screenshot and a dump of the windows on screen.
 set -u
 
 here=$(cd "$(dirname "$0")" && pwd)
@@ -19,7 +20,7 @@ die() {
 
 [ "$(uname -s)" = Darwin ] || die "macOS only"
 [ -f "$HOME/KEYCHAIN-PROBE-THROWAWAY" ] || die "refusing to run: \$HOME/KEYCHAIN-PROBE-THROWAWAY is missing; use a throwaway account, see README.md"
-case $phase in build | gui | ssh | ssh-again | settings | cleanup) ;; *) die "usage: ./probe.sh build|gui|ssh|ssh-again|settings|cleanup" ;; esac
+case $phase in build | gui | ssh | ssh-again | settings | cleanup | ci) ;; *) die "usage: ./probe.sh build|gui|ssh|ssh-again|settings|cleanup|ci" ;; esac
 
 mkdir -p "$here/results" "$install_dir" || exit 2
 log=$here/results/$(sw_vers -productVersion)-$(uname -m)-$phase-$(date +%Y%m%dT%H%M%S).log
@@ -34,12 +35,20 @@ note() {
 }
 
 ask() {
+	if [ -n "${PROBE_CI-}" ]; then
+		printf 'Q: %s\nA: (CI, no human: the screen shows where a call waited)\n' "$1" | log_only
+		return
+	fi
 	printf '\n>>> %s\n> ' "$1" >/dev/tty
 	IFS= read -r answer </dev/tty
 	printf 'Q: %s\nA: %s\n' "$1" "$answer" | log_only
 }
 
 pause() {
+	if [ -n "${PROBE_CI-}" ]; then
+		printf 'STEP: %s\n' "$1" | log_only
+		return
+	fi
 	printf '\n>>> %s\n    Press Return to continue.' "$1" >/dev/tty
 	read -r _ </dev/tty
 	printf 'STEP: %s\n' "$1" | log_only
@@ -50,12 +59,59 @@ run_at() {
 	bin=$1
 	shift
 	printf '$ %s %s\n' "$(basename "$bin")" "$*" | out
-	"$bin" "$@" | out
+	watched "$bin" "$@" | out
 	if [ "${PIPESTATUS[0]}" = 3 ]; then
 		ask "The call blocked. Is a dialog on screen? Type its title, text and buttons, or 'none'. Then dismiss it with Deny or Cancel, never Always Allow."
 	fi
 }
 probe() { run_at "$probe_bin" "$@"; }
+
+read -r -d '' read_screen <<'EOF'
+tell application "System Events"
+	set out to ""
+	repeat with p in (every process whose name is not "Finder")
+		repeat with w in (windows of p)
+			set out to out & "window of " & (name of p as text) & ": " & (name of w as text) & linefeed
+			repeat with e in (entire contents of w)
+				try
+					if role of e is "AXStaticText" then set out to out & "  text: " & (value of e as text) & linefeed
+					if role of e is "AXButton" then set out to out & "  button: " & (name of e as text) & linefeed
+				end try
+			end repeat
+		end repeat
+	end repeat
+	return out
+end tell
+EOF
+
+# screen_report: in CI, records what is on screen while a call waits; it touches nothing.
+# It logs to stderr, since its caller's stdout is the probe's own output.
+screen_report() {
+	shot=$here/results/screen-$(date +%H%M%S)-$RANDOM.png
+	{
+		printf 'CI: the call was still waiting after 8 s\n'
+		screencapture -x "$shot" 2>&1 && printf 'screenshot: results/%s\n' "$(basename "$shot")"
+		printf 'processes: %s\n' "$(pgrep -l -f 'SecurityAgent|coreauthd|authorizationhost' | tr '\n' ';')"
+		osascript -e "$read_screen" 2>&1
+	} | out >&2
+}
+
+# watched CMD...: runs CMD; in CI, a CMD still running after 8 s gets a screen_report. Returns CMD's status.
+watched() {
+	if [ -z "${PROBE_CI-}" ]; then
+		"$@"
+		return
+	fi
+	"$@" &
+	pid=$!
+	i=0
+	while kill -0 "$pid" 2>/dev/null && [ "$i" -lt 8 ]; do
+		sleep 1
+		i=$((i + 1))
+	done
+	if kill -0 "$pid" 2>/dev/null; then screen_report; fi
+	wait "$pid"
+}
 
 # with_deadline SECS CMD...: runs CMD and kills it after SECS seconds; returns CMD's status.
 with_deadline() {
@@ -206,7 +262,7 @@ claim2() {
 	run_at "$elsewhere" read --suppress none --watchdog 60
 	rm -f "$elsewhere"
 	say "Claim 2: Apple's security tool, interaction allowed, the value discarded"
-	with_deadline 60 security find-generic-password -s lendk-probe -a "$account" -w >/dev/null 2>&1
+	watched with_deadline 60 security find-generic-password -s lendk-probe -a "$account" -w >/dev/null 2>&1
 	printf 'security find-generic-password -w: exit %s\n' "$?" | out
 	ask "Did any dialog appear during claim 2? Type what it said and which button you clicked, or 'none'."
 	probe delete --watchdog 20
@@ -227,6 +283,10 @@ claim4() {
 	probe read --suppress none --watchdog 120
 	ask "What did the dialog say, and which button did you click? Type 'none' if no dialog appeared."
 	say "Claim 4: SecKeychainUnlock with the login password"
+	if [ -n "${PROBE_CI-}" ]; then
+		printf '%s\n' "CI: the runner's login password is unknown, so its login keychain stays locked from here on" | out
+		return
+	fi
 	probe status --keychain login
 	probe unlock --watchdog 120
 	probe status --keychain login
@@ -299,6 +359,18 @@ settings)
 	context
 	claim7 "$(if [ -n "${SSH_CONNECTION-}" ]; then echo ssh session; else echo GUI login session; fi)"
 	claim5
+	finish
+	;;
+ci)
+	install_release N
+	context
+	claim7 "CI job"
+	claim5
+	probe delete
+	claim6
+	claim1
+	claim2
+	claim4
 	finish
 	;;
 cleanup)
