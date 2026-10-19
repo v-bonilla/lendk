@@ -49,8 +49,29 @@ lint_copy() {
 
 @test "lint-repo.bash flags a planted em-dash" {
 	scratch
-	printf 'a %s b\n' "$(printf '\342\200\224')" >>"$COPY/docs/prd.md"
-	lint_copy "docs/prd.md:"*": em-dash"
+	printf 'a %s b\n' "$(printf '\342\200\224')" >>"$COPY/README.md"
+	lint_copy "README.md:"*": em-dash"
+}
+
+@test "lint-repo.bash flags a planted reference to the retired spec" {
+	scratch
+	local spec=docs/p
+	printf 'see %s\n' "${spec}rd.md" >>"$COPY/CHANGELOG.md"
+	lint_copy "CHANGELOG.md:"*": retired spec reference"
+}
+
+@test "lint-repo.bash flags planted FR, NFR and AC IDs and accepts H, A and G IDs" {
+	scratch
+	local id ids=(F NF A)
+	printf 'H1, A2 and G3 stay\n' >>"$COPY/GLOSSARY.md"
+	run bash "$ROOT/test/lint-repo.bash" "$COPY"
+	assert_eq "$output" ""
+	ids=("${ids[0]}R24" "${ids[1]}R8" "${ids[2]}C5")
+	for id in "${ids[@]}"; do
+		scratch
+		printf 'per %s.\n' "$id" >>"$COPY/docs/release.md"
+		lint_copy "docs/release.md:"*"per $id"*": retired spec ID"
+	done
 }
 
 @test "lint-repo.bash flags a planted email address" {
