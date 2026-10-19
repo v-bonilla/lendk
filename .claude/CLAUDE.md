@@ -100,4 +100,4 @@ The five canonical roles, each label named after its role: `needs-triage`, `need
 
 ### Domain docs
 
-Single-context: one `CONTEXT.md` and `docs/adr/` at the repository root, both below `docs/prd.md`. See `docs/agents/domain.md`.
+Single-context: one `GLOSSARY.md` and `docs/adr/` at the repository root, both below `docs/prd.md`. See `docs/agents/domain.md`.
