@@ -47,7 +47,7 @@ Git:
 ## Acceptance criteria for every task
 
 - `make check` exits 0 for every change, docs included: shellcheck, the repo lint and the host suite, whose tests read the docs.
-- `make check-docker` exits 0 when `bin/lendk`, `install.sh`, the `Makefile` or anything under `test/` changes. NFR3 asks it of every change and CI runs it on each push. It alone runs the container tests of FR22 and FR39 (bash 3.2 and 4.3, dash, busybox sh) and the suite on busybox, and it guarantees the strace tests (FR4, FR20, NFR1, NFR6), which skip on a host without strace.
+- `make check-docker` exits 0 when `bin/lendk`, `install.sh`, the `Makefile` or anything under `test/` changes. NFR3 asks the same, and CI runs it on each push. It alone runs the container tests of FR22 and FR39 (bash 3.2 and 4.3, dash, busybox sh) and the suite on busybox, and it guarantees the strace tests (FR4, FR20, NFR1, NFR6), which skip on a host without strace.
 - `make bench` exits 0 when the run path changes: the opening lines, `run`, the backend, the shim text (NFR1, NFR2, AC3).
 - A behavior change starts in `docs/prd.md`, amended in place, then code, then a test named after the ID. The lint fails on a PRD ID in no test name and on a test ID the PRD lacks.
 - `lendk --help`, `docs/prd.md`, `README.md` and `skills/lendk/` say the same thing. `test/contract.bats`, `test/readme.bats` and `test/skill.bats` pin the lists, counts, markers and a few sentences; the prose is yours to re-read after any change to a verb, class, FIX, option, variable or installer step.
