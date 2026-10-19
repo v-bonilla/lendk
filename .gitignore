@@ -1,3 +1,6 @@
 test/bench/out/
 dist/
 .claude/worktrees/
+prototypes/34-keychain-cache/target/
+prototypes/34-keychain-cache/builds/
+prototypes/34-keychain-cache/results/
