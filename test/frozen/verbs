@@ -1,0 +1,9 @@
+lendk run [KEY|@GROUP...] -- CMD [ARG...]      # exec CMD with its mapped or the named keys
+lendk add [--force] CMD|@GROUP KEY|@GROUP...   # map, then sync
+lendk rm CMD|@GROUP [KEY|@GROUP...]            # unmap, then sync
+lendk check [NAME...]                          # diagnose without decrypting
+lendk sync                                     # write shims to match the map
+lendk unlock [KEY|@GROUP...]                   # unlock in a terminal; probe elsewhere
+lendk init sh|bash|zsh|systemd                 # print PATH setup
+lendk upgrade                                  # replace lendk with the latest release, then sync
+lendk --help | --version

@@ -1,0 +1,24 @@
+See: lendk --help
+To map it anyway: lendk add --force CMD WORD...
+Put a newer bash first on PATH.
+Upgrade GnuPG.
+Run the command again to retry.
+Retry; a hardware token may need a touch, or raise LENDK_TIMEOUT.
+Fix the line, then run: lendk check
+Define it first: lendk add @GROUP KEY...
+Map it: lendk add CMD KEY..., or name keys: lendk run KEY... -- CMD
+Add it: pass insert env/KEY
+Set it: pass edit env/KEY
+Create it with lendk add, or name the keys to unlock.
+Add a mapped key with pass insert, then retry.
+See gpg's error: lendk unlock KEY
+Fix it: chmod go-w PATH, or recreate it as your own
+Fix it, then run: lendk sync
+Retry; on a slow connection raise LENDK_TIMEOUT.
+Upgrade lendk the way it was installed.
+Fix it, then run: lendk upgrade
+Fix it, or unmap it: lendk rm CMD
+Install it, or unmap it: lendk rm CMD
+Ask the user to run 'lendk unlock KEY' in a terminal, then retry.
+Install CMD, or ask the user.
+Stop and ask the user.
