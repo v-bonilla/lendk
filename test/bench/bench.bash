@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# make bench: NFR1, shim overhead with keys preset and a 50-entry map, as paired, interleaved runs
-# after warmups; NFR2, a 3-key run with real GnuPG, a warm cache and a key at s2k-count 8388608.
+# make bench: shim overhead with keys preset and a 50-entry map, as paired, interleaved runs
+# after warmups; a 3-key run with real GnuPG, a warm cache and a key at s2k-count 8388608.
 # Writes test/bench/out/nfr1.txt and nfr2.txt and exits 1 on a miss.
 set -u -o pipefail
 # A fixed, minimal environment keeps runs comparable and keeps the caller's variables out.
@@ -49,16 +49,16 @@ mapfile -t sorted < <(printf '%s\n' "${diffs[@]}" | sort -n)
 median=${sorted[runs / 2]}
 p95=${sorted[(runs * 95 + 99) / 100 - 1]}
 ms() { printf '%d.%01d' $(($1 / 1000)) $((($1 < 0 ? -$1 : $1) % 1000 / 100)); }
-line="NFR1: shim overhead over a direct exec, $runs runs: median $(ms "$median") ms (max 20), p95 $(ms "$p95") ms (max 40)"
+line="shim overhead over a direct exec, $runs runs: median $(ms "$median") ms (max 20), p95 $(ms "$p95") ms (max 40)"
 mkdir -p "$root/test/bench/out"
 printf '%s\n' "$line" | tee "$root/test/bench/out/nfr1.txt"
 miss=0
 ((median <= 20000 && p95 <= 40000)) || miss=1
 
-# NFR2. The GnuPG home lives under /tmp for the agent's socket path; nothing may prompt.
+# The 3-key run. The GnuPG home lives under /tmp for the agent's socket path; nothing may prompt.
 unset K1 K2 K3
 if ! command -v gpg >/dev/null || ! command -v pass >/dev/null; then
-	echo "bench: NFR2 needs gpg and pass" >&2
+	echo "bench: the 3-key run needs gpg and pass" >&2
 	exit 2
 fi
 gnupg=$(mktemp -d /tmp/lendk-gpg.XXXXXX) || exit 2
@@ -80,7 +80,7 @@ for ((i = 0; i < 3 + runs; i++)); do
 done
 mapfile -t sorted < <(printf '%s\n' "${times[@]}" | sort -n)
 median=${sorted[runs / 2]}
-line="NFR2: 3-key run with a warm cache at s2k-count 8388608, $runs runs: median $(ms "$median") ms (max 500)"
+line="3-key run with a warm cache at s2k-count 8388608, $runs runs: median $(ms "$median") ms (max 500)"
 printf '%s\n' "$line" | tee "$root/test/bench/out/nfr2.txt"
 ((median <= 500000)) || miss=1
 ((!miss))

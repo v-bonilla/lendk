@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# NFR2 backend call counts per verb and NFR5 writes: a filesystem snapshot around every verb, and
+# Backend call counts per verb and file writes: a filesystem snapshot around every verb, and
 # TMPDIR empty after exit and at exec.
 # shellcheck disable=SC2012,SC2016
 
@@ -35,7 +35,7 @@ verb() {
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
-@test "NFR2: run reads each key the caller did not set, once, and unlock each key it names" {
+@test "run reads each key the caller did not set, once, and unlock each key it names" {
 	verb run -- stub
 	assert_eq "$status" 0
 	assert_eq "$(calls)" 3
@@ -51,7 +51,7 @@ verb() {
 	assert_eq "$(calls)" 2
 }
 
-@test "NFR2: check, sync, add, rm, init, --help and --version make no backend read" {
+@test "check, sync, add, rm, init, --help and --version make no backend read" {
 	verb check
 	verb sync
 	verb add stub K4
@@ -62,7 +62,7 @@ verb() {
 	assert_eq "$(calls)" 0
 }
 
-@test "NFR5: run, unlock, check, init, --help and --version leave the filesystem unchanged" {
+@test "run, unlock, check, init, --help and --version leave the filesystem unchanged" {
 	local before
 	before=$(snapshot)
 	verb run -- stub
@@ -80,7 +80,7 @@ verb() {
 	assert_eq "$(snapshot)" "$before"
 }
 
-@test "NFR5: sync, add and rm write only the map, its directory and the shim directory" {
+@test "sync, add and rm write only the map, its directory and the shim directory" {
 	local before after
 	before=$(snapshot | grep -v "$HOME/.config/lendk\|$SHIMS")
 	verb add other K4
@@ -93,7 +93,7 @@ verb() {
 	assert_eq "$(ls -ldn "$MAP" | cut -c1-10)" -rw-------
 }
 
-@test "NFR5: TMPDIR is empty when the target starts" {
+@test "TMPDIR is empty when the target starts" {
 	run_lendk run -- tmpls
 	assert_eq "$status" 0
 	assert_eq "$(calls)" 1

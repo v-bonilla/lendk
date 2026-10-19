@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# lendk init: the PRD 4.3 blocks (FR35) and the shim directory check (FR28).
+# lendk init: the login blocks and the shim directory check.
 # shellcheck disable=SC2016
 
 setup() {
@@ -17,7 +17,7 @@ block() {
 	printf '%s\n' "$output" >"$SB/block"
 }
 
-@test "FR35: init sh moves the shim directory to the front of PATH once, keeping every other entry" {
+@test "init sh moves the shim directory to the front of PATH once, keeping every other entry" {
 	block sh
 	assert_eq "${output%%$'\n'*}" '# >>> lendk >>>'
 	assert_eq "${output##*$'\n'}" '# <<< lendk <<<'
@@ -28,7 +28,7 @@ block() {
 	assert_eq "$output" "$SHIMS"
 }
 
-@test "FR35: init reads no map and holds the absolute shim directory, quotes escaped" {
+@test "init reads no map and holds the absolute shim directory, quotes escaped" {
 	mkdir -p "$HOME/.config/lendk"
 	printf 'broken line !\n' >"$HOME/.config/lendk/map"
 	chmod 777 "$HOME/.config/lendk/map"
@@ -40,7 +40,7 @@ block() {
 	assert_eq "$output" "$SB/it's/shims:/usr/bin:/bin"
 }
 
-@test "FR35: the bash hook registers once when its block runs twice, and repeats the move with hash -r" {
+@test "the bash hook registers once when its block runs twice, and repeats the move with hash -r" {
 	block bash
 	run env -i PATH=/usr/bin:/bin PROMPT_COMMAND="echo hi" "$BASH" --norc --noprofile -c '
 		. "$1"; . "$1"
@@ -53,7 +53,7 @@ block() {
 	assert_eq "$output" "__lendk_path"
 }
 
-@test "FR35: the zsh hook registers once when its block runs twice, and repeats the move" {
+@test "the zsh hook registers once when its block runs twice, and repeats the move" {
 	require zsh
 	block zsh
 	run env -i PATH=/usr/bin:/bin zsh -f -c '
@@ -65,12 +65,12 @@ block() {
 	assert_eq "$output" "__lendk_path|$SHIMS:/usr/bin:/bin"$'\n'"$SHIMS:/x:/usr/bin:/bin"
 }
 
-@test "FR35: init systemd prints PATH with the shim directory, then \${PATH}" {
+@test "init systemd prints PATH with the shim directory, then \${PATH}" {
 	block systemd
 	assert_eq "$output" $'# >>> lendk >>>\n'"PATH=$SHIMS:\${PATH}"$'\n# <<< lendk <<<'
 }
 
-@test "FR35: systemd's environment.d generator puts the shim directory first" {
+@test "systemd's environment.d generator puts the shim directory first" {
 	require environment-d
 	mkdir -p "$HOME/.config/environment.d"
 	block systemd
@@ -79,7 +79,7 @@ block() {
 	[[ $'\n'$output == *$'\n'"PATH=$SHIMS:"* ]]
 }
 
-@test "FR28: init gives unsafe and prints no code for a shim directory open to others" {
+@test "init gives unsafe and prints no code for a shim directory open to others" {
 	mkdir -m 700 "$SHIMS"
 	block sh
 	chmod 770 "$SHIMS"
@@ -89,7 +89,7 @@ block() {
 	assert_class unsafe 125
 }
 
-@test "FR35: init without one of sh, bash, zsh or systemd is usage" {
+@test "init without one of sh, bash, zsh or systemd is usage" {
 	run_lendk init
 	assert_class usage 2
 	run_lendk init fish
@@ -99,7 +99,7 @@ block() {
 	assert_class usage 2
 }
 
-@test "FR35: the zsh block runs under nounset, and init rejects a relative LENDK_SHIMS" {
+@test "the zsh block runs under nounset, and init rejects a relative LENDK_SHIMS" {
 	require zsh
 	block zsh
 	run env -i PATH=/usr/bin:/bin zsh -f -o nounset -c '. "$1"; . "$1"; print -r -- "${(j: :)precmd_functions}"' zsh "$SB/block"

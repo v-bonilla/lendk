@@ -26,7 +26,7 @@ sandbox() {
 	chmod +x "$SB/bin/lendk-fn"
 }
 
-# run_lendk ARG...: status, output (stdout), stderr; every stderr line must follow PRD 5.3, and the
+# run_lendk ARG...: status, output (stdout), stderr; every stderr line must follow the message contract, and the
 # sandbox's download stubs must stay unused.
 run_lendk() {
 	local line
@@ -42,7 +42,7 @@ run_lendk() {
 		[[ ${LENDK_PROMPT-} == allow || ! $line =~ $FORBIDDEN ]] ||
 			{ echo "non-interactive line suggests a forbidden action: $line" >&2; return 1; }
 	done <"$SB/stderr"
-	# NFR6: the sandbox's download stubs record their calls, and no call of the suite may start one.
+	# The sandbox's download stubs record their calls, and no call of the suite may start one.
 	[[ ! -e $SB/log/net ]] || { echo "lendk started a download tool: $(<"$SB/log/net")" >&2; return 1; }
 }
 assert_eq() { [[ $1 == "$2" ]] || { printf 'expected: %q\nactual:   %q\n' "$2" "$1" >&2; return 1; }; }

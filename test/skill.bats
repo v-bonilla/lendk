@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR38: the agent skill is a valid Agent Skill, and its verbs, classes and options match bin/lendk and install.sh.
+# The agent skill is a valid Agent Skill, and its verbs, classes and options match bin/lendk and install.sh.
 # shellcheck disable=SC2013,SC2016
 
 setup() {
@@ -13,7 +13,7 @@ setup() {
 # classes_of FILE: the classes in FILE's table rows, sorted.
 classes_of() { grep -oE '^\| `[a-z-]+` \|' "$1" | sed 's/^| `//; s/` |$//' | sort; }
 
-@test "FR38: SKILL.md has Agent Skills frontmatter naming lendk, and stays concise" {
+@test "SKILL.md has Agent Skills frontmatter naming lendk, and stays concise" {
 	assert_eq "$(sed -n 1p "$SKILL")" '---'
 	local front
 	front=$(sed -n '2,/^---$/p' "$SKILL")
@@ -22,7 +22,7 @@ classes_of() { grep -oE '^\| `[a-z-]+` \|' "$1" | sed 's/^| `//; s/` |$//' | sor
 	(($(wc -l <"$SKILL") <= 250))
 }
 
-@test "FR38: the skill's verbs and classes are the ones lendk --help prints" {
+@test "the skill's verbs and classes are the ones lendk --help prints" {
 	local want got verb
 	want=$(grep -oE '^  lendk [a-z]+' <<<"$HELP" | awk '{ print $2 }' | sort -u)
 	got=$(grep -ohE '(^|`)lendk [a-z]+' "$SKILL" "$SETUP" | awk '{ print $2 }' | sort -u)
@@ -38,14 +38,14 @@ classes_of() { grep -oE '^\| `[a-z-]+` \|' "$1" | sed 's/^| `//; s/` |$//' | sor
 	done
 }
 
-@test "FR38: the skill's installer classes and options are the ones install.sh uses" {
+@test "the skill's installer classes and options are the ones install.sh uses" {
 	local opts
 	assert_eq "$(classes_of "$SETUP")" "$(grep -oE 'finish [a-z-]+' "$ROOT/install.sh" | awk '$2 != "ok" { print $2 }' | sort -u)"
 	opts=$(grep -oE '^  --[a-z-]+' <(sh "$ROOT/install.sh" --help) | sed 's/^  //' | sort)
 	assert_eq "$(sed -n 's/^Options: //p' "$SETUP" | grep -oE -e '--[a-z-]+' | sort)" "$opts"
 }
 
-@test "FR38: the skill exempts exactly the README's approved installation test, and sync is safe" {
+@test "the skill exempts exactly the README's approved installation test, and sync is safe" {
 	local cmd cmds
 	cmds=$(sed -n '/^- One exemption:/,/^$/p' "$SKILL" | grep -E '^  (printf|~/\.local/bin/lendk|pass) ')
 	assert_eq "$(wc -l <<<"$cmds")" 3
@@ -56,7 +56,7 @@ classes_of() { grep -oE '^\| `[a-z-]+` \|' "$1" | sed 's/^| `//; s/` |$//' | sor
 	refute_contains "$(<"$SKILL")" 'Never edit the map, the shims '
 }
 
-@test "FR38: the skill says upgrade leaves its copy as it is, names --skill-dir to refresh it, and carries the agent rule" {
+@test "the skill says upgrade leaves its copy as it is, names --skill-dir to refresh it, and carries the agent rule" {
 	assert_line "$(<"$SKILL")" '`lendk upgrade` leaves a skill copy as it is. Rerunning `install.sh --skill-dir DIR` refreshes it.'
 	assert_line "$(<"$SKILL")" '- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.'
 	assert_line "$(<"$ROOT/README.md")" '- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.'

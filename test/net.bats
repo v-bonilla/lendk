@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# NFR6: no network outside upgrade's download tool. Every verb runs under strace watching connect; the
+# No network outside upgrade's download tool. Every verb runs under strace watching connect; the
 # source names the download tools only in its network region.
 # shellcheck disable=SC2030,SC2031
 
@@ -27,7 +27,7 @@ traced() {
 	! grep -E 'AF_INET6?[,}]' "$SB/trace"
 }
 
-@test "NFR6: no verb connects to an internet address" {
+@test "no verb connects to an internet address" {
 	require strace
 	traced --help
 	traced --version
@@ -50,7 +50,7 @@ traced() {
 	[[ ! -e $SB/log/net ]]
 }
 
-@test "NFR6: no verb starts a download tool, upgrade from a file:// base included" {
+@test "no verb starts a download tool, upgrade from a file:// base included" {
 	local verb
 	for verb in --help --version "init sh" check sync "add other K1" "rm other" "run -- stub" "run K1 -- stub" "unlock K1" frobnicate; do
 		# shellcheck disable=SC2086
@@ -68,7 +68,7 @@ traced() {
 }
 
 # bats test_tags=gpg
-@test "NFR6: run and unlock with real GnuPG connect to no internet address" {
+@test "run and unlock with real GnuPG connect to no internet address" {
 	require strace
 	load helpers/gpg
 	gpg_setup
@@ -80,7 +80,7 @@ traced() {
 	assert_eq "${#targets[@]}" 1
 }
 
-@test "NFR6: the source names curl and wget only in the network region, and no nc or /dev/tcp" {
+@test "the source names curl and wget only in the network region, and no nc or /dev/tcp" {
 	assert_eq "$(grep -c '^# lint: network begin$' "$LENDK")" 1
 	assert_eq "$(grep -c '^# lint: network end$' "$LENDK")" 1
 	[[ $(sed -n '/^# lint: network begin$/,/^# lint: network end$/p' "$LENDK" | grep -cE 'curl|wget') -gt 0 ]]

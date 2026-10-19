@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# AC4: a fresh HOME with Debian's skel files, the PRD 4.4 quick start, the PRD 4.3 blocks, then the key
+# A fresh HOME with Debian's skel files, the from-source setup, the init blocks, then the key
 # reaching gh from every kind of caller, and make uninstall leaving only the map.
 # shellcheck disable=SC2016,SC2088
 
@@ -41,8 +41,8 @@ login_env() {
 		PASSWORD_STORE_DIR="$PASSWORD_STORE_DIR" "$@")
 }
 
-# quickstart: PRD 4.4's five commands with a local clone source and the store entry written for the
-# fake pass; command 3 starts the login shells that run commands 4 and 5. Then the other 4.3 blocks.
+# quickstart: the from-source setup (clone, make install, init sh, add) with a local clone source and the store entry written for the
+# fake pass; command 3 starts the login shells that run the later commands. Then the other init blocks.
 quickstart() {
 	login_env bash -c "git clone -q $(printf %q "$SB/src") lendk && make -s -C lendk install"
 	login_env bash -c '~/.local/bin/lendk init sh >> ~/.profile'
@@ -71,50 +71,50 @@ decrypts() {
 	printf '%s\n' "${#calls[@]}"
 }
 
-@test "AC4: the quick start installs lendk, writes the map and the shim, and the parent lacks GH_TOKEN" {
+@test "the quick start installs lendk, writes the map and the shim, and the parent lacks GH_TOKEN" {
 	[[ -x $HOME/.local/bin/lendk && -f $HOME/.local/share/lendk/shims/gh ]]
 	assert_eq "$(<"$HOME/.config/lendk/map")" $'gh GH_TOKEN\nouter GH_TOKEN'
 	run login_env bash -lc 'printf "%s|" "${GH_TOKEN-unset}"; command -v gh'
 	assert_eq "$output" "unset|$HOME/.local/share/lendk/shims/gh"
 }
 
-@test "AC4: interactive bash in a terminal gets the key" {
+@test "interactive bash in a terminal gets the key" {
 	in_pty "$(printf '%q ' env -i HOME="$HOME" PATH="$LOGIN_PATH" TERM=dumb STUB_LOG="$STUB_LOG" \
 		PASSWORD_STORE_DIR="$PASSWORD_STORE_DIR" bash -li -c 'gh; exit $?')"
 	assert_eq "$status" 0
 	assert_eq "$(token)" "$SENTINEL"
 }
 
-@test "AC4: bash -lc gets the key" {
+@test "bash -lc gets the key" {
 	login_env bash -lc gh
 	assert_eq "$(token)" "$SENTINEL"
 }
 
-@test "AC4: zsh -c under a parent that prepended another gh gets the key" {
+@test "zsh -c under a parent that prepended another gh gets the key" {
 	require zsh
 	LOGIN_PATH=$SB/other:$LOGIN_PATH login_env zsh -c gh
 	assert_eq "$(token)" "$SENTINEL"
 }
 
-@test "AC4: Python subprocess without a shell, started from sh -lc like a desktop session, gets the key" {
+@test "Python subprocess without a shell, started from sh -lc like a desktop session, gets the key" {
 	require python3
 	login_env sh -lc 'exec python3 -c "import subprocess; subprocess.run([\"gh\"], check=True)"'
 	assert_eq "$(token)" "$SENTINEL"
 }
 
-@test "AC4: a nested shim reuses the key with one decrypt" {
+@test "a nested shim reuses the key with one decrypt" {
 	login_env bash -lc outer
 	assert_eq "$(token)" "$SENTINEL"
 	assert_eq "$(decrypts)" 1
 }
 
-@test "AC4: systemd's environment.d generator puts the shim directory first" {
+@test "after the quick start, systemd's environment.d generator puts the shim directory first" {
 	require environment-d
 	run env -i HOME="$HOME" PATH=/usr/bin:/bin /usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator
 	[[ $'\n'$output == *$'\n'"PATH=$HOME/.local/share/lendk/shims:"* ]]
 }
 
-@test "AC4: removing the blocks and make uninstall leave only the map" {
+@test "removing the blocks and make uninstall leave only the map" {
 	local f
 	for f in .profile .zshenv .bashrc; do
 		sed '/^# >>> lendk >>>$/,/^# <<< lendk <<<$/d' "$HOME/$f" >"$SB/rc" && cat "$SB/rc" >"$HOME/$f"

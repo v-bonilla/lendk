@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repository lint: NFR9 content rules, portability of bin/lendk (NFR3), one file in bin/, PRD ID coverage.
+# Repository lint: content rules, portability of bin/lendk, one file in bin/.
 # Usage: test/lint-repo.bash [ROOT]; prints one line per problem and exits 1 when there is any.
 set -u -o pipefail
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -17,7 +17,7 @@ fi
 files=()
 while IFS= read -r f; do files+=("${f#./}"); done < <(find . \( "${prune[@]}" \) -prune -o -type f -print | sort)
 
-# NFR9: no em-dashes, email addresses, home paths other than /home/alice, or real-looking keys.
+# No em-dashes, email addresses, home paths other than /home/alice, or real-looking keys.
 emdash=$'\xe2\x80\x94'
 while IFS= read -r hit; do problem "$hit: em-dash"; done < <(grep -nHF -e "$emdash" -- "${files[@]}")
 while IFS= read -r hit; do problem "$hit: email address"; done < <(grep -nHE -e '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- "${files[@]}")
@@ -30,11 +30,11 @@ done < <(grep -nHE -e '/(home|Users)/[A-Za-z0-9_.-]+' -- "${files[@]}")
 while IFS= read -r hit; do problem "$hit: key-shaped value"; done < <(grep -nHE -e 'gh[pousr]_[A-Za-z0-9]{36}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{32,}' -- "${files[@]}")
 if ! grep -q '^MIT License' LICENSE 2>/dev/null || ! grep -q 'v-bonilla' LICENSE; then problem "LICENSE: not MIT held by v-bonilla"; fi
 
-# NFR7: bin/ holds one file.
+# bin/ holds one file.
 bins=(bin/*)
 [[ ${#bins[@]} -eq 1 && ${bins[0]} == bin/lendk ]] || problem "bin/: holds ${bins[*]}, not only bin/lendk"
 
-# NFR3 and NFR6 on bin/lendk, skipping the name-list tables, the terminal-owner test and the network region.
+# Portability and network rules on bin/lendk, skipping the name-list tables, the terminal-owner test and the network region.
 # cmdpos WORD [START]: WORD in command position; START matches the line start.
 cmdpos() { printf '(%s|[;&|(]|[$][(])[[:space:]]*%s([^A-Za-z0-9_=-]|$)' "${2:-^}" "$1"; }
 if [[ -f bin/lendk ]]; then
@@ -47,14 +47,14 @@ if [[ -f bin/lendk ]]; then
 		b && /^\}/ { b = 0 }' bin/lendk)
 	code=$(grep -v '^#' <<<"$body")
 	start='^[ OBN][0-9]+:'
-	# NFR7: only the backend functions name pass or the store.
+	# Only the backend functions name pass or the store.
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: pass or the store outside backend_has and backend_read"; done < <(
 		grep -E -e "$(cmdpos pass '^[ ON][0-9]+:')|[\$][{]?store([^A-Za-z0-9_]|\$)" <<<"$code" | grep -v '^B')
 	for word in stat 'readlink[[:space:]]+-f' timeout flock setsid 'sed[[:space:]]+-i' 'date[[:space:]]+[+]%N'; do
 		while IFS= read -r hit; do problem "bin/lendk:${hit:1}: non-portable command"; done < <(grep -E -e "$(cmdpos "$word" "$start")" <<<"$code")
 	done
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: bash 5 variable"; done < <(grep -E -e '[$](EPOCHREALTIME|SRANDOM)|[$][{](EPOCHREALTIME|SRANDOM)([^-]|$)' <<<"$code")
-	# NFR6: one network region, opened and closed once; comments and tables count too.
+	# One network region, opened and closed once; comments and tables count too.
 	[[ $(grep -c '^# lint: network begin$' bin/lendk) == 1 && $(grep -c '^# lint: network end$' bin/lendk) == 1 ]] ||
 		problem "bin/lendk: not exactly one network region"
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: curl or wget outside the network region"; done < <(
@@ -66,23 +66,6 @@ fi
 for f in "${files[@]}"; do
 	[[ $f == bin/lendk || $f == test/*.bats || $f == test/fixtures/* ]] || continue
 	while IFS= read -r hit; do problem "$f:$hit: only test helpers may call script"; done < <(grep -nE -e "$(cmdpos script)" -- "$f")
-done
-
-# PRD ID coverage: each FR and NFR ID sits in a test name, and each test-name ID is in the PRD.
-declare -A in_prd=() in_test=()
-while read -r _ id _; do in_prd[$id]=1; done < <(grep -E '^- N?FR[0-9]+ ' docs/prd.md 2>/dev/null)
-for f in test/*.bats; do
-	[[ -f $f ]] || continue
-	while IFS= read -r name; do
-		name=${name#*@test [\"\']}
-		while read -r id; do in_test[$id]=1; done < <(grep -oE 'N?FR[0-9]+' <<<"${name%%:*}")
-	done < <(grep -E '^[[:space:]]*@test ["'\''](N?FR[0-9]+(, )?)+:' "$f")
-done
-for id in "${!in_prd[@]}"; do
-	[[ -n ${in_test[$id]-} ]] || problem "$id: in no test name"
-done
-for id in "${!in_test[@]}"; do
-	[[ -n ${in_prd[$id]-} ]] || problem "$id: not in docs/prd.md"
 done
 
 ((problems == 0))

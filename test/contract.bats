@@ -36,7 +36,7 @@ frozen_missing() {
 	done <"$FROZEN/variables"
 }
 
-@test "NFR8: the frozen list holds the 1.x entry counts" {
+@test "the frozen list holds the 1.x entry counts" {
 	assert_eq "$(wc -l <"$FROZEN/verbs")" 9
 	assert_eq "$(wc -l <"$FROZEN/lists")" 8
 	assert_eq "$(wc -l <"$FROZEN/classes")" 16
@@ -44,11 +44,11 @@ frozen_missing() {
 	assert_eq "$(wc -l <"$FROZEN/variables")" 11
 }
 
-@test "NFR8: --help carries every frozen verb, list word, class, FIX and variable" {
+@test "--help carries every frozen verb, list word, class, FIX and variable" {
 	assert_eq "$(frozen_missing "$HELP")" ""
 }
 
-@test "NFR8: a renamed or removed entry fails the comparison while an added one passes" {
+@test "a renamed or removed entry fails the comparison while an added one passes" {
 	local added=${HELP/guarded shells: /guarded shells: newsh }
 	added+=$'\n'"  lendk newverb"$'\n'"  newclass (3): new"$'\n'"  LENDK_NEW  new"
 	assert_eq "$(frozen_missing "$added")" ""
@@ -62,7 +62,7 @@ frozen_missing() {
 	assert_eq "$(frozen_missing "${HELP//"$fix"/x}")" "fix: $fix"
 }
 
-@test "NFR8: the README's name lists and classes are the lines --help prints" {
+@test "the README's name lists and classes are the lines --help prints" {
 	local readme want got
 	readme=$(<"$ROOT/README.md")
 	want=$(sed -n '/^Name lists:/,/^$/p; /^Classes:/,/^$/p' <<<"$HELP" | grep -E '^  [a-z]' | grep -v '^  notice:')
@@ -71,7 +71,7 @@ frozen_missing() {
 	assert_eq "$(wc -l <<<"$want")" 31
 }
 
-@test "NFR8: sync writes the frozen shim text" {
+@test "sync writes the frozen shim text" {
 	local want
 	want=$(<"$FROZEN/shim")
 	want=${want//\/home\/alice\/.local\/bin\/lendk/$LENDK}

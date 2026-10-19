@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# PRD 4.3: login shells, bash -lc and zsh -c reach the shims through the init blocks (FR35).
+# Login shells, bash -lc and zsh -c reach the shims through the init blocks.
 
 setup() {
 	load helpers/common
@@ -34,7 +34,7 @@ token() {
 	rm -rf "${logs[0]}"
 }
 
-@test "FR35: bash -lc with the skel profile reaches the shim once init sh is appended" {
+@test "bash -lc with the skel profile reaches the shim once init sh is appended" {
 	login_env bash -lc 'gh'
 	assert_eq "$(token)" none
 	run_lendk init sh
@@ -43,7 +43,7 @@ token() {
 	assert_eq "$(token)" "$SENTINEL"
 }
 
-@test "FR35: zsh -c behind a prepended gh reaches the shim through ~/.zshenv" {
+@test "zsh -c behind a prepended gh reaches the shim through ~/.zshenv" {
 	require zsh
 	run_lendk init sh
 	printf '%s\n' "$output" >"$HOME/.zshenv"

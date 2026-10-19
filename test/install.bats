@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# PRD section 9: make install renames a fresh file into place, make uninstall keeps the map.
+# make install renames a fresh file into place, make uninstall keeps the map.
 # shellcheck disable=SC2012,SC2016,SC2088
 
 setup() {

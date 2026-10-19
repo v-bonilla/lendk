@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# lendk check: diagnosis without decrypting (FR31 to FR33).
+# lendk check: diagnosis without decrypting.
 # shellcheck disable=SC2030,SC2031,SC2329
 
 setup() {
@@ -14,7 +14,7 @@ setup() {
 	export PATH=$SHIMS:$PATH
 }
 
-# FR31 across the file: no check call reads a value; only the nested run below does.
+# Across the file: no check call reads a value; only the nested run below does.
 teardown() {
 	[[ -n ${READS-} ]] || no_reads
 }
@@ -52,7 +52,7 @@ healthy() {
 # no_reads: the backend was never called.
 no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 
-@test "FR31: check calls no backend read, and an empty value shows as ok" {
+@test "check calls no backend read, and an empty value shows as ok" {
 	healthy
 	: >"$SB/store/env/K1.gpg"
 	run_lendk check
@@ -61,7 +61,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	no_reads
 }
 
-@test "FR32: a healthy setup gives headers and ok rows, groups first, sorted, exit 0" {
+@test "a healthy setup gives headers and ok rows, groups first, sorted, exit 0" {
 	map 'zed K1' '@g K2' 'stub K1 @g' '@a K1'
 	ln -s "$FIXTURES/stub-target" "$SB/bin/zed"
 	keys K1 K2
@@ -72,7 +72,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	no_reads
 }
 
-@test "FR32: check NAME keeps rows named NAME, holding key NAME, or using group NAME" {
+@test "check NAME keeps rows named NAME, holding key NAME, or using group NAME" {
 	map '@aws A B' 'tf @aws C' 'stub G'
 	ln -s "$FIXTURES/stub-target" "$SB/bin/tf"
 	keys A B C G
@@ -86,7 +86,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 0
 }
 
-@test "FR32: interactive calls get the full FIX; lendk sync and lendk run -- CMD stay non-interactive" {
+@test "interactive calls get the full FIX; lendk sync and lendk run -- CMD stay non-interactive" {
 	map 'stub K1'
 	LENDK_PROMPT=allow run_lendk check
 	assert_line "$output" $'stub\tK1\tenv/K1 is not in the store (pass insert env/K1); no shim (lendk sync)'
@@ -95,7 +95,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: map violations, on their row or as a problem line" {
+@test "map violations, on their row or as a problem line" {
 	map 'bad! K1' 'stub K1 @nope' 'stub K1'
 	keys K1
 	run_lendk sync
@@ -106,7 +106,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_line "$output" "# problem: $MAP:1: 'bad!' is not a valid command name (fix the line)"
 }
 
-@test "FR33: a missing key" {
+@test "a missing key" {
 	healthy
 	rm "$SB/store/env/K2.gpg"
 	run_lendk check
@@ -115,7 +115,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: a command not found" {
+@test "a command not found" {
 	map 'nothere K1'
 	keys K1
 	run_lendk sync
@@ -126,7 +126,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: no shim, a stale shim, and a stray shim" {
+@test "no shim, a stale shim, and a stray shim" {
 	healthy
 	rm "$SHIMS/stub"
 	run_lendk check
@@ -143,7 +143,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: foreign files in the shim directory, named like a mapped command or not" {
+@test "foreign files in the shim directory, named like a mapped command or not" {
 	healthy
 	printf 'mine\n' >"$SHIMS/notes"
 	printf '#!/bin/sh\necho mine\n' >"$SHIMS/stub"
@@ -154,7 +154,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: a shim whose lendk path is not executable" {
+@test "a shim whose lendk path is not executable" {
 	map 'stub K1'
 	keys K1
 	mkdir "$SB/opt"
@@ -166,7 +166,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: unsafe map and shim directory" {
+@test "unsafe map and shim directory" {
 	healthy
 	chmod 770 "$SHIMS"
 	chmod 660 "$MAP"
@@ -176,14 +176,14 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	no_reads
 }
 
-@test "FR33: the shim directory is not on PATH" {
+@test "the shim directory is not on PATH" {
 	healthy
 	PATH=${PATH#"$SHIMS":} run_lendk check
 	assert_eq "$output" "$HEAD"$'\n'"# problem: $SHIMS is not on PATH (ask the user)"$'\n@g\tK2\tok\nstub\tK1 @g\tok'
 	assert_eq "$status" 1
 }
 
-@test "FR33: shadowed, naming the earlier path" {
+@test "shadowed, naming the earlier path" {
 	healthy
 	mkdir "$SB/early"
 	ln -s "$FIXTURES/stub-target" "$SB/early/stub"
@@ -194,7 +194,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: a GnuPG below 2.4" {
+@test "a GnuPG below 2.4" {
 	healthy
 	stub_gpg 2.2.27
 	run_lendk check
@@ -202,7 +202,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: a mapped key set in the environment, unless lendk injected it" {
+@test "a mapped key set in the environment, unless lendk injected it" {
 	healthy
 	K2='set' run_lendk check
 	assert_line "$output" $'@g\tK2\tK2 is set in the environment, which overrides the store (ask the user)'
@@ -216,7 +216,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_line "$output" $'stub\tK1 @g\tok'
 }
 
-@test "FR33: exit 1 only when a shown item has a problem" {
+@test "exit 1 only when a shown item has a problem" {
 	healthy
 	map '@g K2' 'stub K1 @g' 'other K3'
 	run_lendk check stub
@@ -225,7 +225,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "FR33: a fresh install with no map, or an empty one, is no problem: exit 0 and a notice" {
+@test "a fresh install with no map, or an empty one, is no problem: exit 0 and a notice" {
 	run_lendk check
 	assert_eq "$output" "$HEAD"
 	assert_eq "$stderr" 'lendk: notice: no command is mapped yet, so lendk gives no keys; ask the user which commands to map.'
@@ -239,7 +239,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$stderr" 'lendk: notice: no command is mapped yet, so lendk gives no keys; ask the user which commands to map.'
 }
 
-@test "FR33: a shim that lost its mode 0755 is stale" {
+@test "a shim that lost its mode 0755 is stale" {
 	healthy
 	chmod 644 "$SHIMS/stub"
 	run_lendk check
