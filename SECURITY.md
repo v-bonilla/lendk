@@ -20,8 +20,9 @@ Never include a real key value. A made-up value shows the problem as well.
 
 ## What counts
 
-The security model is section 3 of `docs/prd.md`. A vulnerability is:
-- a key value reaching a process, file, argv or lendk output it should not (section 3 "Protects against", FR20)
-- the installer accepting an archive whose checksum does not match (FR40)
+The security model is the [Security model](README.md#security-model) section of the README. A vulnerability is:
+- a key value reaching a process, file, argv or lendk output it should not
+- the installer accepting an archive whose checksum does not match
+- `lendk upgrade` accepting a release whose checksum does not match
 
-The cases under "Does not protect against" in section 3 are outside the model.
+The cases the Security model lists under "It does not protect against" and "By design, lendk does not" are outside the model.
