@@ -42,7 +42,7 @@ The common habit is a line like `export OPENAI_API_KEY=...` in a shell startup f
 - **Works with AI agents.** A call without a terminal never waits at a passphrase prompt nobody can answer. Every failure is one line that names the problem and the fix.
 - **`lendk check` shows what is wrong.** It lists which command gets which key, and reports missing keys and setup mistakes, without decrypting anything.
 - **Small and quiet.** One bash file. No background service, no saved copy of a decrypted key, no telemetry, no update check. It uses the network only when you run `lendk upgrade`.
-- **Linux and macOS, no root needed.** The install script checks the download against its checksum before it installs anything. The checksum comes from the same release, so it catches a corrupt download, not a compromised release; see [Security model](#security-model).
+- **Linux and macOS, no root needed.** The install script checks the download against its checksum before it installs anything. [Security model](#security-model) says what that check covers.
 
 ## Quick start for humans
 

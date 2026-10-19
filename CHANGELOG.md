@@ -8,6 +8,7 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 
 - The README's Troubleshooting section lists common failures, among them a passphrase prompt that opens on the machine's display instead of the SSH terminal, with two fixes.
 - The README's Security model lists what lendk does not do by design, such as sandboxing or checking release signatures, says that `LENDK_INSTALL_BASE_URL` moves trust to whoever serves the URL, and states that a call waits at most `LENDK_TIMEOUT` plus 2 s. `SECURITY.md` points to it, and also counts a `lendk upgrade` that accepts a mismatched checksum as a vulnerability.
+- The README's Daily use section and the agent skill say that a store whose entries are encrypted to different GnuPG keys needs `lendk unlock KEY` once per GnuPG key.
 
 ### Changed
 
