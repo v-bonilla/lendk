@@ -1,0 +1,23 @@
+# The backend runs as a job under a watchdog, and gets the terminal only for a loopback prompt
+
+`LENDK_TIMEOUT` bounds all backend work of a call, and no process of the call outlives it, even when a process the backend started ignores TERM: a call ends no later than `LENDK_TIMEOUT` + 2 s, cleanup included. A loopback passphrase prompt must still reach the terminal, and a pipeline neighbor such as `less` must keep it otherwise. So lendk's main shell turns job control on (`set -m`), starts a watchdog W and then the backend job J as a `coproc`, each a background job in a process group of its own, waits for J, and turns job control off (`set +m`). Between `set -m` and `set +m` it runs builtins only, since a foreground external command there would become a job and take the terminal. When J stops on the terminal and lendk's process group owns it, the main shell runs `fg`, which hands J the terminal and takes it back when J exits.
+
+- J reads each key's store entry and keeps the values in memory ([ADR 0006](0006-values-only-in-memory.md)). It traps TERM, INT and HUP to exit with 143, 130 and 129, so bash never reports a killed job, and ignores TSTP. It hands the values over through its stdout pipe from one forked writer, so it never waits for the main shell, whatever their size. The main shell duplicates the pipe's read end at once, since bash closes coproc descriptors when it reaps the job.
+- W wakes every 0.1 s. In an interactive call it sends USR1 to the main shell: `wait` returns when a trapped signal arrives but never on a stop, so the tick lets the main shell see that J stopped. When the main shell is gone, W abandons the call; at `LENDK_TIMEOUT` it marks a timeout. Its clock is bash 5's where there is one, else its ticks, with `SECONDS` as a backstop, so it never fires early and at most about 1 s late. Then it ignores TERM, sends TERM and CONT to J's group, sends KILL after 0.3 s, and removes the temporary directory of a lendk that is gone. A watchdog that dies of an error ends the call as a timeout at once.
+- W's own process group keeps a signal aimed at lendk's group from reaching it, so W still cleans up after a KILL to that group. The main shell's TERM, INT and HUP traps stop J's group and re-raise the signal.
+- A loopback prompt calls `tcsetattr` from a background group, which stops J with SIGTTOU. lendk's group owns the terminal when field 8 of `/proc/$$/stat` equals field 5, or, where `/proc` is absent, when `ps -o tpgid= -o pgid=` gives two equal numbers. The test matters: `fg` from a background job steals the terminal, then stops lendk.
+- After the handoff the main shell sends CONT to its own process group, to resume a pipeline neighbor the prompt stopped. That also resumes a sibling the caller stopped on purpose; lendk cannot tell them apart.
+- `lendk upgrade` runs its fetch the same way, as J under W, without the handoff. It renames the staged file after `set +m` and while W lives, so a KILL at any moment still finds W to clean up.
+
+## Considered Options
+
+- `timeout(1)` or `setsid`: neither is POSIX, macOS lacks both, and a process in a session of its own has no controlling terminal for a loopback prompt.
+- Decrypting in a command substitution in the main shell: bash runs a trap only after a command substitution returns (measured: a TERM trap ran at 4 s under `v=$(sleep 4)`, and at 1 s under `read`). A job-control shell inside a command substitution never sees its job stop: `jobs -sp` stayed empty with the job in state T.
+- A backend that holds the terminal from the start: it stops pipeline neighbors (`lendk ... | less` showed `Stopped`), and a call in a background job would stop instead of giving `timeout`.
+
+## Consequences
+
+- With `pinentry-mode loopback`, gpg prompts on the terminal itself, so it must run in the terminal's foreground process group, and pass's `--batch` branch refuses such prompts. Every other pinentry runs under gpg-agent and needs no terminal from lendk.
+- Killing gpg makes gpg-agent interrupt a waiting pinentry, which stays a zombie until gpg-agent reaps it. Stopping J's group ends the prompt, and the tests count a zombie as gone.
+- An interactive call that starts with SIGTTOU ignored, as in a command substitution, cannot take the terminal. When gpg is set to `pinentry-mode loopback` in `gpg.conf` or `PASSWORD_STORE_GPG_OPTS`, such a call also gets `--pinentry-mode error` and gives `locked`, since its prompt would show and lose the typed passphrase to the caller's shell. Other pinentries prompt as usual.
+- A KILL that lands before W starts, or after an expiry once W has finished, can leave the temporary directory and, in `lendk upgrade`, the staged file. Neither holds a value.
