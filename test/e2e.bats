@@ -109,7 +109,7 @@ decrypts() {
 	assert_eq "$(decrypts)" 1
 }
 
-@test "after the quick start, systemd's environment.d generator puts the shim directory first" {
+@test "after the from-source setup, systemd's environment.d generator puts the shim directory first" {
 	require environment-d
 	run env -i HOME="$HOME" PATH=/usr/bin:/bin /usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator
 	[[ $'\n'$output == *$'\n'"PATH=$HOME/.local/share/lendk/shims:"* ]]
