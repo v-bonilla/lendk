@@ -223,6 +223,39 @@ login() {
 	assert_eq "$final" "lendk-install: missing-deps: missing: bash>=4.4; no supported package manager found, install them by hand"
 }
 
+@test "installer: without curl or wget, or without tar, it names the missing tool" {
+	rm "$STUB/curl"
+	inst
+	assert_eq "$status" 1
+	assert_eq "$final" "lendk-install: missing-deps: missing: curl; no supported package manager found, install them by hand"
+	stub curl 'exit 7'
+	mkdir "$SB/sys"
+	find "$SYS" -mindepth 1 -maxdepth 1 ! -name tar -exec ln -s {} "$SB/sys/" \;
+	SYS=$SB/sys inst
+	assert_eq "$status" 1
+	assert_eq "$final" "lendk-install: missing-deps: missing: tar; no supported package manager found, install them by hand"
+	[[ ! -e $HOME/.local/bin/lendk ]]
+}
+
+@test "installer: zsh users on macOS also get the block in ~/.zprofile" {
+	stub uname 'echo Darwin'
+	INST_SHELL=/bin/zsh inst
+	assert_eq "$status" 0
+	grep -qx '# >>> lendk-install >>>' "$HOME/.zprofile"
+	grep -qx '# >>> lendk-install >>>' "$HOME/.zshenv"
+}
+
+@test "installer: a rerun with another --prefix replaces the login block" {
+	inst --prefix "$SB/one"
+	assert_eq "$status" 0
+	inst --prefix "$SB/two"
+	assert_eq "$status" 0
+	assert_line "$output" "updated: $HOME/.profile (lendk-install block)"
+	assert_eq "$(grep -c '^# >>> lendk-install >>>$' "$HOME/.profile")" 1
+	grep -qF "$SB/two/bin" "$HOME/.profile"
+	[[ $(<"$HOME/.profile") != *"$SB/one/bin"* ]]
+}
+
 @test "installer: on macOS without Homebrew it points to brew.sh and installs nothing" {
 	stub uname 'echo Darwin'
 	rm "$STUB/pass"

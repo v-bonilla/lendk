@@ -53,16 +53,17 @@ block() {
 	assert_eq "$output" "__lendk_path"
 }
 
-@test "the zsh hook registers once when its block runs twice, and repeats the move" {
+@test "the zsh hook registers once when its block runs twice, and repeats the move with rehash" {
 	require zsh
 	block zsh
 	run env -i PATH=/usr/bin:/bin zsh -f -c '
 		. "$1"; . "$1"
 		print -r -- "${(j: :)precmd_functions}|$PATH"
 		PATH=/x:$PATH
+		rehash() { print -r -- rehash; }
 		for f in $precmd_functions; do $f; done
 		print -r -- "$PATH"' zsh "$SB/block"
-	assert_eq "$output" "__lendk_path|$SHIMS:/usr/bin:/bin"$'\n'"$SHIMS:/x:/usr/bin:/bin"
+	assert_eq "$output" "__lendk_path|$SHIMS:/usr/bin:/bin"$'\n'rehash$'\n'"$SHIMS:/x:/usr/bin:/bin"
 }
 
 @test "init systemd prints PATH with the shim directory, then \${PATH}" {
