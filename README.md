@@ -42,7 +42,7 @@ The common habit is a line like `export OPENAI_API_KEY=...` in a shell startup f
 - **Works with AI agents.** A call without a terminal never waits at a passphrase prompt nobody can answer. Every failure is one line that names the problem and the fix.
 - **`lendk check` shows what is wrong.** It lists which command gets which key, and reports missing keys and setup mistakes, without decrypting anything.
 - **Small and quiet.** One bash file. No background service, no saved copy of a decrypted key, no telemetry, no update check. It uses the network only when you run `lendk upgrade`.
-- **Linux and macOS, no root needed.** The install script checks the download against its checksum before it installs anything.
+- **Linux and macOS, no root needed.** The install script checks the download against its checksum before it installs anything. The checksum comes from the same release, so it catches a corrupt download, not a compromised release; see [Security model](#security-model).
 
 ## Quick start for humans
 
@@ -305,13 +305,24 @@ The name lists, as `lendk --help` prints them:
 
 lendk protects against ambient exposure: keys reach only mapped commands, `lendk run` targets and their descendants. It also keeps plaintext keys out of rc files and dotfile repos, and keeps agents from hanging on prompts.
 
+A call waits at most `LENDK_TIMEOUT` plus 2 s for pass and gpg, or in `lendk upgrade` for the download and its checks, cleanup included. When the time runs out, lendk stops them and ends the call with a `timeout` line, or an `upgrade` line in `lendk upgrade`.
+
 It does not protect against:
 
 - Other processes running as you. While gpg-agent holds your passphrase, any of them, an AI agent included, can run `pass show`, read `/proc/PID/environ`, edit the map, the shims or PATH, or replace lendk itself. lendk keeps keys out of an agent's context; it does not stop an agent that goes looking for them.
 - A mapped command itself. It holds the key and can print it, as `gh auth token` does, so map only tools you trust with that key.
 - Descendants of a mapped command, for their lifetime, and root. Running processes keep old values after a rotation.
 - Callers that bypass PATH. They run without lendk's keys and fail, or act under the tool's own stored credentials, such as gh's `hosts.yml` or `~/.aws/credentials`.
-- A compromised release. `lendk upgrade` replaces lendk, which reads every mapped key, with the file the latest release holds. It trusts this project's GitHub releases over HTTPS, as the installer does. The checksum comes from the same release, so it catches a corrupt or cut-short download, not a compromised release or account. The download tool reads your own configuration, such as `~/.curlrc`.
+- A compromised release. `lendk upgrade` replaces lendk, which reads every mapped key, with the file the latest release holds. It trusts this project's GitHub releases over HTTPS, as the installer does. `LENDK_INSTALL_BASE_URL`, which the installer and `lendk upgrade` both read, moves that trust to whoever serves the URL, and an agent never sets it. The checksum comes from the same release, so it catches a corrupt or cut-short download, not a compromised release or account. The download tool reads your own configuration, such as `~/.curlrc`.
+
+By design, lendk does not:
+
+- Sandbox a command. A mapped command runs with all your rights, as it would without lendk.
+- Check signatures on releases. The installer and `lendk upgrade` check the checksum the release itself holds, and no signature.
+- Read keys from anything but pass.
+- Inject multi-line values. A key's value is the first line of its store entry.
+- Scope keys to a directory. A mapped command gets the same keys in every directory.
+- Support fish or Windows. `lendk init` prints PATH setup for sh, bash, zsh and systemd, and lendk runs on Linux and macOS.
 
 ### Decrypt speed and `s2k-count`
 
