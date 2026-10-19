@@ -40,7 +40,7 @@ target_got() {
 recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 
 # bats test_tags=gpg
-@test "(a) a cold non-interactive call gives locked within 2 s and never launches pinentry" {
+@test "a cold non-interactive call gives locked within 2 s and never launches pinentry" {
 	local b start
 	for b in plain gpg2; do
 		branch "$b"
@@ -55,7 +55,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "(b) after priming through loopback a non-interactive call succeeds" {
+@test "after priming through loopback a non-interactive call succeeds" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"
@@ -69,7 +69,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "(c) LENDK_PROMPT=allow launches pinentry" {
+@test "LENDK_PROMPT=allow launches pinentry" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"
@@ -82,7 +82,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "(d) with stdin piped and stderr a terminal, pinentry gets that terminal as ttyname" {
+@test "with stdin piped and stderr a terminal, pinentry gets that terminal as ttyname" {
 	local b q
 	q=$(printf %q "$SB")
 	for b in plain gpg2; do
@@ -96,7 +96,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "(e) Cancel in pinentry gives canceled" {
+@test "Cancel in pinentry gives canceled" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"
@@ -109,7 +109,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "(f) a pinentry that never answers gives timeout within 4 s and is gone afterwards" {
+@test "a pinentry that never answers gives timeout within 4 s and is gone afterwards" {
 	local b start p
 	for b in plain gpg2; do
 		branch "$b"
@@ -125,7 +125,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "(g) KILL to lendk's process group while pinentry waits leaves no pinentry within 2 s" {
+@test "KILL to lendk's process group while pinentry waits leaves no pinentry within 2 s" {
 	local b i lpid p
 	for b in plain gpg2; do
 		branch "$b"
@@ -148,7 +148,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "(h) with loopback in gpg.conf the passphrase typed into the terminal reaches gpg, and the target gets the value" {
+@test "with loopback in gpg.conf the passphrase typed into the terminal reaches gpg, and the target gets the value" {
 	branch plain
 	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
 	in_shell "$(printf %q "$LENDK") run -- stub; st=\$?; echo; echo status=\$st" @3 "$GPG_PASS" @3 exit
@@ -158,7 +158,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "(i) with loopback in gpg.conf, a call in a command substitution gives locked and shows no prompt" {
+@test "with loopback in gpg.conf, a call in a command substitution gives locked and shows no prompt" {
 	branch plain
 	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
 	in_shell "x=\$($(printf %q "$LENDK") run -- stub); echo rc=\$?" @3 exit

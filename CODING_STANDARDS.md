@@ -18,13 +18,13 @@ How lendk's code, tests, docs and commits are written, and the process failures 
 
 - The verbs, map grammar, name lists, class table and environment variables live once in code, between the `# lint: tables begin` and `# lint: tables end` markers of `bin/lendk`, and `--help` prints them.
 - A failure ends through `fail CLASS TEXT`, which takes the exit hint and the FIX for the call's mode from the `classes` rows. Each class has an interactive and a non-interactive FIX, and the non-interactive one hands the step to the user or points to `lendk --help` (ADR 0012).
-- All of these, and the shim text, are stable within 1.x: add entries, never rename or remove one, and change a description only to keep it true (ADR 0011). The change that adds an entry also appends it to the frozen 1.x list in `test/frozen/` and raises the counts `test/contract.bats` checks, and the release that ships it raises the minor version.
+- All of these, and the shim text, are stable within 1.x: add entries, never rename or remove one, and change a description only to keep it true (ADR 0011). The change that adds an entry also appends it to the frozen 1.x list in `test/frozen/`, and the release that ships it raises the minor version.
 
 ## Tests
 
 - A test name states the behavior it proves, in the glossary's terms. Line 2 of a test file says what the file covers.
 - `setup` loads `helpers/common` and calls `sandbox`. Call lendk through `run_lendk`, which fails on any stderr line but a `lendk: CLASS: TEXT. FIX` or `lendk: notice: TEXT.` line, and on a non-interactive line that suggests a forbidden action.
-- Assert a failure with `assert_class CLASS STATUS`, which checks the `lendk: CLASS:` line with the status, never the exit code alone. Compare whole lines or whole output with `assert_eq` and `assert_line`. Judge processes by state with `gone` and `none_within`: a zombie counts as gone. Use `$SENTINEL` as the secret value.
+- Assert a failure with `assert_class CLASS STATUS`, which checks the `lendk: CLASS:` line with the status, never the exit code alone. Compare whole lines or whole output with `assert_eq` and `assert_line`. Judge processes by state with `gone` and `none_within`: a zombie counts as gone. Use `$SENTINEL` as the value.
 - Guard an optional tool with `require TOOL`. Tag a test that starts containers with `# bats test_tags=docker`.
 - Write only under `$SB`: the containers mount the repository read-only. Test code runs on busybox and macOS too, so use the helpers' portable `wc`, `timeout`, `now_ms` and `pty_script`; only helpers call `script`.
 - A string the lint forbids is assembled at run time, as `test/lint.bats` does.

@@ -95,7 +95,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "map violations, on their row or as a problem line" {
+@test "check reports a map violation on its row, or as a problem line when no row holds it" {
 	map 'bad! K1' 'stub K1 @nope' 'stub K1'
 	keys K1
 	run_lendk sync
@@ -106,7 +106,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_line "$output" "# problem: $MAP:1: 'bad!' is not a valid command name (fix the line)"
 }
 
-@test "a missing key" {
+@test "check reports a key missing from the store on each row that uses it" {
 	healthy
 	rm "$SB/store/env/K2.gpg"
 	run_lendk check
@@ -115,7 +115,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "a command not found" {
+@test "check reports a mapped command not on PATH outside the shim directory" {
 	map 'nothere K1'
 	keys K1
 	run_lendk sync
@@ -126,7 +126,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "no shim, a stale shim, and a stray shim" {
+@test "check reports a missing, a stale and a stray shim, each with lendk sync as the fix" {
 	healthy
 	rm "$SHIMS/stub"
 	run_lendk check
@@ -143,7 +143,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "foreign files in the shim directory, named like a mapped command or not" {
+@test "check reports a foreign file in the shim directory, named like a mapped command or not" {
 	healthy
 	printf 'mine\n' >"$SHIMS/notes"
 	printf '#!/bin/sh\necho mine\n' >"$SHIMS/stub"
@@ -154,7 +154,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "a shim whose lendk path is not executable" {
+@test "check reports a shim whose lendk path is not executable" {
 	map 'stub K1'
 	keys K1
 	mkdir "$SB/opt"
@@ -166,7 +166,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "unsafe map and shim directory" {
+@test "check reports a map and a shim directory writable by others, without reading the store" {
 	healthy
 	chmod 770 "$SHIMS"
 	chmod 660 "$MAP"
@@ -176,14 +176,14 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	no_reads
 }
 
-@test "the shim directory is not on PATH" {
+@test "check reports a shim directory not on PATH" {
 	healthy
 	PATH=${PATH#"$SHIMS":} run_lendk check
 	assert_eq "$output" "$HEAD"$'\n'"# problem: $SHIMS is not on PATH (ask the user)"$'\n@g\tK2\tok\nstub\tK1 @g\tok'
 	assert_eq "$status" 1
 }
 
-@test "shadowed, naming the earlier path" {
+@test "check reports a shadowed shim, naming the earlier path" {
 	healthy
 	mkdir "$SB/early"
 	ln -s "$FIXTURES/stub-target" "$SB/early/stub"
@@ -194,7 +194,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "a GnuPG below 2.4" {
+@test "check reports a GnuPG below 2.4" {
 	healthy
 	stub_gpg 2.2.27
 	run_lendk check
@@ -202,7 +202,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 	assert_eq "$status" 1
 }
 
-@test "a mapped key set in the environment, unless lendk injected it" {
+@test "check reports a mapped key set in the environment, unless lendk injected it" {
 	healthy
 	K2='set' run_lendk check
 	assert_line "$output" $'@g\tK2\tK2 is set in the environment, which overrides the store (ask the user)'

@@ -32,7 +32,7 @@ setup() {
 	git -C "$SB/src" init -q
 	git -C "$SB/src" add -A
 	git -C "$SB/src" -c user.name=test -c user.email=test commit -qm src
-	quickstart
+	from_source_setup
 }
 
 # login_env CMD...: CMD in $HOME in an environment built from scratch, as a login would start it.
@@ -41,9 +41,10 @@ login_env() {
 		PASSWORD_STORE_DIR="$PASSWORD_STORE_DIR" "$@")
 }
 
-# quickstart: the from-source setup (clone, make install, init sh, add) with a local clone source and the store entry written for the
-# fake pass; command 3 starts the login shells that run the later commands. Then the other init blocks.
-quickstart() {
+# from_source_setup: clone, make install, init sh in ~/.profile and add, from a local clone source,
+# with the store entry written for the fake pass; the init line in ~/.profile reaches the login
+# shells that run the later commands. Then the other init blocks.
+from_source_setup() {
 	login_env bash -c "git clone -q $(printf %q "$SB/src") lendk && make -s -C lendk install"
 	login_env bash -c '~/.local/bin/lendk init sh >> ~/.profile'
 	printf '%s\n' "$SENTINEL" >"$SB/store/env/GH_TOKEN.gpg"
@@ -71,7 +72,7 @@ decrypts() {
 	printf '%s\n' "${#calls[@]}"
 }
 
-@test "the quick start installs lendk, writes the map and the shim, and the parent lacks GH_TOKEN" {
+@test "the from-source setup installs lendk, writes the map and the shim, and the parent lacks GH_TOKEN" {
 	[[ -x $HOME/.local/bin/lendk && -f $HOME/.local/share/lendk/shims/gh ]]
 	assert_eq "$(<"$HOME/.config/lendk/map")" $'gh GH_TOKEN\nouter GH_TOKEN'
 	run login_env bash -lc 'printf "%s|" "${GH_TOKEN-unset}"; command -v gh'
@@ -108,7 +109,7 @@ decrypts() {
 	assert_eq "$(decrypts)" 1
 }
 
-@test "after the quick start, systemd's environment.d generator puts the shim directory first" {
+@test "after the from-source setup, systemd's environment.d generator puts the shim directory first" {
 	require environment-d
 	run env -i HOME="$HOME" PATH=/usr/bin:/bin /usr/lib/systemd/user-environment-generators/30-systemd-environment-d-generator
 	[[ $'\n'$output == *$'\n'"PATH=$HOME/.local/share/lendk/shims:"* ]]

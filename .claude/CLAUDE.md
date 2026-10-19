@@ -7,7 +7,7 @@ A shim per mapped command sits first on PATH and calls `lendk run -- CMD`, which
 - `CODING_STANDARDS.md`: how code, tests, docs and commits are written, and the process failures a review flags. Read it before writing code in `bin/lendk`, `install.sh` or `test/`, a doc, or a commit.
 - `GLOSSARY.md`: the domain terms. `docs/adr/`: the decisions and their reasons. No doc ranks above another: tests pin the public interface, and a conflict between code, tests and docs goes to the maintainer as an issue.
 - `README.md`: the user manual, holding the quick start and the installation prompt for AI agents. `skills/lendk/`: the agent skill, `SKILL.md` plus `references/setup.md`.
-- `test/*.bats`: the suite, one file per verb or concern. `test/frozen/`: every 1.x entry of the public interface, which `test/contract.bats` checks `--help` against. `test/helpers/`: sandbox, GnuPG and pseudo-terminal helpers. `test/fixtures/`: the fake `pass`, the stub target, the recording pinentry. `test/lint-repo.bash`: the repo lint. `test/bench/bench.bash`: the benchmark. `test/docker/`: the two test images.
+- `test/*.bats`: the suite, one file per verb or concern. `test/frozen/`: the frozen 1.x verb synopses, name lists, classes with exit hints, FIX texts, variable names and shim text, which `test/contract.bats` checks `--help` against. `test/helpers/`: sandbox, GnuPG and pseudo-terminal helpers. `test/fixtures/`: the fake `pass`, the stub target, the recording pinentry. `test/lint-repo.bash`: the repo lint. `test/bench/bench.bash`: the benchmark. `test/docker/`: the two test images.
 - `Makefile`: the gates, plus `install`, `uninstall` and `dist`. `docs/release.md`: the release steps. `CHANGELOG.md`: the only place for history.
 
 ## Acceptance criteria for every task

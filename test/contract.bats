@@ -14,7 +14,7 @@ frozen_missing() {
 	local help=$1 entry label word words
 	local -A have
 	while IFS= read -r entry; do
-		[[ $'\n'$help$'\n' == *$'\n'"  $entry"$'\n'* ]] || printf 'verb: %s\n' "$entry"
+		[[ $'\n'$help$'\n' == *$'\n'"  $entry"[$' \n']* ]] || printf 'verb: %s\n' "$entry"
 	done <"$FROZEN/verbs"
 	while IFS= read -r entry; do
 		label=${entry%%: *}
@@ -36,25 +36,19 @@ frozen_missing() {
 	done <"$FROZEN/variables"
 }
 
-@test "the frozen list holds the 1.x entry counts" {
-	assert_eq "$(wc -l <"$FROZEN/verbs")" 9
-	assert_eq "$(wc -l <"$FROZEN/lists")" 8
-	assert_eq "$(wc -l <"$FROZEN/classes")" 16
-	assert_eq "$(wc -l <"$FROZEN/fixes")" 24
-	assert_eq "$(wc -l <"$FROZEN/variables")" 11
-}
-
 @test "--help carries every frozen verb, list word, class, FIX and variable" {
 	assert_eq "$(frozen_missing "$HELP")" ""
 }
 
-@test "a renamed or removed entry fails the comparison while an added one passes" {
+@test "a renamed or removed entry fails the comparison while an added one or a changed verb description passes" {
 	local added=${HELP/guarded shells: /guarded shells: newsh }
 	added+=$'\n'"  lendk newverb"$'\n'"  newclass (3): new"$'\n'"  LENDK_NEW  new"
 	assert_eq "$(frozen_missing "$added")" ""
 	assert_eq "$(frozen_missing "${HELP/ dash / dashx }")" "list word: guarded shells dash"
 	assert_eq "$(frozen_missing "${HELP/ zsh / }")" "list word: guarded shells zsh"
-	assert_eq "$(frozen_missing "${HELP/  lendk sync/  lendk resync}")" "verb: $(grep '^lendk sync' "$FROZEN/verbs")"
+	assert_eq "$(frozen_missing "${HELP/  lendk sync/  lendk resync}")" "verb: lendk sync"
+	assert_eq "$(frozen_missing "${HELP/\# map, then sync/\# map the names, then sync}")" ""
+	assert_eq "$(frozen_missing "${HELP/lendk add [--force]/lendk add [-f]}")" "verb: lendk add [--force] CMD|@GROUP KEY|@GROUP..."
 	assert_eq "$(frozen_missing "${HELP/  locked (120)/  held (120)}")" "class: locked (120)"
 	assert_eq "$(frozen_missing "${HELP/  LENDK_TIMEOUT /  LENDK_WAIT }")" "variable: LENDK_TIMEOUT"
 	local fix

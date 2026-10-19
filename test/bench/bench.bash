@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # make bench: shim overhead with keys preset and a 50-entry map, as paired, interleaved runs
 # after warmups; a 3-key run with real GnuPG, a warm cache and a key at s2k-count 8388608.
-# Writes test/bench/out/nfr1.txt and nfr2.txt and exits 1 on a miss.
+# Writes test/bench/out/shim-overhead.txt and decrypt-3-keys.txt and exits 1 on a miss.
 set -u -o pipefail
 # A fixed, minimal environment keeps runs comparable and keeps the caller's variables out.
 [[ -n ${BENCH_CLEAN-} ]] || exec env -i BENCH_CLEAN=1 BENCH_RUNS="${BENCH_RUNS:-200}" PATH=/usr/bin:/bin \
@@ -51,7 +51,7 @@ p95=${sorted[(runs * 95 + 99) / 100 - 1]}
 ms() { printf '%d.%01d' $(($1 / 1000)) $((($1 < 0 ? -$1 : $1) % 1000 / 100)); }
 line="shim overhead over a direct exec, $runs runs: median $(ms "$median") ms (max 20), p95 $(ms "$p95") ms (max 40)"
 mkdir -p "$root/test/bench/out"
-printf '%s\n' "$line" | tee "$root/test/bench/out/nfr1.txt"
+printf '%s\n' "$line" | tee "$root/test/bench/out/shim-overhead.txt"
 miss=0
 ((median <= 20000 && p95 <= 40000)) || miss=1
 
@@ -81,6 +81,6 @@ done
 mapfile -t sorted < <(printf '%s\n' "${times[@]}" | sort -n)
 median=${sorted[runs / 2]}
 line="3-key run with a warm cache at s2k-count 8388608, $runs runs: median $(ms "$median") ms (max 500)"
-printf '%s\n' "$line" | tee "$root/test/bench/out/nfr2.txt"
+printf '%s\n' "$line" | tee "$root/test/bench/out/decrypt-3-keys.txt"
 ((median <= 500000)) || miss=1
 ((!miss))

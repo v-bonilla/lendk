@@ -246,14 +246,16 @@ login() {
 }
 
 @test "installer: a rerun with another --prefix replaces the login block" {
+	local one
 	inst --prefix "$SB/one"
 	assert_eq "$status" 0
+	one=$(<"$HOME/.profile")
+	assert_line "$one" "case :\$PATH: in *:'$SB/one/bin':*) ;; *) PATH='$SB/one/bin':\$PATH ;; esac"
 	inst --prefix "$SB/two"
 	assert_eq "$status" 0
 	assert_line "$output" "updated: $HOME/.profile (lendk-install block)"
 	assert_eq "$(grep -c '^# >>> lendk-install >>>$' "$HOME/.profile")" 1
-	grep -qF "$SB/two/bin" "$HOME/.profile"
-	[[ $(<"$HOME/.profile") != *"$SB/one/bin"* ]]
+	assert_eq "$(<"$HOME/.profile")" "${one//"$SB/one/bin"/"$SB/two/bin"}"
 }
 
 @test "installer: on macOS without Homebrew it points to brew.sh and installs nothing" {
