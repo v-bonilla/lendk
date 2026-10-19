@@ -46,6 +46,19 @@ sums() { (cd "$LENDK_SHIMS" && cksum -- *); }
 	tr '\0' '\n' <"${logs[0]}/env" | grep -qx 'K1=one'
 }
 
+@test "sync run by bare name through a PATH symlink names lendk by the symlink, not its target" {
+	map 'stub K1'
+	mkdir "$SB/link"
+	ln -s "$LENDK" "$SB/link/lendk"
+	PATH=$SB/link:$PATH LENDK=lendk run_lendk sync
+	assert_eq "$status" 0
+	assert_eq "$stderr" ""
+	assert_eq "$(cat "$LENDK_SHIMS/stub")" "$(expected_shim "$SB/link/lendk" stub)"
+	"$LENDK_SHIMS/stub"
+	local logs=("$SB"/log/target.*)
+	tr '\0' '\n' <"${logs[0]}/env" | grep -qx 'K1=one'
+}
+
 @test "a lendk path holding a single quote is escaped, and the shim runs" {
 	map 'stub K1'
 	mkdir "$SB/it's"

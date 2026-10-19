@@ -11,6 +11,7 @@ The common habit, `export OPENAI_API_KEY=...` in a shell rc file, gives every ke
 - A prefix command such as `x run -- cmd`: humans forget it, and agents do not know it.
 - gopass `env` (a whole subtree), fnox and secretspec (manifests), CyberArk summon, Infisical `run` and OpenBao agent exec (servers), sops `exec-env` (an encrypted file): each needs a prefix command or scopes keys wider than one command.
 - lendk writing to the store, or a store of its own: the human already keeps keys in pass with `pass insert` and `pass edit`. Since lendk reads the value at each run, rotating a key is one `pass edit` with no follow-up step.
+- A link to lendk in the shim directory, with lendk dispatching on its own name (`argv[0]`): it saves one `/bin/sh` start per call, a median 1.2 ms over a direct exec on Linux with dash. But bash, dash, zsh and `execvp` skip a symlink whose lendk is gone and run the next copy of the command on PATH, without its keys and with no class line, where a script shim prints `lendk-missing` and exits 127. `resolve`'s guard against a foreign shim directory and the installer's uninstall find a shim by its second line, which a link lacks. A hard link never dangles, but fails across file systems and keeps a replaced lendk running until the next sync.
 
 ## Consequences
 
