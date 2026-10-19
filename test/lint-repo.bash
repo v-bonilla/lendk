@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repository lint: content rules, portability of bin/lendk, one file in bin/.
+# Repository lint: content rules, no reference to the retired spec or its FR, NFR and AC IDs, portability of bin/lendk, one file in bin/.
 # Usage: test/lint-repo.bash [ROOT]; prints one line per problem and exits 1 when there is any.
 set -u -o pipefail
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -28,6 +28,11 @@ while IFS= read -r hit; do
 	[[ $stripped =~ /(home|Users)/[A-Za-z0-9_.-]+ ]] && problem "$hit: home path other than /home/alice"
 done < <(grep -nHE -e '/(home|Users)/[A-Za-z0-9_.-]+' -- "${files[@]}")
 while IFS= read -r hit; do problem "$hit: key-shaped value"; done < <(grep -nHE -e 'gh[pousr]_[A-Za-z0-9]{36}|AKIA[0-9A-Z]{16}|sk-[A-Za-z0-9_-]{32,}' -- "${files[@]}")
+
+# The spec retired into tests, ADRs and docs; H, A and G IDs are too short to match safely.
+retired='docs/p''rd[.]md'
+while IFS= read -r hit; do problem "$hit: retired spec reference"; done < <(grep -nHE -e "$retired" -- "${files[@]}")
+while IFS= read -r hit; do problem "$hit: retired spec ID"; done < <(grep -nHE -e '(^|[^A-Za-z0-9_])(N?FR|AC)[0-9]+([^A-Za-z0-9_]|$)' -- "${files[@]}")
 if ! grep -q '^MIT License' LICENSE 2>/dev/null || ! grep -q 'v-bonilla' LICENSE; then problem "LICENSE: not MIT held by v-bonilla"; fi
 
 # bin/ holds one file.
