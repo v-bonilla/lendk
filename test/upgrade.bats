@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR45 to FR50, AC7: upgrade, run on a copy of lendk installed in the sandbox, against fixture releases
+# Upgrade, run on a copy of lendk installed in the sandbox, against fixture releases
 # served from file:// or, for https://, by stub download tools.
 # shellcheck disable=SC2012,SC2016,SC2030,SC2031,SC2034
 
@@ -173,7 +173,7 @@ calls() { cat "$SB"/log/"$1".*/argv 2>/dev/null | LC_ALL=C sort; }
 # sum FILE: its SHA-256.
 sum() { sha256 "$1" | cut -d ' ' -f 1; }
 
-@test "FR45, NFR5: upgrade replaces lendk with the latest release and touches nothing else" {
+@test "upgrade replaces lendk with the latest release and touches nothing else" {
 	local before after
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
 	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
@@ -200,7 +200,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(compgen -G "$SB/log/pass.*")" ""
 }
 
-@test "FR45: an argument is usage, stdin is never read, and a terminal changes only the FIX" {
+@test "an argument is usage, stdin is never read, and a terminal changes only the FIX" {
 	local never
 	base "$REL/new"
 	run_lendk upgrade x
@@ -220,7 +220,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$stderr" "lendk: upgrade: $LENDK is a symlink, so another tool manages this install. Upgrade lendk the way it was installed."
 }
 
-@test "FR46: an https base goes through curl with https-only options" {
+@test "an https base goes through curl with https-only options" {
 	web new
 	run_lendk upgrade
 	assert_eq "$status" 0
@@ -234,7 +234,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	cmp "$LENDK" "$REL/new.src/lendk-99.0.0/bin/lendk"
 }
 
-@test "FR46: without curl, wget downloads, with --https-only where it has it" {
+@test "without curl, wget downloads, with --https-only where it has it" {
 	local mode opt lines
 	toolbox
 	rm "$SB/bin/curl"
@@ -255,7 +255,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-@test "FR46: a base that is not https:// or file:///, or holds a blank, is usage, and a set base is named in a notice" {
+@test "a base that is not https:// or file:///, or holds a blank, is usage, and a set base is named in a notice" {
 	local v
 	tool curl
 	for v in http://releases.test/new ftp://releases.test/new "file://${REL#/}/new" "file://$REL/new x" $'https://releases.test/new\tx' $'https://releases.test/new\001x'; do
@@ -272,7 +272,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$stderr" "lendk: notice: the release comes from file://$REL/same, set by LENDK_INSTALL_BASE_URL."
 }
 
-@test "FR46, NFR4: a missing tool is upgrade before anything is fetched, and a file base needs no curl or wget" {
+@test "a missing tool is upgrade before anything is fetched, and a file base needs no curl or wget" {
 	local t
 	for t in tar gzip sha256sum; do
 		toolbox "$t" shasum
@@ -287,7 +287,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$output" "upgraded lendk $VERSION to 99.0.0 at $LENDK"
 }
 
-@test "FR46: a mapped curl runs without its shim and gets no key, and the tools' output stays out" {
+@test "a mapped curl runs without its shim and gets no key, and the tools' output stays out" {
 	local log
 	printf 'curl K1\n' >"$MAP" && chmod 600 "$MAP"
 	printf '%s\n' "$SENTINEL" >"$SB/store/env/K1.gpg"
@@ -308,7 +308,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-@test "FR47: a failed download and one cut short change nothing" {
+@test "a failed download and one cut short change nothing" {
 	local half
 	web new fail
 	run_lendk upgrade
@@ -322,7 +322,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	nothing "cannot download file://$SB/none/latest/download/lendk.tar.gz"
 }
 
-@test "FR47: another checksum, or SHA256SUMS without the asset, changes nothing" {
+@test "another checksum, or SHA256SUMS without the asset, changes nothing" {
 	local got
 	cp -R "$REL/new" "$SB/rel"
 	got=$(sum "$SB/rel/latest/download/lendk.tar.gz")
@@ -335,7 +335,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	nothing "lendk.tar.gz has SHA-256 $got, but SHA256SUMS lists nothing"
 }
 
-@test "FR47: an archive without lendk, or holding a file that is not lendk, changes nothing" {
+@test "an archive without lendk, or holding a file that is not lendk, changes nothing" {
 	mkdir -p "$SB/a/lendk-99.0.0" "$SB/b/lendk-99.0.0/bin" "$SB/c/lendk-99.0.0/bin" "$SB/c/lendk-98.0.0/bin"
 	cp "$ROOT/LICENSE" "$SB/a/lendk-99.0.0/"
 	sed '2s/.*/# another tool/' "$REL/new.src/lendk-99.0.0/bin/lendk" >"$SB/b/lendk-99.0.0/bin/lendk"
@@ -354,7 +354,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-@test "FR47: a lendk that does not run under this bash changes nothing" {
+@test "a lendk that does not run under this bash changes nothing" {
 	mkdir -p "$SB/a/lendk-99.0.0/bin"
 	printf '#!/usr/bin/env bash\n%s\nexit 125\n' "$(sed -n 2p "$LENDK")" >"$SB/a/lendk-99.0.0/bin/lendk"
 	pack "$SB/a" "$SB/rel"
@@ -363,7 +363,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	nothing "the downloaded lendk does not run under bash $(bash -c 'printf %s "${BASH_VERSION%%[!0-9.]*}"')"
 }
 
-@test "FR47: a candidate that exits non-zero, or prints anything but lendk X.Y.Z, changes nothing" {
+@test "a candidate that exits non-zero, or prints anything but lendk X.Y.Z, changes nothing" {
 	local body n=0 v
 	v=$(bash -c 'printf %s "${BASH_VERSION%%[!0-9.]*}"')
 	for body in 'echo "lendk 99.0.0"; exit 1' 'echo "x lendk 99.0.0"' 'echo "lendk 99.0.0 x"' 'echo "lendk 99.0.0"; echo more' \
@@ -375,7 +375,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-@test "FR47: the member's directory and --version name one version, written without leading zeros or overflow" {
+@test "the member's directory and --version name one version, written without leading zeros or overflow" {
 	candidate a 99.0.0 'echo "lendk 98.0.0"'
 	run_lendk upgrade
 	nothing "lendk.tar.gz holds no lendk-98.0.0/bin/lendk"
@@ -387,7 +387,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-@test "FR47: an archive that does not unpack, or a fetch that ends without a result, is a local failure" {
+@test "an archive that does not unpack, or a fetch that ends without a result, is a local failure" {
 	mkdir -p "$SB/rel/latest/download"
 	printf 'not an archive\n' >"$SB/rel/latest/download/lendk.tar.gz"
 	(cd "$SB/rel/latest/download" && sha256 lendk.tar.gz >SHA256SUMS)
@@ -410,7 +410,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	unchanged
 }
 
-@test "FR46: no other verb reads LENDK_INSTALL_BASE_URL" {
+@test "no other verb reads LENDK_INSTALL_BASE_URL" {
 	local verb out err rc
 	for verb in check sync; do
 		run_lendk "$verb"
@@ -424,7 +424,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$rc" 0
 }
 
-@test "FR46, NFR4: with shasum and no sha256sum the upgrade succeeds" {
+@test "with shasum and no sha256sum the upgrade succeeds" {
 	toolbox sha256sum shasum
 	if command -v sha256sum >/dev/null; then
 		printf '#!/bin/sh\necho "$*" >>"$STUB_LOG/calls.shasum"\n[ "$1" = -a ] && [ "$2" = 256 ] || exit 2\nexec %s "$3"\n' "$(command -v sha256sum)" >"$SB/min/shasum"
@@ -439,7 +439,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	[[ $(<"$SB/log/calls.shasum") == "-a 256 $TMPDIR/lendk."??????"/lendk.tar.gz" ]]
 }
 
-@test "FR46: the tools get /dev/null as stdin" {
+@test "the tools get /dev/null as stdin" {
 	local f
 	printf '#!/bin/sh\ncat >>"$STUB_LOG/gzip.stdin"\necho call >>"$STUB_LOG/gzip.calls"\nexec %s "$@"\n' "$(command -v gzip)" >"$SB/bin/gzip"
 	chmod +x "$SB/bin/gzip"
@@ -454,7 +454,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-@test "FR46: an unset or empty LENDK_INSTALL_BASE_URL is the project's releases, with no notice" {
+@test "an unset or empty LENDK_INSTALL_BASE_URL is the project's releases, with no notice" {
 	local how lines
 	toolbox
 	for how in unset empty; do
@@ -474,7 +474,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-@test "FR47: a release that is not newer is up to date, also for an install ahead of it, compared number by number" {
+@test "a release that is not newer is up to date, also for an install ahead of it, compared number by number" {
 	base "$REL/same"
 	run_lendk upgrade
 	assert_eq "$status" 0
@@ -499,7 +499,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	unchanged
 }
 
-@test "FR48: a symlinked lendk is refused before any fetch" {
+@test "a symlinked lendk is refused before any fetch" {
 	mkdir "$SB/v1"
 	mv "$LENDK" "$SB/v1/lendk"
 	ln -s "$SB/v1/lendk" "$LENDK"
@@ -513,7 +513,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(ls -A "$SB/v1")" lendk
 }
 
-@test "FR48: a file that is not lendk's, or a directory the user cannot write, is refused before any fetch" {
+@test "a file that is not lendk's, or a directory the user cannot write, is refused before any fetch" {
 	[[ $(id -u) != 0 ]] || skip "root writes to any directory"
 	web new
 	NOTICE=
@@ -528,7 +528,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(calls curl)" ""
 }
 
-@test "FR48: an install whose version is not X.Y.Z is refused before any fetch" {
+@test "an install whose version is not X.Y.Z is refused before any fetch" {
 	local v
 	web new
 	NOTICE=
@@ -541,7 +541,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(calls curl)" ""
 }
 
-@test "FR49: the upgrade is a rename: a new inode, and an open descriptor keeps the old bytes" {
+@test "the upgrade is a rename: a new inode, and an open descriptor keeps the old bytes" {
 	local fd
 	exec {fd}<"$LENDK"
 	base "$REL/new"
@@ -554,7 +554,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(ls -A "$BIN")" lendk
 }
 
-@test "FR49: two upgrades at once, and add calls alongside, all succeed and leave one whole file" {
+@test "two upgrades at once, and add calls alongside, all succeed and leave one whole file" {
 	local i p pids=()
 	base "$REL/new"
 	for i in 1 2; do
@@ -580,7 +580,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-@test "FR49: sync runs through the new file, and with an invalid map line the upgrade stands" {
+@test "sync runs through the new file, and with an invalid map line the upgrade stands" {
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
 	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
 	base "$REL/new"
@@ -624,7 +624,7 @@ stopped() {
 	unchanged
 }
 
-@test "FR50: a download that never returns gives upgrade after LENDK_TIMEOUT and before LENDK_TIMEOUT + 2 s" {
+@test "a download that never returns gives upgrade after LENDK_TIMEOUT and before LENDK_TIMEOUT + 2 s" {
 	local mode
 	for mode in hang stubborn; do
 		rm -rf "$SB/log"/*
@@ -637,7 +637,7 @@ stopped() {
 	done
 }
 
-@test "FR50: a candidate whose --version never returns gives upgrade within LENDK_TIMEOUT + 2 s and leaves nothing" {
+@test "a candidate whose --version never returns gives upgrade within LENDK_TIMEOUT + 2 s and leaves nothing" {
 	local body n=0
 	for body in 'sleep 3600' 'trap "" TERM; sleep 3600'; do
 		n=$((n + 1))
@@ -649,7 +649,7 @@ stopped() {
 	done
 }
 
-@test "FR50: TERM, INT, HUP or KILL during the fetch leaves no tool, watchdog, temporary directory or staged file" {
+@test "TERM, INT, HUP or KILL during the fetch leaves no tool, watchdog, temporary directory or staged file" {
 	local sig mode
 	for mode in hang stubborn; do
 		for sig in TERM INT HUP KILL; do
@@ -665,7 +665,7 @@ stopped() {
 	done
 }
 
-@test "FR50, NFR5: KILL between staging and the rename removes the staged file and keeps lendk" {
+@test "KILL between staging and the rename removes the staged file and keeps lendk" {
 	local i staged=''
 	base "$REL/new"
 	set -m
@@ -685,11 +685,11 @@ stopped() {
 	stopped
 }
 
-@test "AC7: install.sh, then upgrade, against make dist releases" {
+@test "install.sh, then upgrade, against make dist releases" {
 	require git
 	require make
 	local d src=$SB/src sys=$SB/sys before
-	# sums: the bytes AC7 says upgrade leaves alone.
+	# sums: the bytes upgrade leaves alone.
 	sums() {
 		find "$HOME/.profile" "$MAP" "$SB/store" "$SB/skills" -type f | LC_ALL=C sort | while IFS= read -r d; do cksum "$d"; done
 	}
@@ -746,7 +746,7 @@ stopped() {
 	assert_eq "$(sums)" "$before"
 }
 
-@test "FR50: TERM, INT or HUP before the watchdog starts removes both files and is re-raised" {
+@test "TERM, INT or HUP before the watchdog starts removes both files and is re-raised" {
 	local sig i rc
 	base "$REL/new"
 	for sig in TERM INT HUP; do
@@ -770,7 +770,7 @@ stopped() {
 	done
 }
 
-@test "FR50: TERM, INT, HUP or KILL after an expiry, while the watchdog stops a tool that ignores TERM, leaves nothing" {
+@test "TERM, INT, HUP or KILL after an expiry, while the watchdog stops a tool that ignores TERM, leaves nothing" {
 	local sig i err
 	for sig in TERM INT HUP KILL; do
 		rm -rf "$SB/log"/*
@@ -795,7 +795,7 @@ stopped() {
 	done
 }
 
-@test "FR50, NFR5: when the watchdog dies, its rescue removes the staged file of a killed lendk" {
+@test "when the watchdog dies, its rescue removes the staged file of a killed lendk" {
 	local i p staged='' inner=''
 	base "$REL/new"
 	set -m

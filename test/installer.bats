@@ -73,7 +73,7 @@ login() {
 	env -i HOME="$HOME" PATH=/usr/bin:/bin "$BASH" -lc 'printf "%s\n" "$PATH"; command -v lendk; command -v bash' </dev/null
 }
 
-@test "FR42: installer: a fresh install puts lendk in ~/.local/bin and the shims first on the login PATH" {
+@test "installer: a fresh install puts lendk in ~/.local/bin and the shims first on the login PATH" {
 	inst
 	assert_eq "$status" 0
 	assert_eq "$final" "lendk-install: ok: lendk $VERSION installed to $HOME/.local/bin/lendk"
@@ -89,7 +89,7 @@ login() {
 	assert_line "$output" "  pass init 'Your Name'"
 }
 
-@test "FR42: installer: a rerun changes nothing, and earlier content of the login file stays" {
+@test "installer: a rerun changes nothing, and earlier content of the login file stays" {
 	printf 'export EDITOR=vi\n' >"$HOME/.profile"
 	inst
 	local before
@@ -101,7 +101,7 @@ login() {
 	assert_eq "$(sed -n 1p "$HOME/.profile")" 'export EDITOR=vi'
 }
 
-@test "FR42: installer: zsh users also get ~/.zshenv, and ~/.bash_profile wins over ~/.profile" {
+@test "installer: zsh users also get ~/.zshenv, and ~/.bash_profile wins over ~/.profile" {
 	: >"$HOME/.bash_profile"
 	INST_SHELL=/bin/zsh inst
 	assert_eq "$status" 0
@@ -110,7 +110,7 @@ login() {
 	[[ ! -e $HOME/.profile ]]
 }
 
-@test "FR42: installer: a first bash older than 4.4 gets a newer one put first in the block" {
+@test "installer: a first bash older than 4.4 gets a newer one put first in the block" {
 	mkdir -p "$SB/good"
 	ln -s "$BASH" "$SB/good/bash"
 	rm "$STUB/bash"
@@ -124,7 +124,7 @@ login() {
 	assert_eq "${out[2]}" "$SB/good/bash"
 }
 
-@test "FR40: installer: --version picks the release by tag, and a missing release is a download failure" {
+@test "installer: --version picks the release by tag, and a missing release is a download failure" {
 	inst --version "$VERSION"
 	assert_eq "$status" 0
 	inst --version 9.9.9
@@ -132,7 +132,7 @@ login() {
 	assert_eq "$final" "lendk-install: download: cannot download file://$REL/download/v9.9.9/lendk.tar.gz"
 }
 
-@test "FR40: installer: a checksum mismatch installs nothing" {
+@test "installer: a checksum mismatch installs nothing" {
 	cp -R "$REL" "$SB/rel"
 	printf '%064d  lendk.tar.gz\n' 0 >"$SB/rel/latest/download/SHA256SUMS"
 	REL=$SB/rel inst
@@ -141,7 +141,7 @@ login() {
 	[[ ! -e $HOME/.local/bin/lendk && ! -e $HOME/.profile ]]
 }
 
-@test "FR41: installer: missing deps print the package manager command and stop; --install-deps runs it" {
+@test "installer: missing deps print the package manager command and stop; --install-deps runs it" {
 	rm "$STUB/pass"
 	stub sudo 'echo "sudo $*" >>"$HOME/pm.log"; [ "$1" = -n ] && shift; exec "$@"'
 	stub "$PM" "echo \"$PM \$*\" >>\"\$HOME/pm.log\"; printf '#!/bin/sh\nexit 0\n' >'$STUB/pass'; chmod +x '$STUB/pass'"
@@ -157,7 +157,7 @@ login() {
 	[[ -x $HOME/.local/bin/lendk ]]
 }
 
-@test "FR41: a failed package manager run prints the command to run by hand, and sudo -v when sudo is in it" {
+@test "a failed package manager run prints the command to run by hand, and sudo -v when sudo is in it" {
 	rm "$STUB/pass"
 	stub sudo 'echo "sudo: a password is required" >&2; exit 1'
 	stub "$PM" 'exit 1'
@@ -171,7 +171,7 @@ login() {
 	[[ ! -e $HOME/.local/bin/lendk ]]
 }
 
-@test "FR41: the package command refreshes the index and skips recommended packages for each manager" {
+@test "the package command refreshes the index and skips recommended packages for each manager" {
 	[[ $(uname -s) == Linux ]] || skip "Linux package managers"
 	rm "$STUB/pass"
 	local pm want
@@ -189,7 +189,7 @@ login() {
 	done
 }
 
-@test "FR41: pacman never runs a partial upgrade; on failure the line says to run pacman -Syu first" {
+@test "pacman never runs a partial upgrade; on failure the line says to run pacman -Syu first" {
 	[[ $(uname -s) == Linux ]] || skip "Linux package managers"
 	rm "$STUB/pass"
 	stub sudo 'echo "sudo $*" >>"$HOME/pm.log"; [ "$1" = -n ] && shift; exec "$@"'
@@ -199,7 +199,7 @@ login() {
 	assert_eq "$(<"$HOME/pm.log")" 'sudo -n pacman -S --needed --noconfirm pass'
 }
 
-@test "FR39: installer: piped into bash -s and sh -s, as curl | bash runs it, with a package manager that reads stdin" {
+@test "installer: piped into bash -s and sh -s, as curl | bash runs it, with a package manager that reads stdin" {
 	local shell
 	for shell in bash sh; do
 		rm -rf "$HOME" && mkdir -p "$HOME"
@@ -215,7 +215,7 @@ login() {
 	done
 }
 
-@test "FR41: installer: without bash 4.4 it names bash as a missing dependency" {
+@test "installer: without bash 4.4 it names bash as a missing dependency" {
 	[[ ! -x /opt/homebrew/bin/bash && ! -x /usr/local/bin/bash ]] || skip "a newer bash sits in a well-known directory"
 	rm "$STUB/bash"
 	inst
@@ -223,7 +223,42 @@ login() {
 	assert_eq "$final" "lendk-install: missing-deps: missing: bash>=4.4; no supported package manager found, install them by hand"
 }
 
-@test "FR41: installer: on macOS without Homebrew it points to brew.sh and installs nothing" {
+@test "installer: without curl or wget, or without tar, it names the missing tool" {
+	rm "$STUB/curl"
+	inst
+	assert_eq "$status" 1
+	assert_eq "$final" "lendk-install: missing-deps: missing: curl; no supported package manager found, install them by hand"
+	stub curl 'exit 7'
+	mkdir "$SB/sys"
+	find "$SYS" -mindepth 1 -maxdepth 1 ! -name tar -exec ln -s {} "$SB/sys/" \;
+	SYS=$SB/sys inst
+	assert_eq "$status" 1
+	assert_eq "$final" "lendk-install: missing-deps: missing: tar; no supported package manager found, install them by hand"
+	[[ ! -e $HOME/.local/bin/lendk ]]
+}
+
+@test "installer: zsh users on macOS also get the block in ~/.zprofile" {
+	stub uname 'echo Darwin'
+	INST_SHELL=/bin/zsh inst
+	assert_eq "$status" 0
+	grep -qx '# >>> lendk-install >>>' "$HOME/.zprofile"
+	grep -qx '# >>> lendk-install >>>' "$HOME/.zshenv"
+}
+
+@test "installer: a rerun with another --prefix replaces the login block" {
+	local one
+	inst --prefix "$SB/one"
+	assert_eq "$status" 0
+	one=$(<"$HOME/.profile")
+	assert_line "$one" "case :\$PATH: in *:'$SB/one/bin':*) ;; *) PATH='$SB/one/bin':\$PATH ;; esac"
+	inst --prefix "$SB/two"
+	assert_eq "$status" 0
+	assert_line "$output" "updated: $HOME/.profile (lendk-install block)"
+	assert_eq "$(grep -c '^# >>> lendk-install >>>$' "$HOME/.profile")" 1
+	assert_eq "$(<"$HOME/.profile")" "${one//"$SB/one/bin"/"$SB/two/bin"}"
+}
+
+@test "installer: on macOS without Homebrew it points to brew.sh and installs nothing" {
 	stub uname 'echo Darwin'
 	rm "$STUB/pass"
 	inst --install-deps
@@ -233,7 +268,7 @@ login() {
 	[[ $output != *running:* ]]
 }
 
-@test "FR42: installer: --no-modify-path and --prefix leave every login file alone" {
+@test "installer: --no-modify-path and --prefix leave every login file alone" {
 	inst --no-modify-path --prefix "$SB/p"
 	assert_eq "$status" 0
 	assert_eq "$final" "lendk-install: ok: lendk $VERSION installed to $SB/p/bin/lendk"
@@ -241,7 +276,7 @@ login() {
 	assert_eq "$(ls -A "$HOME")" ''
 }
 
-@test "FR44: installer: --skill-dir copies the agent skill, and --uninstall with it removes the copy" {
+@test "installer: --skill-dir copies the agent skill, and --uninstall with it removes the copy" {
 	inst --skill-dir "$SB/skills"
 	assert_eq "$status" 0
 	diff -r "$ROOT/skills/lendk" "$SB/skills/lendk"
@@ -252,7 +287,7 @@ login() {
 	[[ ! -e $SB/skills/lendk ]]
 }
 
-@test "FR42: installer: with a systemd user session it writes the environment.d file" {
+@test "installer: with a systemd user session it writes the environment.d file" {
 	[[ $(uname -s) == Linux ]] || skip "systemd user sessions are Linux only"
 	stub systemctl 'exit 0'
 	inst
@@ -262,7 +297,7 @@ login() {
 	[[ ! -e $HOME/.config/environment.d/99-lendk.conf ]]
 }
 
-@test "FR44: installer: --uninstall removes the blocks, shims and lendk, never the map or the store" {
+@test "installer: --uninstall removes the blocks, shims and lendk, never the map or the store" {
 	printf 'export EDITOR=vi\n' >"$HOME/.profile"
 	inst
 	ln -s "$FIXTURES/stub-target" "$SB/bin/gh"
@@ -277,7 +312,7 @@ login() {
 	[[ -d $PASSWORD_STORE_DIR ]]
 }
 
-@test "FR44: installer: --uninstall keeps a lendk it did not write" {
+@test "installer: --uninstall keeps a lendk it did not write" {
 	mkdir -p "$HOME/.local/bin"
 	echo 'not lendk' >"$HOME/.local/bin/lendk"
 	inst --uninstall
@@ -285,7 +320,7 @@ login() {
 	assert_eq "$final" "lendk-install: install: $HOME/.local/bin/lendk is not a file the installer wrote, so it stays"
 }
 
-@test "FR43: installer: bad options are usage errors" {
+@test "installer: bad options are usage errors" {
 	inst --bogus
 	assert_eq "$status" 2
 	assert_eq "$final" "lendk-install: usage: unknown option '--bogus'; see --help"
@@ -298,7 +333,7 @@ login() {
 	assert_line "$output" '  --uninstall        remove what this installer added, never the map or the pass store'
 }
 
-@test "FR44: installer: its markers match the ones bin/lendk and the Makefile use" {
+@test "installer: its markers match the ones bin/lendk and the Makefile use" {
 	local m
 	m=$(sed -n 2p "$LENDK")
 	grep -qxF "lendk_mark='$m'" "$ROOT/install.sh"
@@ -306,7 +341,7 @@ login() {
 	grep -qF "${m//\'/}" "$LENDK"
 }
 
-@test "FR39: installer: runs to the end under dash, busybox sh and the system bash" {
+@test "installer: runs to the end under dash, busybox sh and the system bash" {
 	local shell n=0
 	for shell in dash 'busybox sh' /bin/bash; do
 		command -v "${shell%% *}" >/dev/null || continue
@@ -319,7 +354,7 @@ login() {
 	((n >= 1))
 }
 
-@test "FR39: installer: a truncated download installs nothing, since main runs on the last line" {
+@test "installer: a truncated download installs nothing, since main runs on the last line" {
 	local n
 	n=$(wc -l <"$ROOT/install.sh")
 	assert_eq "$(tail -n 1 "$ROOT/install.sh")" 'main "$@"'
@@ -329,7 +364,7 @@ login() {
 	assert_eq "$(ls -A "$HOME")" ''
 }
 
-@test "FR42: installer: a login file without a final newline keeps its last line, across a rerun and an uninstall" {
+@test "installer: a login file without a final newline keeps its last line, across a rerun and an uninstall" {
 	printf 'export FOO=bar' >"$HOME/.profile"
 	inst
 	assert_eq "$status" 0
@@ -343,7 +378,7 @@ login() {
 	assert_eq "$(<"$HOME/.profile")" 'export FOO=bar'
 }
 
-@test "FR42: installer: a quote in the prefix stays quoted in the login block" {
+@test "installer: a quote in the prefix stays quoted in the login block" {
 	local p="$SB/o'brien"
 	inst --prefix "$p"
 	assert_eq "$status" 0
@@ -353,7 +388,7 @@ login() {
 	assert_eq "${out[1]}" "$p/bin/lendk"
 }
 
-@test "FR43: installer: the final line comes on a bad HOME and on a signal; the temporary directory goes" {
+@test "installer: the final line comes on a bad HOME and on a signal; the temporary directory goes" {
 	status=0
 	output=$(env -i PATH="$STUB:$SYS" sh "$ROOT/install.sh" </dev/null 2>&1) || status=$?
 	assert_eq "$status" 2
@@ -377,7 +412,7 @@ exit 1'
 	[[ ${output##*$'\n'} != lendk-install:* ]]
 }
 
-@test "FR40: installer: a base URL other than https:// or file:/// is refused" {
+@test "installer: a base URL other than https:// or file:/// is refused" {
 	status=0
 	output=$(env -i HOME="$HOME" PATH="$STUB:$SYS" LENDK_INSTALL_BASE_URL=http://example.org sh "$ROOT/install.sh" </dev/null 2>&1) || status=$?
 	assert_eq "$status" 2
@@ -386,7 +421,7 @@ exit 1'
 	grep -q -- "--proto '=https'" "$ROOT/install.sh"
 }
 
-@test "FR41: installer: an uninitialized store gets steps a human runs in their own terminal" {
+@test "installer: an uninitialized store gets steps a human runs in their own terminal" {
 	inst
 	assert_line "$output" 'these steps in their own terminal:'
 	assert_line "$output" "  gpg --quick-generate-key 'Your Name' default default never"
@@ -396,7 +431,7 @@ exit 1'
 }
 
 # bats test_tags=docker
-@test "FR39: installer: runs under bash 3.2 and stops on missing deps" {
+@test "installer: runs under bash 3.2 and stops on missing deps" {
 	require docker
 	status=0
 	output=$(docker run --rm --pull never -u "$(id -u):$(id -g)" -e HOME=/tmp -e LENDK_INSTALL_BASE_URL=file:///rel \
@@ -406,7 +441,7 @@ exit 1'
 }
 
 # bats test_tags=docker
-@test "FR39: installer: installs end to end under dash on Ubuntu and busybox sh on Alpine" {
+@test "installer: installs end to end under dash on Ubuntu and busybox sh on Alpine" {
 	require docker
 	local image shell
 	mkdir -p "$SB/cstub"

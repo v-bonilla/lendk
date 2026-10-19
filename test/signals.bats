@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR17: no process of a call outlives it, and the backend takes the terminal only for a loopback prompt.
+# No process of a call outlives it, and the backend takes the terminal only for a loopback prompt.
 # shellcheck disable=SC2016,SC2030,SC2031,SC2034
 
 setup() {
@@ -42,7 +42,7 @@ stop_lendk() {
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
-@test "FR17: TERM, INT or HUP to lendk leaves no backend, child or watchdog behind" {
+@test "TERM, INT or HUP to lendk leaves no backend, child or watchdog behind" {
 	local sig mode
 	for mode in hang stubborn; do
 		for sig in TERM INT HUP; do
@@ -53,7 +53,7 @@ stop_lendk() {
 	done
 }
 
-@test "FR17: TERM or KILL to lendk's process group leaves no backend, child or watchdog behind" {
+@test "TERM or KILL to lendk's process group leaves no backend, child or watchdog behind" {
 	local sig mode
 	for mode in hang stubborn; do
 		for sig in TERM KILL; do
@@ -66,7 +66,7 @@ stop_lendk() {
 	done
 }
 
-@test "FR17: after expiry and after exec, nothing of the call is left" {
+@test "after expiry and after exec, nothing of the call is left" {
 	local mode
 	for mode in hang stubborn; do
 		rm -f "$SB/log/pids"
@@ -81,7 +81,7 @@ stop_lendk() {
 	none_within 1
 }
 
-@test "FR17: a loopback prompt gets the terminal once and its typed line; the target gets the line" {
+@test "a loopback prompt gets the terminal once and its typed line; the target gets the line" {
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub; echo rc=\$?" @2 typed-secret @1 exit
 	assert_line "$output" rc=0
@@ -92,7 +92,7 @@ stop_lendk() {
 	assert_eq "$(<"${conts[0]}")" cont
 }
 
-@test "FR17: Ctrl-C at a loopback prompt gives canceled" {
+@test "Ctrl-C at a loopback prompt gives canceled" {
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub; echo rc=\$?" @2 ^C @1 exit
 	assert_line "$output" "lendk: canceled: passphrase entry for env/K1 was canceled. Run the command again to retry."
@@ -100,14 +100,14 @@ stop_lendk() {
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 }
 
-@test "FR17: a pipeline neighbor using the terminal runs while the backend works" {
+@test "a pipeline neighbor using the terminal runs while the backend works" {
 	echo slow >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub | { sleep 0.3; stty -echo; stty echo; echo neighbor-done; }" @3 exit
 	assert_line "$output" neighbor-done
 	refute_contains "$output" Stopped
 }
 
-@test "FR17: lendk in a background job gives timeout and leaves the shell's terminal alone" {
+@test "lendk in a background job gives timeout and leaves the shell's terminal alone" {
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "LENDK_TIMEOUT=1 $LENDK run -- stub & wait \$!; echo rc=\$?" @4 "echo alive" @1 exit
 	assert_line "$output" rc=120
@@ -116,7 +116,7 @@ stop_lendk() {
 	[[ $output == *"lendk: timeout: env/K1: gpg did not finish within 1 s."* ]]
 }
 
-@test "FR17: with stderr redirected to a file, a loopback prompt still gets the terminal" {
+@test "with stderr redirected to a file, a loopback prompt still gets the terminal" {
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub 2>$SB/err; echo rc=\$?" @2 typed-secret @1 exit
 	assert_line "$output" rc=0
@@ -126,7 +126,7 @@ stop_lendk() {
 	tr '\0' '\n' <"${logs[0]}/env" | grep -qx K1=typed-secret
 }
 
-@test "FR17: a signal before lendk records the job's PID leaves nothing behind" {
+@test "a signal before lendk records the job's PID leaves nothing behind" {
 	local sig
 	for sig in TERM KILL; do
 		rm -f "$SB/log/pids"
@@ -137,7 +137,7 @@ stop_lendk() {
 	done
 }
 
-@test "FR17: in a command substitution, which cannot take the terminal, a configured loopback prompt gives locked without prompting" {
+@test "in a command substitution, which cannot take the terminal, a configured loopback prompt gives locked without prompting" {
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "export PASSWORD_STORE_GPG_OPTS='--pinentry-mode loopback'" "x=\$($LENDK run -- stub); echo rc=\$?" @2 exit
 	assert_line "$output" rc=120
@@ -145,13 +145,13 @@ stop_lendk() {
 	grep -qx -- '--pinentry-mode loopback --status-fd 9 --pinentry-mode error' < <(tr '\0' '\n' <"$(compgen -G "$SB/log/pass.*")/env" | sed -n 's/^PASSWORD_STORE_GPG_OPTS=//p')
 }
 
-@test "FR17: in a command substitution without loopback configured, the backend may still prompt through pinentry" {
+@test "in a command substitution without loopback configured, the backend may still prompt through pinentry" {
 	in_shell "x=\$($LENDK run -- stub); echo rc=\$?" @2 exit
 	assert_line "$output" rc=0
 	grep -qx -- '--status-fd 9' < <(tr '\0' '\n' <"$(compgen -G "$SB/log/pass.*")/env" | sed -n 's/^PASSWORD_STORE_GPG_OPTS=//p')
 }
 
-@test "FR17: a pipeline neighbor that reads the terminal during a loopback prompt resumes afterwards" {
+@test "a pipeline neighbor that reads the terminal during a loopback prompt resumes afterwards" {
 	# On macOS lendk hands the terminal back and resumes the neighbor, which then reads, but the
 	# interactive bash above still counts the neighbor as stopped and reclaims the terminal.
 	[[ $(uname -s) != Darwin ]] || skip 'macOS bash misses the neighbor resuming after SIGTTIN'
@@ -161,7 +161,7 @@ stop_lendk() {
 	refute_contains "$output" Stopped
 }
 
-@test "FR17: under umask 000, lendk's files for the backend phase are private" {
+@test "under umask 000, lendk's files for the backend phase are private" {
 	local listing
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "umask 000; $LENDK run -- stub" @2 typed-secret @1 exit

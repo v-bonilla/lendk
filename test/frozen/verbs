@@ -1,0 +1,9 @@
+lendk run [KEY|@GROUP...] -- CMD [ARG...]
+lendk add [--force] CMD|@GROUP KEY|@GROUP...
+lendk rm CMD|@GROUP [KEY|@GROUP...]
+lendk check [NAME...]
+lendk sync
+lendk unlock [KEY|@GROUP...]
+lendk init sh|bash|zsh|systemd
+lendk upgrade
+lendk --help | --version

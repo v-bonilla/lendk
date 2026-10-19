@@ -42,7 +42,7 @@ env_diff() {
 	done | sort -u | tr '\n' ' '
 }
 
-@test "FR1: the target's environment is the caller's plus the injected keys and LENDK_INJECTED" {
+@test "the target's environment is the caller's plus the injected keys and LENDK_INJECTED" {
 	map 'stub K1 @g' '@g K2 K3'
 	export K3=preset
 	env -0 >"$SB/caller"
@@ -52,7 +52,7 @@ env_diff() {
 	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "K1 K2 LENDK_INJECTED "
 }
 
-@test "FR1: with every key preset, only LENDK_INJECTED is added; exported functions and variables named like lendk's own stay" {
+@test "with every key preset, only LENDK_INJECTED is added; exported functions and variables named like lendk's own stay" {
 	map 'stub K1 K2'
 	export K1=one K2=two map=m verbs=v timeout=t keys=k target=x
 	fail() { echo caller-fail; }
@@ -64,7 +64,7 @@ env_diff() {
 	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
 }
 
-@test "FR1: an exported SHELLOPTS reaches the target with the caller's options" {
+@test "an exported SHELLOPTS reaches the target with the caller's options" {
 	map 'stub K1'
 	export K1=one
 	run bash -c 'set -o noclobber; export SHELLOPTS; env -0 >"$1/caller"; exec "$2" run -- stub </dev/null' _ "$SB" "$LENDK"
@@ -72,7 +72,7 @@ env_diff() {
 	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
 }
 
-@test "FR2: a key set non-empty by the caller is not read and keeps its value; an empty one is read" {
+@test "a key set non-empty by the caller is not read and keeps its value; an empty one is read" {
 	map 'stub K1 K2'
 	K1=caller K2='' run_fake -- stub
 	assert_eq "$status" 0
@@ -81,7 +81,7 @@ env_diff() {
 	tr '\0' '\n' <"$(target_env)" | grep -qx K2=value-K2
 }
 
-@test "FR5: the first executable regular file on PATH runs, skipping the shim directory however it is reached" {
+@test "the first executable regular file on PATH runs, skipping the shim directory however it is reached" {
 	map 'stub K1'
 	export K1=one
 	mkdir -p "$SB/noexec" "$SB/isdir/stub" "$SB/other"
@@ -96,7 +96,7 @@ env_diff() {
 	target_env >/dev/null
 }
 
-@test "FR5: a CMD holding / is used as given, and a CMD found nowhere else is not-found" {
+@test "a CMD holding / is used as given, and a CMD found nowhere else is not-found" {
 	map 'stub K1' 'nothere K1'
 	export K1=one
 	printf '#!/bin/sh\nexit 99\n' >"$LENDK_SHIMS/stub"
@@ -108,7 +108,7 @@ env_diff() {
 	assert_class not-found 127
 }
 
-@test "FR6: the target gets argv0 as given, its arguments unchanged, and its status passes through" {
+@test "the target gets argv0 as given, its arguments unchanged, and its status passes through" {
 	map 'stub K1' 'tgt K1'
 	export K1=one
 	ln -s "$BASH" "$SB/bin/tgt"
@@ -121,7 +121,7 @@ env_diff() {
 	assert_eq "$(tr '\0' '|' <"${logs[0]}/argv")" 'a b||*|--|'
 }
 
-@test "FR6: lendk becomes the target, so SIGTERM reaches it" {
+@test "lendk becomes the target, so SIGTERM reaches it" {
 	map 'tgt K1'
 	export K1=one OUT=$SB/got
 	ln -s "$BASH" "$SB/bin/tgt"
@@ -136,7 +136,7 @@ env_diff() {
 	assert_eq "$(<"$SB/stderr")" ""
 }
 
-@test "FR6: a target exec cannot run gives exec, never bash's own message" {
+@test "a target exec cannot run gives exec, never bash's own message" {
 	map 'noexec K1' 'badinterp K1'
 	export K1=one
 	printf '#!/bin/sh\n' >"$SB/noexec"
@@ -151,7 +151,7 @@ env_diff() {
 	assert_class exec 126
 }
 
-@test "FR11: named keys replace the map entry, and without them the entry for CMD's basename applies" {
+@test "named keys replace the map entry, and without them the entry for CMD's basename applies" {
 	map 'stub A'
 	run_fake B -- stub
 	assert_eq "$status" 0
@@ -163,7 +163,7 @@ env_diff() {
 	assert_eq "$(<"$SB/reads")" A
 }
 
-@test "FR11: a CMD without an entry and without named keys is unmapped" {
+@test "a CMD without an entry and without named keys is unmapped" {
 	map 'stub A'
 	run_lendk run -- other
 	assert_eq "$stderr" "lendk: unmapped: other is not mapped. Stop and ask the user."
@@ -174,14 +174,14 @@ env_diff() {
 	assert_class unmapped 125
 }
 
-@test "FR12: LENDK_INJECTED holds the caller's names, then the names this call exported, once each" {
+@test "LENDK_INJECTED holds the caller's names, then the names this call exported, once each" {
 	map 'stub A B C A'
 	B=preset LENDK_INJECTED='X B X' run_fake -- stub
 	assert_eq "$status" 0
 	tr '\0' '\n' <"$(target_env)" | grep -qx 'LENDK_INJECTED=X B A C'
 }
 
-@test "FR13: run without -- is usage, naming a word that is a command" {
+@test "run without -- is usage, naming a word that is a command" {
 	run_lendk run K1 stub
 	assert_eq "$stderr" "lendk: usage: 'stub' is a command; put -- before it. See: lendk --help"
 	assert_class usage 2
@@ -193,7 +193,7 @@ env_diff() {
 	assert_class usage 2
 }
 
-@test "FR13: named words must be valid, allowed keys or groups" {
+@test "named words must be valid, allowed keys or groups" {
 	local word
 	for word in 1BAD PATH LENDK_X BASH_ENV @ '@a.b' --force; do
 		run_lendk run "$word" -- stub
@@ -202,7 +202,7 @@ env_diff() {
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 }
 
-@test "NFR1: the preset path forks as often for a 50-line map and a long PATH as for one line and a short PATH" {
+@test "the preset path forks as often for a 50-line map and a long PATH as for one line and a short PATH" {
 	require strace
 	local i lines=() long=$PATH count1 count2
 	export K1=one
@@ -231,7 +231,7 @@ junk() {
 	chmod 755 "$SB/junk"
 }
 
-@test "FR6: when the kernel refuses the file, lendk's exec line ends stderr, also under a caller BASHOPTS without execfail" {
+@test "when the kernel refuses the file, lendk's exec line ends stderr, also under a caller BASHOPTS without execfail" {
 	map 'junk K1' 'busy K1'
 	export K1=one
 	junk
@@ -253,7 +253,7 @@ junk() {
 	assert_eq "$status" 126
 }
 
-@test "FR6: caller functions named like lendk's own leave the exec error path intact" {
+@test "caller functions named like lendk's own leave the exec error path intact" {
 	map 'junk K1'
 	export K1=one
 	junk
@@ -266,7 +266,7 @@ junk() {
 	assert_eq "$status" 126
 }
 
-@test "FR1: an exported POSIXLY_CORRECT reaches the target unchanged, and lendk runs" {
+@test "an exported POSIXLY_CORRECT reaches the target unchanged, and lendk runs" {
 	map 'stub K1'
 	export K1=one
 	env POSIXLY_CORRECT=1 env -0 >"$SB/caller"
@@ -275,7 +275,7 @@ junk() {
 	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
 }
 
-@test "FR1: caller variables named like lendk's internals change nothing" {
+@test "caller variables named like lendk's internals change nothing" {
 	map 'stub K1'
 	export K1=one lendk_target=/bin/false lendk_env=x lendk_k=y lendk_late=z lendk_listing=w
 	env -0 >"$SB/caller"
@@ -284,7 +284,7 @@ junk() {
 	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
 }
 
-@test "FR13: keys named lendk_ in any case are denied" {
+@test "keys named lendk_ in any case are denied" {
 	local word
 	for word in lendk_target Lendk_x lendk_k; do
 		run_lendk run "$word" -- stub
@@ -293,7 +293,7 @@ junk() {
 	done
 }
 
-@test "FR11: a CMD whose basename breaks the CMD grammar is usage" {
+@test "a CMD whose basename breaks the CMD grammar is usage" {
 	local cmd
 	map 'stub K1' '@g K1'
 	for cmd in /tmp/ 'a b' @g; do
@@ -303,14 +303,14 @@ junk() {
 	done
 }
 
-@test "FR11: a caller BASHOPTS with nocasematch does not make STUB match stub" {
+@test "a caller BASHOPTS with nocasematch does not make STUB match stub" {
 	map 'stub K1'
 	export K1=one
 	env BASHOPTS=nocasematch "$LENDK" run -- STUB </dev/null 2>"$SB/stderr" || true
 	assert_eq "$(<"$SB/stderr")" "lendk: unmapped: STUB is not mapped. Stop and ask the user."
 }
 
-@test "FR5: lendk's own helpers come from the system path, never from PATH or the shims" {
+@test "lendk's own helpers come from the system path, never from PATH or the shims" {
 	map 'ls K1'
 	export K1=one
 	printf '#!/bin/sh\necho fake >&2\nexit 1\n' >"$SB/bin/readlink"

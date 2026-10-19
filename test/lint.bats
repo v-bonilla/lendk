@@ -25,20 +25,20 @@ lint_copy() {
 	[[ $output == *$1* ]] || { printf 'no %q in:\n%s\n' "$1" "$output" >&2; return 1; }
 }
 
-@test "NFR9: the repository passes lint-repo.bash" {
+@test "the repository passes lint-repo.bash" {
 	run bash "$ROOT/test/lint-repo.bash"
 	assert_eq "$output" ""
 	assert_eq "$status" 0
 }
 
-@test "NFR9: the unchanged scratch copy passes lint-repo.bash" {
+@test "the unchanged scratch copy passes lint-repo.bash" {
 	scratch
 	run bash "$ROOT/test/lint-repo.bash" "$COPY"
 	assert_eq "$output" ""
 	assert_eq "$status" 0
 }
 
-@test "NFR9: lint-repo.bash skips gitignored build output such as dist/" {
+@test "lint-repo.bash skips gitignored build output such as dist/" {
 	scratch
 	mkdir -p "$COPY/dist"
 	printf 'built %s\n' $'\xe2\x80\x94' >"$COPY/dist/lendk.tar.gz"
@@ -47,20 +47,41 @@ lint_copy() {
 	assert_eq "$status" 0
 }
 
-@test "NFR9: lint-repo.bash flags a planted em-dash" {
+@test "lint-repo.bash flags a planted em-dash" {
 	scratch
-	printf 'a %s b\n' "$(printf '\342\200\224')" >>"$COPY/docs/prd.md"
-	lint_copy "docs/prd.md:"*": em-dash"
+	printf 'a %s b\n' "$(printf '\342\200\224')" >>"$COPY/README.md"
+	lint_copy "README.md:"*": em-dash"
 }
 
-@test "NFR9: lint-repo.bash flags a planted email address" {
+@test "lint-repo.bash flags a planted reference to the retired spec" {
+	scratch
+	local spec=docs/p
+	printf 'see %s\n' "${spec}rd.md" >>"$COPY/CHANGELOG.md"
+	lint_copy "CHANGELOG.md:"*": retired spec reference"
+}
+
+@test "lint-repo.bash flags planted FR, NFR and AC IDs and accepts H, A and G IDs" {
+	scratch
+	local id ids=(F NF A)
+	printf 'H1, A2 and G3 stay\n' >>"$COPY/GLOSSARY.md"
+	run bash "$ROOT/test/lint-repo.bash" "$COPY"
+	assert_eq "$output" ""
+	ids=("${ids[0]}R24" "${ids[1]}R8" "${ids[2]}C5")
+	for id in "${ids[@]}"; do
+		scratch
+		printf 'per %s.\n' "$id" >>"$COPY/docs/release.md"
+		lint_copy "docs/release.md:"*"per $id"*": retired spec ID"
+	done
+}
+
+@test "lint-repo.bash flags a planted email address" {
 	scratch
 	local at=@
 	printf 'contact: alice%sexample.org\n' "$at" >>"$COPY/test/helpers/common.bash"
 	lint_copy "test/helpers/common.bash:"*": email address"
 }
 
-@test "NFR9: lint-repo.bash flags a home path other than /home/alice and accepts /home/alice" {
+@test "lint-repo.bash flags a home path other than /home/alice and accepts /home/alice" {
 	scratch
 	local home=/ho
 	printf 'ok: %s\n' "${home}me/alice/.local/bin/lendk" >>"$COPY/Makefile"
@@ -70,31 +91,19 @@ lint_copy() {
 	lint_copy "Makefile:"*": home path other than /home/alice"
 }
 
-@test "NFR9: lint-repo.bash flags a license held by someone else" {
+@test "lint-repo.bash flags a license held by someone else" {
 	scratch
 	sed 's/v-bonilla/someone/' "$ROOT/LICENSE" >"$COPY/LICENSE"
 	lint_copy "LICENSE: not MIT held by v-bonilla"
 }
 
-@test "NFR9: lint-repo.bash flags a PRD ID found in no test name" {
-	scratch
-	printf -- '- %s%s Planted requirement.\n' FR 99 >>"$COPY/docs/prd.md"
-	lint_copy "FR99: in no test name"
-}
-
-@test "NFR9: lint-repo.bash flags a test-name ID the PRD does not define" {
-	scratch
-	printf '@test "%s%s: planted" {\n\ttrue\n}\n' NFR 99 >>"$COPY/test/lint.bats"
-	lint_copy "NFR99: not in docs/prd.md"
-}
-
-@test "NFR7: lint-repo.bash flags a second file in bin/" {
+@test "lint-repo.bash flags a second file in bin/" {
 	scratch
 	touch "$COPY/bin/helper"
 	lint_copy "bin/: holds"
 }
 
-@test "NFR7: lint-repo.bash flags pass or the store named outside the two backend functions" {
+@test "lint-repo.bash flags pass or the store named outside the two backend functions" {
 	scratch
 	local line
 	# shellcheck disable=SC2016
@@ -105,7 +114,7 @@ lint_copy() {
 	done
 }
 
-@test "NFR3: lint-repo.bash flags non-portable commands in bin/lendk, except in the name-list tables" {
+@test "lint-repo.bash flags non-portable commands in bin/lendk, except in the name-list tables" {
 	scratch
 	local w
 	for w in stat 'readlink -f' timeout flock setsid 'sed -i' 'date +%N'; do
@@ -124,7 +133,7 @@ lint_copy() {
 	lint_copy "bash 5 variable"
 }
 
-@test "NFR3: lint-repo.bash allows /proc and ps only in the terminal-owner test" {
+@test "lint-repo.bash allows /proc and ps only in the terminal-owner test" {
 	scratch
 	printf '# lint: tty-owner begin\nread -r s </proc/$$/stat || ps -o tpgid=\n# lint: tty-owner end\n' >>"$COPY/bin/lendk"
 	run bash "$ROOT/test/lint-repo.bash" "$COPY"
@@ -133,7 +142,7 @@ lint_copy() {
 	lint_copy "/proc or ps outside the terminal-owner test"
 }
 
-@test "NFR6: lint-repo.bash allows curl and wget only in the network region" {
+@test "lint-repo.bash allows curl and wget only in the network region" {
 	scratch
 	awk '{ print } /^# lint: network begin$/ { print "curl -s x || wget x" }' "$ROOT/bin/lendk" >"$COPY/bin/lendk"
 	run bash "$ROOT/test/lint-repo.bash" "$COPY"
@@ -162,13 +171,13 @@ lint_copy() {
 	done
 }
 
-@test "NFR3: lint-repo.bash flags script outside the test helpers" {
+@test "lint-repo.bash flags script outside the test helpers" {
 	scratch
 	printf '%s -qc true /dev/null\n' script >>"$COPY/test/lint.bats"
 	lint_copy "only test helpers may call script"
 }
 
-@test "NFR4: bats-core is the pinned submodule and shellcheck is pinned through uvx" {
+@test "bats-core is the pinned submodule and shellcheck is pinned through uvx" {
 	grep -qx '	url = https://github.com/bats-core/bats-core' "$ROOT/.gitmodules"
 	run "$ROOT/test/lib/bats-core/bin/bats" --version
 	assert_eq "$output" "Bats 1.14.0"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR16: LENDK_TIMEOUT bounds all backend work of a call, cleanup included.
+# LENDK_TIMEOUT bounds all backend work of a call, cleanup included.
 # shellcheck disable=SC2016,SC2030,SC2031,SC2034,SC2154
 
 setup() {
@@ -19,11 +19,11 @@ before_tenths() {
 	local t=${elapsed/./}
 	t=$((10#$t))
 	printf '%s\n' "$elapsed" >>"${BATS_FR16_TIMES:-/dev/null}"
-	printf '# FR16 elapsed %s s\n' "$elapsed" >&3
+	printf '# timeout elapsed %s s\n' "$elapsed" >&3
 	((t < $1 * 100)) || { echo "took $elapsed s, expected under $(($1 / 10)).$(($1 % 10)) s" >&2; return 1; }
 }
 
-@test "FR16: a hanging backend gives timeout after LENDK_TIMEOUT and before LENDK_TIMEOUT + 2 s" {
+@test "a hanging backend gives timeout after LENDK_TIMEOUT and before LENDK_TIMEOUT + 2 s" {
 	local mode
 	for mode in hang stubborn; do
 		echo "$mode" >"$SB/store/env/K1.mode"
@@ -38,7 +38,7 @@ before_tenths() {
 	done
 }
 
-@test "FR16: the bound covers every key of the call, not each key" {
+@test "the bound covers every key of the call, not each key" {
 	local k
 	for k in K1 K2 K3; do echo slow >"$SB/store/env/$k.mode"; done
 	LENDK_TIMEOUT=2 timed_lendk run -- stub
@@ -49,7 +49,7 @@ before_tenths() {
 	assert_eq "$status" 0
 }
 
-@test "FR16: a caller's EPOCHREALTIME, garbage or frozen, cannot stretch the bound under bash 4.4" {
+@test "a caller's EPOCHREALTIME, garbage or frozen, cannot stretch the bound under bash 4.4" {
 	local v
 	echo hang >"$SB/store/env/K1.mode"
 	for v in abc 1700000000.000000; do

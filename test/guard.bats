@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR22: the opening lines of bin/lendk reject bash older than 4.4.
+# The opening lines of bin/lendk reject bash older than 4.4.
 
 setup() {
 	load helpers/common
@@ -15,7 +15,7 @@ old_bash() {
 }
 
 # bats test_tags=docker
-@test "FR22: bash 3.2 gives unsupported with exit 125" {
+@test "bash 3.2 gives unsupported with exit 125" {
 	require docker
 	old_bash bash:3.2.57
 	assert_eq "$stderr" "lendk: unsupported: bash 3.2.57 found; lendk needs bash 4.4 or later. Stop and ask the user."
@@ -23,7 +23,7 @@ old_bash() {
 }
 
 # bats test_tags=docker
-@test "FR22: bash 4.3 gives unsupported with exit 125, and the interactive FIX when prompting is allowed" {
+@test "bash 4.3 gives unsupported with exit 125, and the interactive FIX when prompting is allowed" {
 	require docker
 	old_bash bash:4.3.48
 	assert_eq "$stderr" "lendk: unsupported: bash 4.3.48 found; lendk needs bash 4.4 or later. Stop and ask the user."
@@ -33,7 +33,7 @@ old_bash() {
 	assert_class unsupported 125
 }
 
-@test "FR22: the current bash passes the guard" {
+@test "the current bash passes the guard" {
 	run_lendk --version
 	assert_eq "$status" 0
 	[[ $output == "lendk "[0-9]*.[0-9]*.[0-9]* ]]
@@ -52,7 +52,7 @@ gpg2_follows() {
 	chmod +x "$SB/bin/gpg2"
 }
 
-@test "FR22: run and unlock give unsupported for a gpg below 2.4, before any decrypt" {
+@test "run and unlock give unsupported for a gpg below 2.4, before any decrypt" {
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
 	mkdir -p "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
 	printf 'stub K1\n' >"$HOME/.config/lendk/map"
@@ -78,7 +78,7 @@ gpg2_follows() {
 	assert_eq "$output" unlocked
 }
 
-@test "FR22: the GnuPG version parses strictly, and gpg --version runs under the allowlisted environment" {
+@test "the GnuPG version parses strictly, and gpg --version runs under the allowlisted environment" {
 	local v
 	mkdir -p "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
 	printf 'value\n' >"$SB/store/env/K1.gpg"
@@ -104,7 +104,7 @@ gpg2_follows() {
 	assert_line "$(<"$SB/log/gpg-env")" "HOME=$HOME"
 }
 
-@test "FR22: gpg.bash aborts when HOME or GNUPGHOME lies outside the sandbox" {
+@test "gpg.bash aborts when HOME or GNUPGHOME lies outside the sandbox" {
 	load helpers/gpg
 	printf '#!/bin/sh\necho called >>"%s"\n' "$SB/log/gpg-calls" >"$SB/bin/gpg"
 	printf '#!/bin/sh\necho called >>"%s"\n' "$SB/log/gpg-calls" >"$SB/bin/gpgconf"

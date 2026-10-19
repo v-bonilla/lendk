@@ -21,7 +21,7 @@ case $lendk_old in
 	;;
 esac
 
-# FR9: discard inherited functions. POSIX mode makes the special builtins (set, unset) win over
+# Discard inherited functions. POSIX mode makes the special builtins (set, unset) win over
 # functions of the same name until builtin is safe; it leaves before the purge, since bash 4.4
 # refuses names like [ in POSIX mode. An exported POSIXLY_CORRECT keeps its value for the target
 # but not POSIX mode, in which bash 4.4 cannot parse process substitution.
@@ -48,8 +48,8 @@ for lendk_f in ${lendk_bashopts//:/ }; do
 	*) builtin shopt -u "$lendk_f" ;;
 	esac
 done
-# lendk_env keeps the caller's environment, which lendk's own variables may shadow, for FR2 and for
-# the target (FR1). The names come from expansions, not a fork, to keep shim overhead low (NFR1).
+# lendk_env keeps the caller's environment, which lendk's own variables may shadow, for keys the caller
+# already set and for the target. The names come from expansions, not a fork, to keep shim overhead low.
 lendk_i=
 case ${lendk_env@a} in *x*) lendk_i=$lendk_env ;; esac
 builtin unset -v lendk_env
@@ -90,7 +90,7 @@ fi
 for lendk_f in "${lendk_funcs[@]}"; do builtin unset -f "$lendk_f"; done
 builtin unset lendk_old lendk_f lendk_i lendk_posix lendk_posix_value lendk_funcs lendk_xfuncs
 
-# set_paths: PRD section 8 paths.
+# set_paths: the map, shim and data paths from the environment.
 # shellcheck disable=SC2034
 set_paths() {
 	local config=${HOME-}/.config data=${HOME-}/.local/share
@@ -103,9 +103,10 @@ set_paths() {
 	prefix=${LENDK_PREFIX:-env}
 }
 
-# For shim overhead (NFR1): the FR28 listing of a plain map and its directory starts first and runs while bash does the
-# rest; check_map_paths reads it. Helpers come from the system path, never from the shims. The
-# paths stay local here, so the snapshot below still sees any caller variables of their names.
+# For shim overhead: the owner and mode listing of a plain map and its directory starts first
+# and runs while bash does the rest; check_map_paths reads it. Helpers come from the system
+# path, never from the shims. The paths stay local here, so the snapshot below still sees any
+# caller variables of their names.
 # shellcheck disable=SC2034
 start_listing() {
 	local map shims store prefix
@@ -195,7 +196,8 @@ classes=(
 
 # lint: tables end
 
-# set_interactive: PRD 5.1. An invalid LENDK_PROMPT counts as non-interactive until validated.
+# set_interactive: whether the call may prompt, from LENDK_PROMPT and the terminal. An invalid
+# LENDK_PROMPT counts as non-interactive until validated.
 set_interactive() {
 	interactive=0
 	case ${LENDK_PROMPT-auto} in
@@ -240,7 +242,7 @@ fail() {
 	exit "$code"
 }
 
-# load_env: PRD section 8 paths and the LENDK_PROMPT and LENDK_TIMEOUT checks; the verbs read the globals.
+# load_env: the paths and the LENDK_PROMPT and LENDK_TIMEOUT checks; the verbs read the globals.
 # shellcheck disable=SC2034
 load_env() {
 	set_paths
@@ -299,7 +301,7 @@ resolve_links() {
 	done
 }
 
-# check_map_paths: FR28 for the map and its directory, after following a symlinked map.
+# check_map_paths: the owner and mode check for the map and its directory, after following a symlinked map.
 check_map_paths() {
 	local file dir modes='' mdir='' mfile='' mode p
 	resolve_links "$map"
@@ -332,7 +334,7 @@ check_map_paths() {
 }
 
 # expand_keys CMD WORD...: set keys to WORD..., or to CMD's map entry when no WORD is given, with
-# groups inlined and duplicates dropped. Only the lines CMD and its groups need are checked (FR23).
+# groups inlined and duplicates dropped. Only the lines CMD and its groups need are checked.
 expand_keys() {
 	local cmd=$1 lines=() fields=() words=() gwords=() line word key g i=0 src=0 cmdline=0 cmddup=0
 	local -A gline=() gdup=() seen=()
@@ -346,7 +348,7 @@ expand_keys() {
 		fi
 		for line in "${lines[@]}"; do
 			((++i))
-			# Pattern tests on the raw line; no line is split, which keeps the read fast (NFR1).
+			# Pattern tests on the raw line; no line is split, which keeps the read fast.
 			[[ $line == [[:blank:]]* ]] && line=${line#"${line%%[![:blank:]]*}"}
 			case $line in
 			"$cmd" | "$cmd"[[:blank:]#]*)
@@ -403,7 +405,7 @@ expand_keys() {
 	done
 }
 
-# resolve CMD: set target to the file CMD names (FR5), and check that exec can run it.
+# resolve CMD: set target to the file CMD names, and check that exec can run it.
 resolve() {
 	local cmd=$1 rest dir file line
 	local -a fields
@@ -425,7 +427,7 @@ resolve() {
 				[[ ${dir:-/} -ef $shims ]] && continue
 			fi
 			# A shim directory other than this call's (LENDK_SHIMS set only in some shells) would
-			# make the shim exec itself forever; only this one hit is read (NFR1).
+			# make the shim exec itself forever; only this one hit is read.
 			line=
 			{ IFS= read -r -n 256 line && IFS= read -r -n 256 line; } <"$file" 2>/dev/null
 			[[ $line == '# lendk shim '* ]] && continue
@@ -453,8 +455,8 @@ backend_has() {
 	[[ -f $store/$prefix/$1.gpg ]]
 }
 
-# backend_read KEY...: the backend job's body (FR16, FR17). Reads each KEY's entry with pass under an
-# environment built from scratch (FR8, FR14, FR15), then prints "COUNT STATUS KEY" and the first line
+# backend_read KEY...: the backend job's body. Reads each KEY's entry with pass under an
+# environment built from scratch, then prints "COUNT STATUS KEY" and the first line
 # of each entry read through one forked writer, so the job never waits for its reader.
 backend_read() {
 	local n out k='' st=ok vals=() opts benv=() try
@@ -484,7 +486,7 @@ backend_read() {
 			st=empty
 			break
 		fi
-		# First line (FR10): splitting under set -f, never ${out%%$'\n'*}, which is quadratic on bash 4.4.
+		# First line: splitting under set -f, never ${out%%$'\n'*}, which is quadratic on bash 4.4.
 		IFS=$'\n'
 		# shellcheck disable=SC2206
 		lines=($out)
@@ -494,7 +496,7 @@ backend_read() {
 	{ builtin printf '%s\n' "${#vals[@]} $st $k" "${vals[@]}"; } &
 }
 
-# allow_env: benv, the environment for backend helpers built from scratch (FR8): PATH without the
+# allow_env: benv, the environment for backend helpers built from scratch: PATH without the
 # shim directory and the allowlisted caller variables.
 allow_env() {
 	local n rest dir
@@ -518,7 +520,7 @@ allow_env() {
 	done
 }
 
-# backend_job KEY...: J, run as a coproc (FR16, FR17). A signal ends it with a status bash never reports
+# backend_job KEY...: J, run as a coproc. A signal ends it with a status bash never reports
 # as a killed job, recorded for classification.
 backend_job() {
 	builtin trap 'backend_exit 143' TERM
@@ -537,7 +539,7 @@ backend_exit() {
 	builtin exit "$1"
 }
 
-# watchdog: W, started before J (FR16, FR17), whose PID it reads from the temporary directory. Every 0.1 s it
+# watchdog: W, started before J, whose PID it reads from the temporary directory. Every 0.1 s it
 # wakes lendk in interactive calls, then checks. At LENDK_TIMEOUT it marks the timeout, and when lendk
 # is gone it notes that. Either way it stops the job's group, with KILL after 0.3 s, and removes a
 # gone lendk's temporary directory, and upgrade's staged file when given, once the job can write no more.
@@ -661,7 +663,7 @@ backend_fail() {
 }
 
 # read_values KEY...: lendk_values[KEY] for each KEY, read by the backend job J under the watchdog W:
-# bounded by LENDK_TIMEOUT (FR16), leaving no process behind (FR17), classified per PRD 5.2.
+# bounded by LENDK_TIMEOUT, leaving no process behind, and ends a failure through its class.
 read_values() {
 	local err out line wpid jpid i st k ecode last
 	local -a f keys=("$@")
@@ -696,7 +698,7 @@ read_values() {
 		line=
 		builtin jobs -sp >"$lendk_tmp/stopped" 2>/dev/null
 		{ builtin read -r line <"$lendk_tmp/stopped"; } 2>/dev/null
-		# A loopback prompt stops J on the terminal; J gets it only from a group that owns it (FR17).
+		# A loopback prompt stops J on the terminal; J gets it only from a group that owns it.
 		# fg hands the terminal over through fd 2, so fd 2 stays on it. A pipeline neighbor that
 		# touched the terminal meanwhile stopped; CONT to lendk's group resumes it.
 		if [[ $line == "$lendk_jpid" ]] && tty_owner; then
@@ -754,7 +756,7 @@ read_values() {
 	backend_fail decrypt "$prefix/$k: gpg says: the backend stopped" "$k"
 }
 
-# check_gnupg: FR22 for the gpg pass uses, gpg2 when on PATH, else gpg. A missing gpg is left to pass.
+# check_gnupg: the GnuPG 2.4 check for the gpg pass uses, gpg2 when on PATH, else gpg. A missing gpg is left to pass.
 check_gnupg() {
 	local gpg out v benv=()
 	gpg=$(type -P gpg2) || gpg=$(type -P gpg) || return 0
@@ -795,7 +797,7 @@ check_loopback() {
 	[[ $mode != loopback ]] || lendk_noloop=1
 }
 
-# read_keys KEY...: FR3 from the existence check to the last decrypt; values stay unexported (FR4).
+# read_keys KEY...: run's steps from the existence check to the last decrypt; values stay unexported.
 read_keys() {
 	local k missing=0
 	for k in "$@"; do
@@ -810,7 +812,7 @@ read_keys() {
 	builtin set +x +v
 	lendk_tmp=$(builtin umask 077 && command -p mktemp -d "${TMPDIR:-/tmp}/lendk.XXXXXX") ||
 		fail write "${TMPDIR:-/tmp}: cannot create a temporary directory" PATH="${TMPDIR:-/tmp}"
-	# FR15: the backend, never the target, gets the caller's terminal as GPG_TTY.
+	# The backend, never the target, gets the caller's terminal as GPG_TTY.
 	lendk_gpg_tty=
 	if ((interactive)) && [[ ! -c ${lendk_env[GPG_TTY]-} ]]; then
 		if [[ -t 0 ]]; then
@@ -824,7 +826,7 @@ read_keys() {
 }
 
 # restore_options: the caller's shell options, which an exported SHELLOPTS or BASHOPTS carries to
-# the target (FR1), with execfail kept so a failed exec returns to lendk.
+# the target, with execfail kept so a failed exec returns to lendk.
 restore_options() {
 	local o
 	for o in ${SHELLOPTS//:/ }; do
@@ -874,7 +876,7 @@ restore_env() {
 	fi
 }
 
-# run_verb [WORD...] -- CMD [ARG...]: FR3 up to exec. Locals carry the lendk_ prefix because they are
+# run_verb [WORD...] -- CMD [ARG...]: run's steps up to exec. Locals carry the lendk_ prefix because they are
 # still in scope at exec, where a local would hide the caller's variable of the same name.
 run_verb() {
 	local lendk_words=() lendk_cmd lendk_k lendk_list=() lendk_tmp lendk_gpg_tty lendk_jpid lendk_noloop=0
@@ -925,7 +927,7 @@ run_verb() {
 	# The error line is made while lendk's functions stand; the caller's may replace them below.
 	class_line exec "$target is not executable" PATH="$target" CMD="${lendk_cmd##*/}"
 	# From here on only positional parameters and builtins: caller variables may take lendk's names.
-	# xtrace and verbose come back last, so no restore step traces a caller's value (FR20).
+	# xtrace and verbose come back last, so no restore step traces a caller's value.
 	lendk_k=
 	[[ :$lendk_shellopts: != *:xtrace:* ]] || lendk_k+=x
 	[[ :$lendk_shellopts: != *:verbose:* ]] || lendk_k+=v
@@ -940,7 +942,7 @@ run_verb() {
 	}
 }
 
-# run, which every shim calls, starts before bash parses the rest of the file (NFR1).
+# run, which every shim calls, starts before bash parses the rest of the file.
 if [[ ${1-} == run ]]; then
 	shift
 	load_env
@@ -1025,7 +1027,7 @@ first_mapped_key() {
 	return 0
 }
 
-# unlock_verb [WORD...]: FR34, decrypting under run's rules and discarding the values.
+# unlock_verb [WORD...]: decrypts the keys under run's rules, which unlocks GnuPG, and discards the values.
 unlock_verb() {
 	local k key lendk_tmp lendk_gpg_tty lendk_jpid lendk_noloop=0
 	local -A lendk_values=()
@@ -1047,7 +1049,7 @@ unlock_verb() {
 	exit 0
 }
 
-# scan_map: read the whole map (FR23) without failing. m_cmds and m_groups list the valid names in
+# scan_map: read the whole map without failing. m_cmds and m_groups list the valid names in
 # line order, m_words and m_keys hold each one's words and expanded keys, and m_bad holds every
 # violation as "LINE|ROW|TEXT", ROW being the command or @group it belongs to, or empty. m_raw holds the lines.
 scan_map() {
@@ -1118,13 +1120,13 @@ scan_map() {
 	((${#m_bad[@]} < 2)) || mapfile -t m_bad < <(printf '%s\n' "${m_bad[@]}" | command -p sort -s -t '|' -k 1,1n)
 }
 
-# set_self: self, the path lendk was invoked by, made absolute with symlinks unresolved (FR29).
+# set_self: self, the path lendk was invoked by, made absolute with symlinks unresolved.
 set_self() {
 	self=$0
 	[[ $self == /* ]] || self=$PWD/${self#./}
 }
 
-# shim_text CMD: shim, the FR29 text for CMD.
+# shim_text CMD: shim, the shim text for CMD.
 shim_text() {
 	shim="#!/bin/sh
 # lendk shim v1: generated by lendk sync, edits are overwritten
@@ -1134,7 +1136,7 @@ exec \"\$lendk\" run -- '$1' \"\$@\"
 "
 }
 
-# is_shim FILE: FILE is a regular file whose second line carries the shim marker (FR30).
+# is_shim FILE: FILE is a regular file whose second line carries the shim marker.
 is_shim() {
 	local l2=
 	[[ -f $1 && ! -L $1 ]] || return 1
@@ -1160,12 +1162,12 @@ shim_files() {
 	builtin set -f
 }
 
-# check_shim_dir: FR28 for an existing shim directory.
+# check_shim_dir: the owner and mode check for an existing shim directory.
 check_shim_dir() {
 	check_dir "$shims"
 }
 
-# check_dir DIR: FR28 for DIR when it exists.
+# check_dir DIR: the owner and mode check for DIR when it exists.
 check_dir() {
 	local modes
 	[[ -e $1 || -L $1 ]] || return 0
@@ -1176,7 +1178,7 @@ check_dir() {
 	return 0
 }
 
-# take_lock: hold SHIMS.lock (FR26), retrying for 10 s. A dead owner's lock is broken only by the
+# take_lock: hold SHIMS.lock, retrying for 10 s. A dead owner's lock is broken only by the
 # holder of the break marker, after rereading the owner, so no two waiters both break it.
 take_lock() {
 	local lock=$shims.lock owner empty=0 i end=$((SECONDS + 11))
@@ -1258,7 +1260,7 @@ release_lock() {
 	[[ $owner != "$$" ]] || command -p rm -rf -- "$lendk_lock"
 }
 
-# lock_shims: create the shim directory 0700 under any umask (FR28), then hold its lock.
+# lock_shims: create the shim directory 0700 under any umask, then hold its lock.
 lock_shims() {
 	(builtin umask 077 && command -p mkdir -p -- "$shims") 2>/dev/null ||
 		fail write "$shims: cannot be created" PATH="$shims"
@@ -1276,7 +1278,7 @@ map_lines() {
 	done < <(((${#m_bad[@]} == 0)) || printf '%s\n' "${m_bad[@]}")
 }
 
-# sync_verb: write shims to match the map (FR29, FR30), then report map violations and foreign files.
+# sync_verb: write shims to match the map, then report map violations and foreign files.
 sync_verb() {
 	local lines=()
 	(($# == 0)) || fail usage "sync takes no arguments"
@@ -1290,7 +1292,7 @@ sync_verb() {
 	exit 125
 }
 
-# shim_mode_ok FILE: FILE has the shim mode 0755 (FR29).
+# shim_mode_ok FILE: FILE has the shim mode 0755.
 shim_mode_ok() {
 	local m
 	m=$(command -p ls -ln -- "$1" 2>/dev/null)
@@ -1355,7 +1357,7 @@ failure_text() {
 }
 
 # check_add ROW TEXT FIX [NFIX]: record a problem for ROW, or a global one for an empty ROW. NFIX
-# replaces FIX in non-interactive calls; it defaults to "ask the user" (FR32).
+# replaces FIX in non-interactive calls; it defaults to "ask the user".
 check_add() {
 	local fix=$3
 	((interactive)) || fix=${4:-ask the user}
@@ -1366,8 +1368,8 @@ check_add() {
 	fi
 }
 
-# check_scan: every FR33 detection over the whole setup, into c_global and c_status. It reads file
-# existence only, never a value (FR31).
+# check_scan: runs every check over the whole setup and records the problems in c_global and c_status. It reads file
+# existence only, never a value.
 check_scan() {
 	local name f k row text dir rest onpath=0 path files injected=" ${lendk_env[LENDK_INJECTED]-} "
 	local -A mapped=()
@@ -1479,7 +1481,7 @@ check_rows() {
 	done
 }
 
-# check_verb [NAME...]: FR31 to FR33; exit 1 when anything shown has a problem.
+# check_verb [NAME...]: diagnose the setup; exit 1 when anything shown has a problem.
 check_verb() {
 	local p bad=0
 	check_scan
@@ -1492,7 +1494,7 @@ check_verb() {
 	exit "$bad"
 }
 
-# check_name NAME: FR25 for the CMD or @GROUP that add and rm edit.
+# check_name NAME: name validation for the CMD or @GROUP that add and rm edit.
 check_name() {
 	if [[ $1 == @* ]]; then
 		bad_word "$1" && fail usage "$problem"
@@ -1504,7 +1506,7 @@ check_name() {
 	return 0
 }
 
-# is_guarded CMD: CMD is on a guarded list (PRD 4.2).
+# is_guarded CMD: CMD is on a guarded list.
 is_guarded() {
 	local p
 	for p in "${guarded_shells[@]}" "${guarded_interpreters[@]}" "${guarded_launchers[@]}" \
@@ -1515,8 +1517,8 @@ is_guarded() {
 	return 1
 }
 
-# edit_begin CHECK ARG...: for add and rm, FR28 paths, a whole valid map (FR23) read into m_* and
-# the verb's CHECK, all before anything is created (FR25); then again under the lock.
+# edit_begin CHECK ARG...: for add and rm, the path owner and mode checks, a whole valid map read into m_* and
+# the verb's CHECK, all before anything is created; then again under the lock.
 edit_begin() {
 	check_map_paths
 	resolve_links "$map"
@@ -1568,7 +1570,7 @@ rm_check() {
 	return 0
 }
 
-# edit_map N [TEXT]: FR27. Replace map line N with TEXT, delete it without TEXT, or append TEXT when
+# edit_map N [TEXT]: replace map line N with TEXT, delete it without TEXT, or append TEXT when
 # N is 0. The new map is a private file beside the map, after following a symlink, renamed over it.
 edit_map() {
 	local file dir out='' i
@@ -1595,7 +1597,7 @@ edit_map() {
 	lendk_maptmp=
 }
 
-# edit_end NAME: sync under the lock, release it, then print NAME's rows in check format (FR24).
+# edit_end NAME: sync under the lock, release it, then print NAME's rows in check format.
 edit_end() {
 	local lines=() bad=0
 	scan_map
@@ -1609,7 +1611,7 @@ edit_end() {
 	exit 0
 }
 
-# add_verb [--force] NAME WORD...: FR24 and FR25 for add.
+# add_verb [--force] NAME WORD...: add a map entry or words, validated first.
 add_verb() {
 	local force=0 name g='' w have line code trim n new=()
 	[[ ${1-} == --force ]] && force=1 && shift
@@ -1647,7 +1649,7 @@ add_verb() {
 	edit_end "$name"
 }
 
-# rm_verb NAME [WORD...]: FR24 and FR25 for rm.
+# rm_verb NAME [WORD...]: remove a map entry or words, validated first.
 rm_verb() {
 	local name g='' w n line rest kept=()
 	(($#)) || fail usage "rm needs a command or @group"
@@ -1685,8 +1687,8 @@ rm_verb() {
 	edit_end "$name"
 }
 
-# init_verb sh|bash|zsh|systemd: FR35, the PRD 4.3 block for the named file, holding the absolute
-# shim directory; FR28 for the shim directory only, and no code when it fails.
+# init_verb sh|bash|zsh|systemd: the login block for the named file, holding the absolute
+# shim directory; the owner and mode check for the shim directory only, and no code when it fails.
 # shellcheck disable=SC2016 # the printed code expands where it runs
 init_verb() {
 	local dir q front hook
@@ -1722,14 +1724,14 @@ unset lendk_p lendk_r lendk_d"
 	exit 0
 }
 
-# The second line of lendk's own file, which FR47 asks of the new file and FR48 of the installed one.
+# The second line of lendk's own file, which upgrade asks of the new file and of the installed one.
 upgrade_mark='# lendk: give API keys stored in pass to the commands that need them.'
 # A version number: no leading zero and at most nine digits, so it compares in base 10 without overflow.
 upgrade_n='(0|[1-9][0-9]{0,8})'
 upgrade_version="^lendk ${upgrade_n}[.]${upgrade_n}[.]${upgrade_n}\$"
 
 # lint: network begin
-# upgrade_download [URL OUT]: fetch an https URL to OUT (FR46). Without arguments, set dl to the
+# upgrade_download [URL OUT]: fetch an https URL to OUT. Without arguments, set dl to the
 # download tool found on upath, or fail with problem naming the missing one.
 upgrade_download() {
 	local help
@@ -1757,8 +1759,8 @@ upgrade_result() {
 	builtin exit 0
 }
 
-# upgrade_fetch: J, both assets and FR47's checks, run as a job under the watchdog (FR50). The tools run
-# with PATH upath, stdin /dev/null and their output in the temporary directory (FR46). The result line
+# upgrade_fetch: J, both assets and their checks, run as a job under the watchdog. The tools run
+# with PATH upath, stdin /dev/null and their output in the temporary directory. The result line
 # is "ok X.Y.Z" with the staged file filled, "same X.Y.Z", or "fail CLASS[:FORM] TEXT".
 upgrade_fetch() {
 	local url=$base/latest/download a line want='' got member='' n=0 i higher=0 file=$lendk_tmp/lendk
@@ -1849,9 +1851,9 @@ upgrade_pause() {
 	while ((SECONDS < i)); do :; done
 }
 
-# upgrade_verb: FR45 to FR50. Checks the install (FR48) and the tools before anything is created,
+# upgrade_verb: checks the install and the tools before anything is created,
 # fetches and verifies the release in the job J under the watchdog W, as read_values runs the backend,
-# renames the staged file over lendk's own and execs its sync (FR49).
+# renames the staged file over lendk's own and execs its sync.
 upgrade_verb() {
 	local base=${LENDK_INSTALL_BASE_URL-} dir line tar gzip sha dl='' upath problem='' result=''
 	local lendk_tmp='' lendk_staged='' lendk_jpid='' wpid

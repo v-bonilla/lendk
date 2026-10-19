@@ -1,69 +1,62 @@
 #!/usr/bin/env bats
-# NFR8: --help carries every verb, list, class, FIX and variable the PRD defines.
+# --help keeps every 1.x verb, name list, class, FIX and variable of test/frozen, and sync writes the frozen shim.
 # shellcheck disable=SC2016
 
 setup() {
 	load helpers/common
 	sandbox
-	PRD=$ROOT/docs/prd.md
+	FROZEN=$ROOT/test/frozen
 	HELP=$("$LENDK" --help)
 }
 
-# prd_list LABEL: the backticked list that follows LABEL in the PRD.
-prd_list() {
-	local line
-	line=$(grep -oE "$1 \`[^\`]+\`" "$PRD" | head -n 1)
-	[[ -n $line ]] || { echo "no list after '$1' in the PRD" >&2; return 1; }
-	line=${line#*\`}
-	printf '%s\n' "${line%\`}"
+# frozen_missing HELP: prints each frozen entry that HELP lacks; a list word missing from its list counts.
+frozen_missing() {
+	local help=$1 entry label word words
+	local -A have
+	while IFS= read -r entry; do
+		[[ $'\n'$help$'\n' == *$'\n'"  $entry"[$' \n']* ]] || printf 'verb: %s\n' "$entry"
+	done <"$FROZEN/verbs"
+	while IFS= read -r entry; do
+		label=${entry%%: *}
+		words=$(grep -m 1 "^  $label: " <<<"$help")
+		have=()
+		for word in ${words#*: }; do have[$word]=1; done
+		for word in ${entry#*: }; do
+			[[ -n ${have[$word]-} ]] || printf 'list word: %s %s\n' "$label" "$word"
+		done
+	done <"$FROZEN/lists"
+	while IFS= read -r entry; do
+		[[ $'\n'$help == *$'\n'"  $entry"* ]] || printf 'class: %s\n' "$entry"
+	done <"$FROZEN/classes"
+	while IFS= read -r entry; do
+		[[ $help == *"$entry"* ]] || printf 'fix: %s\n' "$entry"
+	done <"$FROZEN/fixes"
+	while IFS= read -r entry; do
+		grep -qE "^  $entry " <<<"$help" || printf 'variable: %s\n' "$entry"
+	done <"$FROZEN/variables"
 }
 
-@test "NFR8: every verb line of PRD 4.1 is in --help" {
-	local line n=0
-	while IFS= read -r line; do
-		assert_line "$HELP" "  ${line% (4.3)}"
-		n=$((n + 1))
-	done < <(sed -n '/^### 4.1 Verbs/,/^### 4.2/p' "$PRD" | sed -n '/^```$/,/^```$/p' | grep '^lendk ')
-	assert_eq "$n" 9
+@test "--help carries every frozen verb, list word, class, FIX and variable" {
+	assert_eq "$(frozen_missing "$HELP")" ""
 }
 
-@test "NFR8: every name list of PRD 4.2 is in --help, word for word" {
-	local pair
-	for pair in "own runtime:|reserved commands" "prefixes|denied key prefixes" "names|denied key names" \
-		"shells|guarded shells" "interpreters|guarded interpreters" "launchers|guarded launchers" \
-		"package tools|guarded package tools" "agent CLIs|guarded agent CLIs"; do
-		assert_line "$HELP" "  ${pair#*|}: $(prd_list "${pair%|*}")"
-	done
+@test "a renamed or removed entry fails the comparison while an added one or a changed verb description passes" {
+	local added=${HELP/guarded shells: /guarded shells: newsh }
+	added+=$'\n'"  lendk newverb"$'\n'"  newclass (3): new"$'\n'"  LENDK_NEW  new"
+	assert_eq "$(frozen_missing "$added")" ""
+	assert_eq "$(frozen_missing "${HELP/ dash / dashx }")" "list word: guarded shells dash"
+	assert_eq "$(frozen_missing "${HELP/ zsh / }")" "list word: guarded shells zsh"
+	assert_eq "$(frozen_missing "${HELP/  lendk sync/  lendk resync}")" "verb: lendk sync"
+	assert_eq "$(frozen_missing "${HELP/\# map, then sync/\# map the names, then sync}")" ""
+	assert_eq "$(frozen_missing "${HELP/lendk add [--force]/lendk add [-f]}")" "verb: lendk add [--force] CMD|@GROUP KEY|@GROUP..."
+	assert_eq "$(frozen_missing "${HELP/  locked (120)/  held (120)}")" "class: locked (120)"
+	assert_eq "$(frozen_missing "${HELP/  LENDK_TIMEOUT /  LENDK_WAIT }")" "variable: LENDK_TIMEOUT"
+	local fix
+	fix=$(head -n 1 "$FROZEN/fixes")
+	assert_eq "$(frozen_missing "${HELP//"$fix"/x}")" "fix: $fix"
 }
 
-@test "NFR8: every class of PRD 5.3 is in --help with its exit hint" {
-	local class hint n=0
-	while read -r class hint; do
-		assert_line "$(grep -oE '^  [a-z-]+ \([0-9]+\)' <<<"$HELP")" "  $class $hint)"
-		n=$((n + 1))
-	done < <(sed -n '/^### 5.3/,/^## 6/p' "$PRD" | grep -oE '^- `[a-z-]+` \([0-9]+' | sed 's/^- //; s/`//g')
-	assert_eq "$n" 16
-}
-
-@test "NFR8: every FIX of PRD 5.3, interactive and not, is in --help" {
-	local fix n=0
-	while IFS= read -r fix; do
-		[[ $HELP == *"$fix"* ]] || { echo "missing FIX: $fix" >&2; return 1; }
-		n=$((n + 1))
-	done < <(sed -n '/^### 5.3/,/^## 6/p' "$PRD" | grep -oE '`(See|To map|Define it|Put|Upgrade|Run the|Retry;|Fix|Map it|Add it|Set it|Create it|Add a mapped|Install|Ask the user|Stop and)[^`]*`' | tr -d '`')
-	assert_eq "$n" 24
-}
-
-@test "NFR8: every variable of PRD section 8 is in --help" {
-	local name n=0
-	while read -r name; do
-		assert_line "$(grep -oE '^  [A-Z_]+ ' <<<"$HELP" | sed 's/ *$//')" "  $name"
-		n=$((n + 1))
-	done < <(sed -n '/^## 8\./,/^## 9\./p' "$PRD" | grep -oE 'LENDK_[A-Z_]+|PASSWORD_STORE_DIR|XDG_[A-Z_]+_HOME|GPG_TTY' | sort -u)
-	assert_eq "$n" 11
-}
-
-@test "NFR8: the README's name lists and classes are the lines --help prints" {
+@test "the README's name lists and classes are the lines --help prints" {
 	local readme want got
 	readme=$(<"$ROOT/README.md")
 	want=$(sed -n '/^Name lists:/,/^$/p; /^Classes:/,/^$/p' <<<"$HELP" | grep -E '^  [a-z]' | grep -v '^  notice:')
@@ -72,10 +65,9 @@ prd_list() {
 	assert_eq "$(wc -l <<<"$want")" 31
 }
 
-@test "NFR8: sync writes FR29's shim text" {
+@test "sync writes the frozen shim text" {
 	local want
-	want=$(sed -n '/^- FR29 /,/^- FR30 /p' "$PRD" | sed -n '/^  ```$/,/^  ```$/p' | sed '1d;$d; s/^  //')
-	[[ $want == '#!/bin/sh'* ]]
+	want=$(<"$FROZEN/shim")
 	want=${want//\/home\/alice\/.local\/bin\/lendk/$LENDK}
 	want=${want//so gh did/so stub did}
 	want=${want//"'gh'"/"'stub'"}
