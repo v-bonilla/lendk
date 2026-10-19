@@ -36,7 +36,7 @@ no_sentinel() {
 	assert_eq "$hits" "" || { grep -rF -- "$SENTINEL" "$HOME" "$TMPDIR" "$SB"/log/pass.* >&2; return 1; }
 }
 
-@test "FR3: every missing key is listed before any decrypt, and the command does not run" {
+@test "every missing key is listed before any decrypt, and the command does not run" {
 	map 'stub K1 K2 K3'
 	entry K2 "$SENTINEL"
 	run_lendk run -- stub
@@ -47,7 +47,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 }
 
-@test "FR3: the command resolves before anything is decrypted" {
+@test "the command resolves before anything is decrypted" {
 	map 'nothere K1'
 	entry K1 "$SENTINEL"
 	run_lendk run -- nothere
@@ -55,7 +55,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(pass_logs)" ""
 }
 
-@test "FR3: a failed decrypt stops the call with gpg's last line, and the command does not run" {
+@test "a failed decrypt stops the call with gpg's last line, and the command does not run" {
 	map 'stub K1 K2'
 	entry K1 one
 	entry K2 two
@@ -70,7 +70,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
-@test "FR4: a later backend call sees no key read earlier; all keys reach the target" {
+@test "a later backend call sees no key read earlier; all keys reach the target" {
 	map 'stub K1 K2'
 	entry K1 "$SENTINEL-1"
 	entry K2 "$SENTINEL-2"
@@ -88,7 +88,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(target_var K2)" "$SENTINEL-2"
 }
 
-@test "FR4, FR20: under strace the sentinel appears only in the target's execve, and there only in its environment" {
+@test "under strace the sentinel appears only in the target's execve, and there only in its environment" {
 	require strace
 	map 'tgt K1 K2'
 	entry K1 "$SENTINEL-1"
@@ -104,7 +104,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	[[ ${hits%%], [*} != *"$SENTINEL"* ]]
 }
 
-@test "FR7: the target gets the caller's umask and descriptors, and lendk's files are private, under umask 000 and 022" {
+@test "the target gets the caller's umask and descriptors, and lendk's files are private, under umask 000 and 022" {
 	map 'tgt K1'
 	entry K1 "$SENTINEL"
 	printf '#!/bin/sh\numask >"$STUB_LOG/umask"\n{ echo open >&7; } 2>/dev/null\n' >"$SB/bin/tgt"
@@ -121,7 +121,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	done
 }
 
-@test "FR7: the target's open descriptors are exactly those of a direct call" {
+@test "the target's open descriptors are exactly those of a direct call" {
 	map 'stub K1'
 	entry K1 "$SENTINEL"
 	local logs
@@ -134,7 +134,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(<"${logs[0]}/fds")" "$(<"$SB/direct")"
 }
 
-@test "FR10: the value is the first line without its newline, spaces and glob characters kept" {
+@test "the value is the first line without its newline, spaces and glob characters kept" {
 	map 'stub K1'
 	printf '  a * b\\n  \nsecond\n' >"$SB/store/env/K1.gpg"
 	run_lendk run -- stub
@@ -142,7 +142,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(target_var K1)" '  a * b\n  '
 }
 
-@test "FR10: an empty first line or an empty entry is missing-key" {
+@test "an empty first line or an empty entry is missing-key" {
 	map 'stub K1'
 	printf '\nsecond\n' >"$SB/store/env/K1.gpg"
 	run_lendk run -- stub
@@ -156,7 +156,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
-@test "FR10: a 200 kB first line reads in under 1 s" {
+@test "a 200 kB first line reads in under 1 s" {
 	map 'stub K1'
 	: >"$SB/store/env/K1.gpg"
 	echo big >"$SB/store/env/K1.mode"
@@ -167,7 +167,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	[[ ${lines[0]%%.*} == 0 ]] || { echo "took ${lines[0]} s" >&2; return 1; }
 }
 
-@test "FR20: the sentinel reaches no output, file or helper, also under bash -x and an exported SHELLOPTS=xtrace" {
+@test "the sentinel reaches no output, file or helper, also under bash -x and an exported SHELLOPTS=xtrace" {
 	map 'stub K1' 'nest K2'
 	entry K1 "$SENTINEL"
 	entry K2 "$SENTINEL-2"
@@ -191,7 +191,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(target_var K2)" "$SENTINEL-2"
 }
 
-@test "FR21: lendk leaves stdin to the target, and the backend's stdin is /dev/null" {
+@test "lendk leaves stdin to the target, and the backend's stdin is /dev/null" {
 	map 'tgt K1'
 	entry K1 "$SENTINEL"
 	printf '#!/bin/sh\ncat >"$STUB_LOG/stdin"\n' >"$SB/bin/tgt"
@@ -202,7 +202,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(<"$(pass_logs)/stdin")" /dev/null
 }
 
-@test "FR20: LENDK_TEST_PAUSE never changes a decrypt's output or class, and no value reaches stderr" {
+@test "LENDK_TEST_PAUSE never changes a decrypt's output or class, and no value reaches stderr" {
 	local p
 	map 'stub K1 K2'
 	entry K1 "12$SENTINEL"

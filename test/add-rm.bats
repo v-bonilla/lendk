@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# lendk add and rm: map edits (FR24, FR25, FR27) under the lock (FR26), with the map rules (FR23, FR28).
+# lendk add and rm: map edits under the lock, with the map rules.
 # shellcheck disable=SC2030,SC2031
 
 setup() {
@@ -44,7 +44,7 @@ state() {
 	(cd "$SHIMS" 2>/dev/null && cksum -- *) || true
 }
 
-@test "FR24: add creates an entry, syncs and prints its row in check format" {
+@test "add creates an entry, syncs and prints its row in check format" {
 	run_lendk add stub K1 K2
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
@@ -57,7 +57,7 @@ state() {
 	assert_eq "$(compgen -G "$SB/log/pass.*" | wc -l)" 2
 }
 
-@test "FR24: add appends only absent words, in order, before a trailing comment" {
+@test "add appends only absent words, in order, before a trailing comment" {
 	map '# keys' 'stub   K1    # the stub' '@g K3' 'other K1'
 	run_lendk add stub K2 K1 @g K2
 	assert_eq "$status" 0
@@ -74,7 +74,7 @@ state() {
 	assert_eq "$(state)" "$before"
 }
 
-@test "FR24: rm removes words, the entry when none remain, and the shim with it" {
+@test "rm removes words, the entry when none remain, and the shim with it" {
 	map 'stub K1 K2 # note' 'other K1'
 	run_lendk sync
 	run_lendk rm stub K1
@@ -93,7 +93,7 @@ state() {
 	assert_eq "$(ls "$SHIMS")" ''
 }
 
-@test "FR24: a guarded command needs --force, and --force gives a notice naming the risk" {
+@test "a guarded command needs --force, and --force gives a notice naming the risk" {
 	ln -s "$FIXTURES/stub-target" "$SB/bin/python3"
 	map 'stub K1'
 	local before cmd
@@ -113,7 +113,7 @@ state() {
 	[[ -x $SHIMS/python3 ]]
 }
 
-@test "FR25: every add and rm error leaves the map and shims byte-identical" {
+@test "every add and rm error leaves the map and shims byte-identical" {
 	map 'stub K1 @g' '@g K2' 'other K1'
 	run_lendk sync
 	local before args
@@ -145,7 +145,7 @@ state() {
 	EOF
 }
 
-@test "FR25: removing an absent name or word exits 0 with a notice" {
+@test "removing an absent name or word exits 0 with a notice" {
 	map 'stub K1'
 	run_lendk sync
 	local before
@@ -160,7 +160,7 @@ state() {
 	assert_eq "$(state)" "$before"
 }
 
-@test "FR23: add and rm need the whole map valid" {
+@test "add and rm need the whole map valid" {
 	map 'stub K1' 'bad!name K1' 'other K1' 'other K2'
 	local before
 	before=$(state)
@@ -172,7 +172,7 @@ state() {
 	assert_eq "$(state)" "$before"
 }
 
-@test "FR26: twenty concurrent adds started with a dead owner's lock leave twenty entries" {
+@test "twenty concurrent adds started with a dead owner's lock leave twenty entries" {
 	local i p st=0
 	mkdir -m 700 "$SHIMS" "$SHIMS.lock"
 	sh -c 'exit 0' &
@@ -192,7 +192,7 @@ state() {
 	assert_eq "$(ls -A "$HOME/.config/lendk")" map
 }
 
-@test "FR27: the map is 0600 in a 0700 directory under umask 000, and only the edited line changes" {
+@test "the map is 0600 in a 0700 directory under umask 000, and only the edited line changes" {
 	umask 000
 	run_lendk add stub K1
 	assert_eq "$status" 0
@@ -207,7 +207,7 @@ state() {
 	assert_eq "$(ls -A "$HOME/.config/lendk")" map
 }
 
-@test "FR27: a symlinked map is followed, and the link stays" {
+@test "a symlinked map is followed, and the link stays" {
 	mkdir -m 700 "$SB/dots" "$HOME/.config" "$HOME/.config/lendk"
 	printf 'stub K1\n' >"$SB/dots/map"
 	chmod 600 "$SB/dots/map"
@@ -223,7 +223,7 @@ state() {
 	assert_eq "$(cat "$SB/dots/map")" 'other K2'
 }
 
-@test "FR28: add and rm give unsafe for an open map, map directory or shim directory" {
+@test "add and rm give unsafe for an open map, map directory or shim directory" {
 	map 'stub K1'
 	run_lendk sync
 	local before
@@ -245,7 +245,7 @@ state() {
 	[[ ! -e $MAP ]]
 }
 
-@test "FR24: rows for non-interactive callers say ask the user, never add or rm" {
+@test "rows for non-interactive callers say ask the user, never add or rm" {
 	run_lendk add stub K1 K9
 	assert_eq "$status" 0
 	assert_eq "$output" $'stub\tK1 K9\tenv/K9 is not in the store (ask the user)'
@@ -254,7 +254,7 @@ state() {
 	assert_eq "$output" $'stub\tK1 K9\tenv/K9 is not in the store (pass insert env/K9)'
 }
 
-@test "FR25: an unknown group creates nothing, and its FIX says to define the group" {
+@test "an unknown group creates nothing, and its FIX says to define the group" {
 	run_lendk add stub @nope
 	assert_eq "$stderr" "lendk: map: $MAP: group @nope is not defined. Stop and ask the user."
 	assert_class map 125

@@ -22,14 +22,14 @@ injected() {
 	tr '\0' '\n' <"${logs[0]}/env" | sed -n 's/^LENDK_INJECTED=//p'
 }
 
-@test "FR23: run reads only its own line and groups; bad lines elsewhere leave it working" {
+@test "run reads only its own line and groups; bad lines elsewhere leave it working" {
 	map '<<<<<<< HEAD' 'other K1' 'other K2' 'bad PATH' '@x @y' '@x K1' '1bad K1' '  stub   K1 @g	# trailing' '@g K2' '>>>>>>> branch' 'lendk K1'
 	run_lendk run -- stub
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
 }
 
-@test "FR23: a violation in run's own line or groups is map, with its line" {
+@test "a violation in run's own line or groups is map, with its line" {
 	local case line text
 	for case in \
 		"stub PATH|1|key 'PATH' is denied" \
@@ -54,14 +54,14 @@ injected() {
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 }
 
-@test "FR23: lendk's own runtime cannot be mapped" {
+@test "lendk's own runtime cannot be mapped" {
 	map 'bash K1'
 	LENDK_PROMPT=allow run_lendk run -- bash
 	assert_eq "$stderr" "lendk: map: $MAP:1: bash is lendk's own runtime and cannot be mapped. Fix the line, then run: lendk check"
 	assert_class map 125
 }
 
-@test "FR23: a named group must be defined; named keys need no map" {
+@test "a named group must be defined; named keys need no map" {
 	map 'stub K1'
 	run_lendk run @nope -- stub
 	assert_eq "$stderr" "lendk: map: $MAP: group @nope is not defined. Stop and ask the user."
@@ -72,7 +72,7 @@ injected() {
 	assert_eq "$(injected)" ""
 }
 
-@test "4.2: groups expand in word order and duplicates drop, keeping the first" {
+@test "groups expand in word order and duplicates drop, keeping the first" {
 	map 'stub K2 @g K1 # @late' '@g K1 K2 K3'
 	export K3=three
 	run_lendk run -- stub

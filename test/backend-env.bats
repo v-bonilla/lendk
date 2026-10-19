@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR8: the backend runs under an environment built from scratch, directly and under a nested shim.
+# The backend runs under an environment built from scratch, directly and under a nested shim.
 # shellcheck disable=SC2016,SC2030,SC2031,SC2329
 
 setup() {
@@ -46,7 +46,7 @@ check_pass_env() {
 	tr '\0' '\n' <"$1/env" | grep -qxF -- "PASSWORD_STORE_GPG_OPTS=--opt --status-fd 9 --pinentry-mode error"
 }
 
-@test "FR8: a direct call's backend gets only the allowlisted environment" {
+@test "a direct call's backend gets only the allowlisted environment" {
 	run_lendk run -- stub
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
@@ -55,7 +55,7 @@ check_pass_env() {
 	check_pass_env "${logs[0]}"
 }
 
-@test "FR8: under a nested shim, the inner backend sees neither the outer key nor the caller's" {
+@test "under a nested shim, the inner backend sees neither the outer key nor the caller's" {
 	run_lendk run -- outer
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""

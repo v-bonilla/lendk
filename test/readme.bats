@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR37 and AC5: the README covers every topic, and its quick start runs as written on a fresh HOME with
+# The README covers every topic, and its quick start runs as written on a fresh HOME with
 # Debian's skel files, real pass and a scratch GnuPG key and store.
 # shellcheck disable=SC2013,SC2016,SC2088
 
@@ -34,7 +34,7 @@ anchor() { sed 's/^#* //' | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9 _-]//g;
 # section HEADING: the README from the line HEADING to the next heading of level two or deeper.
 section() { sed -n "/^$1\$/,/^##/p" "$README"; }
 
-@test "FR37: the README covers every topic" {
+@test "the README covers every topic" {
 	local topic
 	for topic in '<!-- quickstart -->' 'Install only from this repository' \
 		'lendk init sh >> ~/.zshenv' 'lendk init zsh >> ~/.zshrc' 'lendk init systemd >' '~/.zprofile' \
@@ -75,13 +75,13 @@ section() { sed -n "/^$1\$/,/^##/p" "$README"; }
 	done
 }
 
-@test "FR37: the install command for humans is the quick start's first command" {
+@test "the install command for humans is the quick start's first command" {
 	local cmd
 	cmd=$(section '### For humans' | awk '/^```/ { if (fence) exit; fence = 1; next } fence')
 	assert_eq "$cmd" "$(quickstart | head -n 1)"
 }
 
-@test "FR37: the Contents list links every section, and every in-page link names a heading" {
+@test "the Contents list links every section, and every in-page link names a heading" {
 	local anchors listed link
 	anchors=$(headings | anchor)
 	assert_eq "$(sort <<<"$anchors" | uniq -d)" ''
@@ -94,7 +94,7 @@ section() { sed -n "/^$1\$/,/^##/p" "$README"; }
 	done
 }
 
-@test "FR37: uninstall has a section of its own, and elsewhere only the option list and links name it" {
+@test "uninstall has a section of its own, and elsewhere only the option list and links name it" {
 	local own point line rest n=0
 	own=$(section '## Uninstall')
 	for point in 'install.sh | bash -s -- --uninstall' 'never removes the map or the pass store' '--skill-dir DIR' \
@@ -112,7 +112,7 @@ section() { sed -n "/^$1\$/,/^##/p" "$README"; }
 	assert_eq "$n" 1
 }
 
-@test "FR37: the Upgrade section sits between Installation and Uninstall and covers the verb, its trust and the installer's part" {
+@test "the Upgrade section sits between Installation and Uninstall and covers the verb, its trust and the installer's part" {
 	local heading n last=0 own topic
 	for heading in '## Installation' '## Upgrade' '## Uninstall'; do
 		n=$(headings | grep -nxF -e "$heading" | cut -d: -f1)
@@ -135,7 +135,7 @@ section() { sed -n "/^$1\$/,/^##/p" "$README"; }
 	assert_line "$(section '## Agent contract')" '- Run `lendk upgrade` only when the user asks, and never set `LENDK_INSTALL_BASE_URL`.'
 }
 
-@test "FR37: the README's statements about network use name lendk upgrade alone" {
+@test "the README's statements about network use name lendk upgrade alone" {
 	local line
 	grep -qF -e 'It uses the network only when you run `lendk upgrade`.' <<<"$(section '## Key features')"
 	grep -qF -e 'lendk uses the network only in `lendk upgrade`, and only when you run it.' <<<"$(section '## How it works')"
@@ -150,7 +150,7 @@ agent_prompt() {
 	sed -n '/^<!-- agent-prompt -->$/,/^<!-- agent-prompt -->$/p' "$README" | grep -v -e '^<!--' -e '^```'
 }
 
-@test "FR37: the agent prompt covers every step, with only real installer options, classes and lendk verbs" {
+@test "the agent prompt covers every step, with only real installer options, classes and lendk verbs" {
 	local prompt help opt verb cls point
 	prompt=$(agent_prompt)
 	help=$("$LENDK" --help)
@@ -179,7 +179,7 @@ agent_prompt() {
 	done
 }
 
-@test "FR37: the credential helper snippet leaves only lendk's helper after none, or after gh's two" {
+@test "the credential helper snippet leaves only lendk's helper after none, or after gh's two" {
 	require git
 	local snippet host want
 	snippet=$(sed -n '/^### Git credential helper$/,/^###/p' "$README" | sed -n '/^```$/,/^```$/p' | sed '1d;$d')
@@ -199,7 +199,7 @@ agent_prompt() {
 	done
 }
 
-@test "AC5: the README's quick start runs as written and gh then receives GH_TOKEN" {
+@test "the README's quick start runs as written and gh then receives GH_TOKEN" {
 	require git
 	require make
 	gpg_setup

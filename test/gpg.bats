@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR18, FR34: real pass and GnuPG with a scratch GnuPG home, a passphrase-protected key and a
+# Real pass and GnuPG with a scratch GnuPG home, a passphrase-protected key and a
 # recording pinentry, in both of pass's branches: plain gpg, and gpg2 on PATH, which adds --batch.
 # shellcheck disable=SC2016,SC2030,SC2031,SC2034
 
@@ -40,7 +40,7 @@ target_got() {
 recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 
 # bats test_tags=gpg
-@test "FR18: (a) a cold non-interactive call gives locked within 2 s and never launches pinentry" {
+@test "(a) a cold non-interactive call gives locked within 2 s and never launches pinentry" {
 	local b start
 	for b in plain gpg2; do
 		branch "$b"
@@ -55,7 +55,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (b) after priming through loopback a non-interactive call succeeds" {
+@test "(b) after priming through loopback a non-interactive call succeeds" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"
@@ -69,7 +69,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (c) LENDK_PROMPT=allow launches pinentry" {
+@test "(c) LENDK_PROMPT=allow launches pinentry" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"
@@ -82,7 +82,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (d) with stdin piped and stderr a terminal, pinentry gets that terminal as ttyname" {
+@test "(d) with stdin piped and stderr a terminal, pinentry gets that terminal as ttyname" {
 	local b q
 	q=$(printf %q "$SB")
 	for b in plain gpg2; do
@@ -96,7 +96,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (e) Cancel in pinentry gives canceled" {
+@test "(e) Cancel in pinentry gives canceled" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"
@@ -109,7 +109,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (f) a pinentry that never answers gives timeout within 4 s and is gone afterwards" {
+@test "(f) a pinentry that never answers gives timeout within 4 s and is gone afterwards" {
 	local b start p
 	for b in plain gpg2; do
 		branch "$b"
@@ -125,7 +125,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (g) KILL to lendk's process group while pinentry waits leaves no pinentry within 2 s" {
+@test "(g) KILL to lendk's process group while pinentry waits leaves no pinentry within 2 s" {
 	local b i lpid p
 	for b in plain gpg2; do
 		branch "$b"
@@ -148,7 +148,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (h) with loopback in gpg.conf the passphrase typed into the terminal reaches gpg, and the target gets the value" {
+@test "(h) with loopback in gpg.conf the passphrase typed into the terminal reaches gpg, and the target gets the value" {
 	branch plain
 	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
 	in_shell "$(printf %q "$LENDK") run -- stub; st=\$?; echo; echo status=\$st" @3 "$GPG_PASS" @3 exit
@@ -158,7 +158,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR18: (i) with loopback in gpg.conf, a call in a command substitution gives locked and shows no prompt" {
+@test "(i) with loopback in gpg.conf, a call in a command substitution gives locked and shows no prompt" {
 	branch plain
 	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
 	in_shell "x=\$($(printf %q "$LENDK") run -- stub); echo rc=\$?" @3 exit
@@ -170,7 +170,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR34: unlock with a pinentry primes the cache for non-interactive calls" {
+@test "unlock with a pinentry primes the cache for non-interactive calls" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"
@@ -189,7 +189,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 }
 
 # bats test_tags=gpg
-@test "FR34: unlock without a terminal is a probe that gives locked on a cold cache" {
+@test "unlock without a terminal is a probe that gives locked on a cold cache" {
 	local b
 	for b in plain gpg2; do
 		branch "$b"

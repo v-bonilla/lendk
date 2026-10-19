@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# CLI surface: --help, --version, usage errors, inherited functions, section 8 settings.
+# CLI surface: --help, --version, usage errors, inherited functions, environment settings.
 
 setup() {
 	load helpers/common
@@ -12,7 +12,7 @@ settings() {
 	LENDK=$SB/bin/lendk-fn run_lendk eval 'load_env; printf "%s\n" "$map" "$shims" "$store" "$prefix" "$timeout"'
 }
 
-@test "FR36: --help prints the reference to stdout and exits 0" {
+@test "--help prints the reference to stdout and exits 0" {
 	run_lendk --help
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
@@ -20,14 +20,14 @@ settings() {
 	assert_line "$output" "Environment:"
 }
 
-@test "FR36: --version prints lendk X.Y.Z" {
+@test "--version prints lendk X.Y.Z" {
 	run_lendk --version
 	assert_eq "$status" 0
 	[[ $output =~ ^lendk\ [0-9]+\.[0-9]+\.[0-9]+$ ]]
 	assert_eq "$stderr" ""
 }
 
-@test "FR36: no arguments, an unknown verb, or extra words after --help or --version are usage" {
+@test "no arguments, an unknown verb, or extra words after --help or --version are usage" {
 	run_lendk
 	assert_eq "$stderr" "lendk: usage: no verb given. See: lendk --help"
 	assert_class usage 2
@@ -41,7 +41,7 @@ settings() {
 	assert_class usage 2
 }
 
-@test "FR9: exported functions named like commands and builtins leave --help and --version byte-identical" {
+@test "exported functions named like commands and builtins leave --help and --version byte-identical" {
 	local clean hijacked
 	clean=$("$LENDK" --help; "$LENDK" --version)
 	# shellcheck disable=SC2016
@@ -55,7 +55,7 @@ settings() {
 	assert_eq "$hijacked" "$clean"
 }
 
-@test "FR9: inherited functions are gone before any command runs" {
+@test "inherited functions are gone before any command runs" {
 	lendk_probe() { echo inherited; }
 	export -f lendk_probe
 	run lendk-fn declare -F lendk_probe
@@ -63,7 +63,7 @@ settings() {
 	assert_eq "$output" ""
 }
 
-@test "section 8: default paths follow HOME" {
+@test "default paths follow HOME" {
 	unset PASSWORD_STORE_DIR
 	settings
 	assert_eq "$stderr" ""
@@ -74,7 +74,7 @@ env
 10"
 }
 
-@test "section 8: absolute XDG values move the defaults and relative ones are ignored" {
+@test "absolute XDG values move the defaults and relative ones are ignored" {
 	unset PASSWORD_STORE_DIR
 	XDG_CONFIG_HOME=/cfg XDG_DATA_HOME=/data settings
 	assert_eq "$output" "/cfg/lendk/map
@@ -90,7 +90,7 @@ env
 10"
 }
 
-@test "section 8: LENDK_MAP, LENDK_SHIMS, PASSWORD_STORE_DIR and LENDK_PREFIX override the defaults" {
+@test "LENDK_MAP, LENDK_SHIMS, PASSWORD_STORE_DIR and LENDK_PREFIX override the defaults" {
 	LENDK_MAP=/m/map LENDK_SHIMS=/s XDG_CONFIG_HOME=/cfg PASSWORD_STORE_DIR=/store LENDK_PREFIX=api settings
 	assert_eq "$output" "/m/map
 /s
@@ -99,7 +99,7 @@ api
 10"
 }
 
-@test "5.1: LENDK_PROMPT accepts auto, never and allow; allow makes the default timeout 60 s" {
+@test "LENDK_PROMPT accepts auto, never and allow; allow makes the default timeout 60 s" {
 	local value
 	for value in auto never; do
 		LENDK_PROMPT=$value settings
@@ -109,7 +109,7 @@ api
 	assert_eq "${output##*$'\n'}" 60
 }
 
-@test "5.1: any other LENDK_PROMPT is usage" {
+@test "any other LENDK_PROMPT is usage" {
 	local value
 	for value in yes '' ALLOW; do
 		LENDK_PROMPT=$value settings
@@ -119,7 +119,7 @@ api
 	done
 }
 
-@test "section 8: LENDK_TIMEOUT accepts 1 to 3600 and applies to both modes" {
+@test "LENDK_TIMEOUT accepts 1 to 3600 and applies to both modes" {
 	local value
 	for value in 1 3600; do
 		LENDK_TIMEOUT=$value settings
@@ -129,7 +129,7 @@ api
 	done
 }
 
-@test "section 8: any other LENDK_TIMEOUT is usage" {
+@test "any other LENDK_TIMEOUT is usage" {
 	local value
 	for value in 0 3601 05 1.5 -1 abc ''; do
 		LENDK_TIMEOUT=$value settings

@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# FR14, FR15: interactivity, the backend's options and GPG_TTY, and classification of backend failures.
+# Interactivity, the backend's options and GPG_TTY, and classification of backend failures.
 # shellcheck disable=SC2016,SC2030,SC2031,SC2034
 
 setup() {
@@ -22,7 +22,7 @@ pass_var() {
 	return 0
 }
 
-@test "FR14: the matrix of terminal stdin and stderr and LENDK_PROMPT sets the backend options" {
+@test "the matrix of terminal stdin and stderr and LENDK_PROMPT sets the backend options" {
 	local in err p cmd want
 	export PASSWORD_STORE_GPG_OPTS='--user-a --user-b'
 	for in in tty pipe; do
@@ -51,7 +51,7 @@ pass_var() {
 	done
 }
 
-@test "FR14: gpg's status code, not its text, classifies failures, per interactivity" {
+@test "gpg's status code, not its text, classifies failures, per interactivity" {
 	local mode prompt want
 	for mode in locked cancel fail; do
 		echo "$mode" >"$SB/store/env/K1.mode"
@@ -77,7 +77,7 @@ pass_var() {
 	assert_eq "$stderr" "lendk: canceled: passphrase entry for env/K1 was canceled. Run the command again to retry."
 }
 
-@test "FR15: an interactive backend gets stdin's terminal as GPG_TTY, else stderr's; the target never does" {
+@test "an interactive backend gets stdin's terminal as GPG_TTY, else stderr's; the target never does" {
 	local q
 	q=$(printf %q "$SB")
 	in_pty "tty >$q/tty; $(printf %q "$LENDK") run -- stub"
@@ -92,7 +92,7 @@ pass_var() {
 	assert_eq "$(pass_var GPG_TTY)" "GPG_TTY=$(<"$SB/tty")"
 }
 
-@test "FR15: a caller GPG_TTY naming a character device stays, any other is replaced, and non-interactive calls add none" {
+@test "a caller GPG_TTY naming a character device stays, any other is replaced, and non-interactive calls add none" {
 	local q
 	q=$(printf %q "$SB")
 	in_pty "tty >$q/tty; GPG_TTY=/dev/null $(printf %q "$LENDK") run -- stub"
