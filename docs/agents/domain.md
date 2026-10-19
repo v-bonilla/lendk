@@ -4,12 +4,11 @@ How the engineering skills consume this repo's domain documentation when explori
 
 ## Before exploring, read these
 
-- **`docs/prd.md`**: the spec. It wins any conflict with `GLOSSARY.md`, an ADR, the code, the tests or the other docs. Cite it by ID (`FR24`, `NFR8`, `AC5`) or section number.
-- **`GLOSSARY.md`** at the repo root: the glossary.
+- **`GLOSSARY.md`** at the repo root: the domain terms.
 - **`docs/adr/`**: read ADRs that touch the area you're about to work in.
-- **Rules R1 to R15 of the v1 plan** (`git show 3644a1f:docs/plan.md`): the reasons behind the decrypt path, the timeout watchdog, the terminal handoff and the lock. They weigh as ADRs.
+- **`CODING_STANDARDS.md`** at the repo root: how code, tests, docs and commits are written.
 
-If `GLOSSARY.md` or `docs/adr/` doesn't exist, **proceed silently**. Don't flag their absence; don't suggest creating them upfront. The `/domain-modeling` skill (reached via `/grill-with-docs` and `/improve-codebase-architecture`) creates them lazily when terms or decisions actually get resolved.
+No doc ranks above another. Tests pin the public interface, which `lendk --help` prints from the tables region of `bin/lendk`; ADRs record decisions and their reasons; a conflict between code, tests and docs goes to the maintainer as an issue.
 
 ## File structure
 
@@ -17,12 +16,16 @@ This is a single-context repo:
 
 ```
 /
+├── CODING_STANDARDS.md
 ├── GLOSSARY.md
 ├── bin/lendk
 └── docs/
-    ├── prd.md
-    └── adr/
-        └── 0001-<slug>.md
+    ├── adr/
+    │   ├── 0001-path-shims-not-prefix-command.md
+    │   ├── ...
+    │   └── 0015-install-only-from-project-repo.md
+    ├── agents/
+    └── release.md
 ```
 
 ## Use the glossary's vocabulary
@@ -35,6 +38,6 @@ If the concept you need isn't in the glossary yet, that's a signal: either you'r
 
 If your output contradicts an existing ADR, surface it explicitly rather than silently overriding:
 
-> _Contradicts ADR-0007 (event-sourced orders), but worth reopening because…_
+> _Contradicts ADR 0007 (no daemon, no value cache), but worth reopening because…_
 
-An ADR never overrides `docs/prd.md`. A decision that changes behavior starts as a PRD amendment.
+Reopening a decision starts as an issue for the maintainer.
