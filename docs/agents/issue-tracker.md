@@ -7,6 +7,7 @@ Issues and specs for this repo live as GitHub issues of `v-bonilla/lendk`. Use t
 - **Create an issue**: `gh issue create --title "..." --body "..."`. Use a heredoc for multi-line bodies.
 - **Read an issue**: `gh issue view <number> --comments`, filtering comments by `jq` and also fetching labels.
 - **List issues**: `gh issue list --state open --json number,title,body,labels,comments --jq '[.[] | {number, title, body, labels: [.labels[].name], comments: [.comments[].body]}]'` with appropriate `--label` and `--state` filters.
+- **Make an issue a sub-issue of a parent**: `gh issue create --parent <parent> ...`, or `gh issue edit <parent> --add-sub-issue <child>` afterwards.
 - **Comment on an issue**: `gh issue comment <number> --body "..."`
 - **Apply / remove labels**: `gh issue edit <number> --add-label "..."` / `--remove-label "..."`
 - **Close**: `gh issue close <number> --comment "..."`
@@ -15,8 +16,18 @@ Infer the repo from `git remote -v`; `gh` does this automatically when run insid
 
 ## Issue content
 
-- Cite the PRD IDs an issue touches (`FR24`, `NFR8`, `AC5`). `docs/prd.md` wins any conflict with an issue, and a behavior change starts as a PRD amendment.
-- Bodies and comments follow the NFR9 content rules: no key value, email address or home path other than `/home/alice`.
+Bodies and comments follow the repository's content rules: no key value, email address or home path other than `/home/alice`.
+
+## Workflow
+
+A behavior change, to what `bin/lendk` or `install.sh` does or to what `--help` or the README promises, starts as an issue. Any other change, such as docs, tests, refactoring or CI, goes straight to a commit on `dev`.
+
+- **Bug**: an issue labelled `needs-triage`, which `/triage` takes from there.
+- **Feature or release**: a spec issue (`/to-spec`) and its tickets (`/to-tickets`). Each ticket is a sub-issue of the spec, with native blocking edges as in **Blocking** below.
+- **Unclear path**: `/wayfinder` is for when the way to a spec is not yet visible. It charts a wayfinder map, as in **Wayfinding operations** below.
+- **Frontier of a spec**: list its open tickets with `gh issue view <spec> --json subIssues --jq '.subIssues.nodes[] | select(.state == "OPEN") | .number'`. A ticket is ready when it has no open blocker and no assignee; `gh issue view <n> --json number,title,blockedBy,assignees --jq 'select(([.blockedBy.nodes[] | select(.state == "OPEN")] | length) == 0 and (.assignees | length) == 0) | "#\(.number) \(.title)"'` prints it only then. While a spec runs on an integration branch, its tickets stay open on GitHub until that branch merges into `dev`, so a ticket merged into the integration branch counts as done.
+- **Closing**: GitHub closes an issue through a closing keyword only when the change reaches `main`, the default branch, so issues close by hand. A ticket closes when its commit lands on `dev`, directly or when its spec's integration branch merges into `dev`, with a comment that cites the ticket's own commit hash, never a merge commit: `gh issue close <n> --comment "Landed on dev in <hash>."`. A ticket with no commit closes with a comment linking its result. A spec issue closes with its last ticket.
+- **Finding outside the scope**: a bug that a new test exposes, or any other finding outside the issue at hand, becomes its own `needs-triage` issue, and the spec or ticket gets a comment pointing to it.
 
 ## Pull requests as a triage surface
 
@@ -40,11 +51,11 @@ Run `gh issue view <number> --comments`.
 
 ## Wayfinding operations
 
-Used by `/wayfinder`. The **map** is a single issue with **child** issues as tickets.
+Used by `/wayfinder`. The **wayfinder map** is a single issue with **child** issues as tickets.
 
-- **Map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
-- **Child ticket**: an issue linked to the map as a GitHub sub-issue (`gh api` on the sub-issues endpoint). Where sub-issues aren't enabled, add the child to a task list in the map body and put `Part of #<map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
+- **Wayfinder map**: a single issue labelled `wayfinder:map`, holding the Notes / Decisions-so-far / Fog body. `gh issue create --label wayfinder:map`.
+- **Child ticket**: an issue linked to the wayfinder map as a GitHub sub-issue (see **Make an issue a sub-issue of a parent**). Where sub-issues aren't enabled, add the child to a task list in the wayfinder map's body and put `Part of #<wayfinder map>` at the top of the child body. Labels: `wayfinder:<type>` (`research`/`prototype`/`grilling`/`task`). Once claimed, the ticket is assigned to the driving dev.
 - **Blocking**: GitHub's **native issue dependencies**, the canonical, UI-visible representation. Add an edge with `gh api --method POST repos/v-bonilla/lendk/issues/<child>/dependencies/blocked_by -F issue_id=<blocker-db-id>`, where `<blocker-db-id>` is the blocker's numeric **database id** (`gh api repos/v-bonilla/lendk/issues/<n> --jq .id`, _not_ the `#number` or `node_id`). GitHub reports `issue_dependencies_summary.blocked_by` (open blockers only, the live gate). Where dependencies aren't available, fall back to a `Blocked by: #<n>, #<n>` line at the top of the child body. A ticket is unblocked when every blocker is closed.
-- **Frontier query**: list the map's open children (`gh issue list --state open`, scoped to the map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in map order wins.
+- **Frontier query**: list the wayfinder map's open children (`gh issue list --state open`, scoped to the wayfinder map's sub-issues / task list), drop any with an open blocker (`issue_dependencies_summary.blocked_by > 0`, or an open issue in the `Blocked by` line) or an assignee; first in wayfinder map order wins.
 - **Claim**: `gh issue edit <n> --add-assignee @me`, the session's first write.
-- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the map's Decisions-so-far.
+- **Resolve**: `gh issue comment <n> --body "<answer>"`, then `gh issue close <n>`, then append a context pointer (gist + link) to the wayfinder map's Decisions-so-far.
