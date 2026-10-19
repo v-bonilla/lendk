@@ -260,6 +260,7 @@ lendk --help | --version
 - `lendk run OPENAI_API_KEY -- ./script.sh` runs one command with the named keys, mapped or not.
 - A key already set in the caller's environment wins, so `GH_TOKEN=other gh` works, and a mapped command calling another reuses the key with no second decrypt.
 - `lendk unlock` asks for your gpg passphrase once, so later calls without a terminal find the cache warm.
+- Without names, `lendk unlock` decrypts only the first mapped key the store holds, so gpg-agent caches the passphrase of one GnuPG key. When store entries are encrypted to different GnuPG keys, as in store folders with their own `.gpg-id`, run `lendk unlock KEY` once per GnuPG key, naming a key encrypted to it.
 - `gpgconf --reload gpg-agent` forgets cached passphrases, which locks every key again.
 
 ### Map file

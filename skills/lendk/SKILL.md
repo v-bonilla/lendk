@@ -126,7 +126,7 @@ Keys that travel together go in a group: `lendk add @aws AWS_ACCESS_KEY_ID AWS_S
 - a git credential helper names gh by absolute path: use `!lendk run -- gh auth git-credential`;
 - the key is already set in the environment, which wins over the store.
 
-**Calls from cron, agents or scripts fail with `locked`.** gpg-agent has no cached passphrase. The user runs `lendk unlock` in a terminal; cache lifetime is `default-cache-ttl` and `max-cache-ttl` in `~/.gnupg/gpg-agent.conf`.
+**Calls from cron, agents or scripts fail with `locked`.** gpg-agent has no cached passphrase. The user runs `lendk unlock` in a terminal; cache lifetime is `default-cache-ttl` and `max-cache-ttl` in `~/.gnupg/gpg-agent.conf`. Without names, `lendk unlock` decrypts only the first mapped key the store holds, so gpg-agent caches the passphrase of one GnuPG key. When store entries are encrypted to different GnuPG keys, as in store folders with their own `.gpg-id`, the user runs `lendk unlock KEY` once per GnuPG key, naming a key encrypted to it.
 
 **Decrypts are slow.** GnuPG's default `s2k-count` re-runs a costly key derivation on every decrypt. See [references/setup.md](references/setup.md); the user decides, since it weakens the key file against offline guessing.
 
