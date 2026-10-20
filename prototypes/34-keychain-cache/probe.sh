@@ -1,6 +1,7 @@
 #!/bin/bash
 # PROTOTYPE for lendk #34, throwaway, never merged: walks a human through #34's claims on a throwaway macOS account and logs every result.
 # Usage: ./probe.sh build|gui|ssh|ssh-again|settings|cleanup by hand, ./probe.sh ci on a CI runner; README.md gives the order.
+# #36's ../36-keychain-ssh/ssh-ci.sh runs write, ssh, ssh-again and ssh-login on a CI runner, in ssh sessions to the runner itself.
 # With PROBE_CI set nobody answers: questions are logged, and a call still waiting after 8 s gets a screenshot and a dump of the windows on screen.
 set -u
 
@@ -11,6 +12,8 @@ install_dir=$HOME/.local/keychain-probe
 probe_bin=$install_dir/keychain-probe
 login_kc=$HOME/Library/Keychains/login.keychain-db
 account=age1prototype34keychaincacheprobe
+# In CI, #36's ssh-ci.sh writes here the login password of the account it creates; the runner's own stays unknown.
+password_file=$HOME/.lendk-probe-password
 phase=${1-}
 
 die() {
@@ -20,7 +23,7 @@ die() {
 
 [ "$(uname -s)" = Darwin ] || die "macOS only"
 [ -f "$HOME/KEYCHAIN-PROBE-THROWAWAY" ] || die "refusing to run: \$HOME/KEYCHAIN-PROBE-THROWAWAY is missing; use a throwaway account, see README.md"
-case $phase in build | gui | ssh | ssh-again | settings | cleanup | ci) ;; *) die "usage: ./probe.sh build|gui|ssh|ssh-again|settings|cleanup|ci" ;; esac
+case $phase in build | gui | ssh | ssh-again | settings | cleanup | ci | write | ssh-login) ;; *) die "usage: ./probe.sh build|gui|ssh|ssh-again|settings|cleanup|ci|write|ssh-login" ;; esac
 
 mkdir -p "$here/results" "$install_dir" || exit 2
 log=$here/results/$(sw_vers -productVersion)-$(uname -m)-$phase-$(date +%Y%m%dT%H%M%S).log
@@ -90,9 +93,10 @@ screen_report() {
 	shot=$here/results/screen-$(date +%H%M%S)-$RANDOM.png
 	{
 		printf 'CI: the call was still waiting after 8 s\n'
-		screencapture -x "$shot" 2>&1 && printf 'screenshot: results/%s\n' "$(basename "$shot")"
+		with_deadline 10 screencapture -x "$shot" 2>&1 && printf 'screenshot: results/%s\n' "$(basename "$shot")"
 		printf 'processes: %s\n' "$(pgrep -l -f 'SecurityAgent|coreauthd|authorizationhost' | tr '\n' ';')"
-		osascript -e "$read_screen" 2>&1
+		# From an ssh session there may be no window server to answer, hence the deadlines.
+		with_deadline 20 osascript -e "$read_screen" 2>&1
 	} | out >&2
 }
 
@@ -114,12 +118,14 @@ watched() {
 }
 
 # with_deadline SECS CMD...: runs CMD and kills it after SECS seconds; returns CMD's status.
+# Its variables are local, since screen_report calls it inside watched, whose pid it would overwrite.
 with_deadline() {
-	secs=$1
+	local secs=$1 pid killer rc
 	shift
 	"$@" &
 	pid=$!
-	(sleep "$secs" && kill "$pid" 2>/dev/null) &
+	# The killer's sleep outlives a kill of the killer, so it must not hold a caller's pipe open.
+	(sleep "$secs" && kill "$pid" 2>/dev/null) >/dev/null 2>&1 &
 	killer=$!
 	wait "$pid"
 	rc=$?
@@ -167,6 +173,46 @@ reads() {
 	probe read --api secitem --suppress uifail --watchdog 20
 	probe read --api secitem --suppress lacontext --watchdog 20
 	probe read --api seckeychain --suppress flag --watchdog 20
+}
+
+# keychains: the keychain files and settings this account has, which an account that never logged in at the GUI may lack.
+keychains() {
+	note ls -la "$HOME/Library/Keychains"
+	note security login-keychain -d user
+	note security default-keychain -d user
+	note security list-keychains -d user
+}
+
+# with_password ARG...: runs the probe with the login password from $password_file on stdin. It
+# skips run_at, since macOS's bash 3.2 gives run_at's background job /dev/null as stdin, and
+# relies on the probe's own watchdog instead.
+with_password() {
+	printf '$ keychain-probe %s --watchdog 60 <~/%s\n' "$*" "$(basename "$password_file")" | out
+	"$probe_bin" "$@" --watchdog 60 <"$password_file" | out
+}
+
+# unlock_typed: SecKeychainUnlock with the login password, typed by the human, or in CI read from $password_file.
+unlock_typed() {
+	if [ -z "${PROBE_CI-}" ]; then
+		probe unlock --watchdog 120
+	elif [ -r "$password_file" ]; then
+		with_password unlock
+	else
+		printf '%s\n' "CI: this account's login password is unknown, so no unlock with it" | out
+	fi
+}
+
+# second_session: a second ssh session to this account while this one stays open. In CI it goes
+# through the lendk-probe-self host in the ssh config ssh-ci.sh wrote, and logs to its own file.
+second_session() {
+	if [ -z "${PROBE_CI-}" ]; then
+		pause "Leave this session open. In a second ssh session to this account, run: ./probe.sh ssh-again. Come back here once it finishes."
+		return
+	fi
+	printf '$ ssh lendk-probe-self ./probe.sh ssh-again\n' | out
+	ssh -F "$HOME/.ssh/lendk-probe-config" lendk-probe-self "cd '$here' && PROBE_CI=1 ./probe.sh ssh-again" </dev/null 2>&1 >/dev/null | out
+	rc=${PIPESTATUS[0]}
+	printf 'second ssh session: exit %s; its log is the ssh-again log of the same minute\n' "$rc" | out
 }
 
 claim7() {
@@ -296,13 +342,16 @@ claim4() {
 
 claim3() {
 	say "Claim 3: the login keychain from an ssh session"
+	keychains
 	probe status --keychain login
+	# The item an earlier session left, if any: in CI, the one ./probe.sh write left from the runner's GUI session.
+	probe read --watchdog 20
 	probe delete --watchdog 20
 	probe write --acl default --watchdog 20
 	reads
 	probe unlock --no-password --watchdog 20
 	pause "Next the probe asks for this account's login password and calls SecKeychainUnlock, the only unlock open to lendk over ssh."
-	probe unlock --watchdog 120
+	unlock_typed
 	probe status --keychain login
 	probe write --acl default --watchdog 20
 	reads
@@ -338,7 +387,7 @@ ssh)
 	ask "Is this same user logged in at the Mac's GUI right now, with that session open? Fast user switching counts. [y/n]"
 	claim7 "ssh session"
 	claim3
-	pause "Leave this session open. In a second ssh session to this account, run: ./probe.sh ssh-again. Come back here once it finishes."
+	second_session
 	say "Claim 3: the first ssh session after the second one ran"
 	probe status --keychain login
 	reads
@@ -371,6 +420,46 @@ ci)
 	claim1
 	claim2
 	claim4
+	finish
+	;;
+write)
+	# #36's CI: the runner's GUI session writes the item that claim 3 then reads first over ssh.
+	install_release N
+	context
+	probe delete --watchdog 20
+	probe write --acl default --watchdog 20
+	probe read --watchdog 20
+	;;
+ssh-login)
+	# #36's CI only. An account that never logged in at the GUI may have no login keychain, so this
+	# makes one over ssh with its login password, then locks and unlocks it: a stand-in for a Mac
+	# whose GUI session logged out. Real login keychains come from loginwindow, not SecKeychainCreate.
+	[ -n "${PROBE_CI-}" ] && [ -r "$password_file" ] ||
+		die "ssh-login runs on a CI runner as the account ssh-ci.sh creates; on a Mac, log out of the GUI and run ./probe.sh ssh"
+	install_release N
+	context
+	say "#36 claim 2, stand-in for a logged-out GUI session: a login keychain made over ssh with the login password"
+	keychains
+	with_password tempkc-create "$login_kc" --login-password
+	# A real login keychain never locks on a timer or on sleep (#34, claim 5); a new keychain does both.
+	note security set-keychain-settings "$login_kc"
+	note security login-keychain -d user -s "$login_kc"
+	note security default-keychain -d user -s "$login_kc"
+	note security list-keychains -d user -s "$login_kc"
+	keychains
+	probe status --keychain login
+	probe write --acl default --watchdog 20
+	reads
+	say "#36 claim 2, stand-in: locked, then unlocked over ssh with the login password"
+	probe lock --keychain login
+	probe status --keychain login
+	reads
+	probe unlock --no-password --watchdog 20
+	unlock_typed
+	probe status --keychain login
+	reads
+	say "#36 claim 2, stand-in: a second ssh session while the one that unlocked stays open"
+	second_session
 	finish
 	;;
 cleanup)

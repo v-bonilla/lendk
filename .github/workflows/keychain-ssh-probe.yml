@@ -1,0 +1,36 @@
+# PROTOTYPE for #36, throwaway: runs #34's keychain probe over ssh on the macOS runners. It lives only on prototype/keychain-ssh, which never merges.
+name: keychain-ssh-probe
+
+on:
+  push:
+    branches: [prototype/keychain-ssh]
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-14, macos-15, macos-26, macos-26-intel]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    defaults:
+      run:
+        working-directory: prototypes/34-keychain-cache
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The second account the probe adds may read the work directory, so no token stays in it.
+          persist-credentials: false
+      # The runner's account is a throwaway VM, which is what the guard file asserts.
+      - run: touch ~/KEYCHAIN-PROBE-THROWAWAY
+      - run: ./probe.sh build
+      # Turns on Remote Login for key logins from the runner to itself, and adds a second account.
+      - run: ../36-keychain-ssh/ssh-ci.sh
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: keychain-ssh-probe-${{ matrix.os }}
+          path: prototypes/34-keychain-cache/results/

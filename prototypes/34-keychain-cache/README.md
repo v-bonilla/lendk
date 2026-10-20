@@ -35,7 +35,7 @@ A push to `prototype/keychain-cache` runs `.github/workflows/keychain-probe.yml`
 - The runner's account logs in at the GUI automatically, which opens its login keychain, and the image never changes that keychain's lock settings (`configure-autologin.sh` and `change_password` in `actions/runner-images`). Its runner builds with the same linker signature as #31's release workflow.
 - Nobody answers a dialog. A call still waiting after 8 s gets a screenshot and a dump of the windows on screen through System Events, and the probe's watchdog then ends it. The driver clicks nothing.
 - `ci` covers claims 1, 2, 4, 5, 6 and 7 for the job's own session. Read `graphic_access` in the first `info` line first: with `no`, the job runs outside the GUI session, and claims 1 and 4 show what a background process sees rather than the dialog case.
-- `ci` leaves out claim 3, claim 7 over ssh and claim 4's unlock with the login password, which the runner keeps. They need a Mac, or a CI job that starts sshd and makes a second account.
+- `ci` leaves out claim 3, claim 7 over ssh and claim 4's unlock with the login password, which the runner keeps. They need a Mac, or a CI job that starts sshd and makes a second account. [#36](https://github.com/v-bonilla/lendk/issues/36) adds that job in `../36-keychain-ssh/`, on the `prototype/keychain-ssh` branch.
 
 ## Where each claim's answer shows
 

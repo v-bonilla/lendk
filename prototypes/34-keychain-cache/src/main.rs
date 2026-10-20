@@ -137,6 +137,7 @@ struct Opts {
     any_app: bool,
     watchdog: u64,
     no_password: bool,
+    login_password: bool,
     path: Option<String>,
 }
 
@@ -151,6 +152,7 @@ fn parse() -> Result<Opts, String> {
         any_app: false,
         watchdog: 0,
         no_password: false,
+        login_password: false,
         path: None,
     };
     while let Some(a) = args.next() {
@@ -181,6 +183,7 @@ fn parse() -> Result<Opts, String> {
             }
             "--watchdog" => o.watchdog = args.next().and_then(|s| s.parse().ok()).ok_or("--watchdog takes seconds")?,
             "--no-password" => o.no_password = true,
+            "--login-password" => o.login_password = true,
             _ if !a.starts_with("--") && o.path.is_none() => o.path = Some(a),
             _ => return Err(format!("unknown argument: {a}")),
         }
@@ -692,17 +695,14 @@ unsafe fn cmd_unlock(o: &Opts) -> i32 {
     i32::from(st != 0)
 }
 
+// --login-password makes the keychain with this account's login password read from stdin, for
+// #36's stand-in login keychain on an account that never logged in at the GUI.
 unsafe fn cmd_tempkc_create(o: &Opts) -> i32 {
     let Ok(path) = CString::new(o.keychain.as_str()) else { return 2 };
+    let mut pw = if o.login_password { read_password() } else { TEST_KEYCHAIN_PASSWORD.as_bytes().to_vec() };
     let mut kc: SecKeychainRef = null_mut();
-    let st = SecKeychainCreate(
-        path.as_ptr(),
-        TEST_KEYCHAIN_PASSWORD.len() as u32,
-        TEST_KEYCHAIN_PASSWORD.as_ptr().cast(),
-        0,
-        null_mut(),
-        &mut kc,
-    );
+    let st = SecKeychainCreate(path.as_ptr(), pw.len() as u32, pw.as_ptr().cast(), 0, null_mut(), &mut kc);
+    pw.fill(0);
     let mut f = vec![("step", "SecKeychainCreate".into())];
     f.extend(status_fields(st));
     emit(o, f);
