@@ -178,7 +178,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	local before after
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
 	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
-	printf '%s\n' "$SENTINEL" >"$SB/store/env/K1.gpg"
+	store_entry K1 "$SENTINEL"
 	run_lendk sync
 	assert_eq "$status" 0
 	assert_eq "$(sed -n 2p "$LENDK")" "$(sed -n "s/^upgrade_mark='\(.*\)'$/\1/p" "$LENDK")"
@@ -291,7 +291,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 @test "a mapped curl runs without its shim and gets no key, and the tools' output stays out" {
 	local log
 	printf 'curl K1\n' >"$MAP" && chmod 600 "$MAP"
-	printf '%s\n' "$SENTINEL" >"$SB/store/env/K1.gpg"
+	store_entry K1 "$SENTINEL"
 	run_lendk sync
 	assert_eq "$status" 0
 	[[ -x $SHIMS/curl ]]
@@ -725,7 +725,7 @@ stopped() {
 	[[ -f $SB/skills/lendk/SKILL.md ]]
 	grep -qx '# >>> lendk-install >>>' "$HOME/.profile"
 	export PATH=$SHIMS:$SB/bin:$sys
-	printf '%s\n' "$SENTINEL" >"$SB/store/env/GH_TOKEN.gpg"
+	store_entry GH_TOKEN "$SENTINEL"
 	LENDK_PROMPT=allow run_lendk add gh GH_TOKEN
 	assert_eq "$status" 0
 	mark

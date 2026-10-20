@@ -47,7 +47,7 @@ login_env() {
 from_source_setup() {
 	login_env bash -c "git clone -q $(printf %q "$SB/src") lendk && make -s -C lendk install"
 	login_env bash -c '~/.local/bin/lendk init sh >> ~/.profile'
-	printf '%s\n' "$SENTINEL" >"$SB/store/env/GH_TOKEN.gpg"
+	store_entry GH_TOKEN "$SENTINEL"
 	login_env bash -lc 'lendk add gh GH_TOKEN' >/dev/null
 	login_env bash -lc 'lendk add outer GH_TOKEN' >/dev/null
 	login_env bash -lc 'lendk init sh >> ~/.zshenv && lendk init bash >> ~/.bashrc'

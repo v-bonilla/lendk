@@ -16,6 +16,19 @@ setup() {
 	[[ $SENTINEL == lendk-sentinel-?* ]]
 }
 
+@test "store_entry: writes an entry of one line, several lines, an empty first line or no line, and removes entries" {
+	store_entry K1 one
+	assert_eq "$(od -c <"$SB/store/env/K1.gpg")" "$(printf 'one\n' | od -c)"
+	store_entry K2 '' second
+	assert_eq "$(od -c <"$SB/store/env/K2.gpg")" "$(printf '\nsecond\n' | od -c)"
+	store_entry K3 "$SENTINEL" 'second line'
+	assert_eq "$(pass show env/K3)" "$SENTINEL"$'\nsecond line'
+	store_entry K4
+	[[ -f $SB/store/env/K4.gpg && ! -s $SB/store/env/K4.gpg ]]
+	store_entry -n K1 K2
+	assert_eq "$(ls "$SB/store/env")" "K3.gpg"$'\n'"K4.gpg"
+}
+
 @test "fake-pass: prints the entry and logs argv, environment and PID" {
 	printf '%s\nsecond\n' "$SENTINEL" >"$SB/store/env/K.gpg"
 	run pass show env/K
