@@ -1,9 +1,14 @@
 name: proto-41-reproducible
 
-# Ticket #41's native-architecture leg: build each musl target on a runner of
-# its own architecture with prototypes/41-reproducible-musl/build.sh, print
-# the SHA-256 to compare with the local cross builds, and run the realloc
-# probe natively. Runs only on a push of this prototype branch.
+# Ticket #41's native-architecture leg. Each leg builds with
+# prototypes/41-reproducible-musl/build.sh, keeps cargo's -v output in the
+# log, and prints the SHA-256 of every rlib, object and final binary:
+# - x86_64 native, as before;
+# - aarch64 native twice on ubuntu-24.04-arm, in the checkout (a) and in a
+#   copy under another path with its own CARGO_HOME and RUSTUP_HOME (b);
+# - aarch64 cross-built on ubuntu-24.04, to compare with the local cross
+#   builds (lendk-proto c15c0d15...).
+# Runs only on a push of this prototype branch.
 on:
   push:
     branches: [prototype/reproducible-musl]
@@ -17,20 +22,59 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: ubuntu-24.04
+          - leg: x86_64-native
+            runner: ubuntu-24.04
             target: x86_64-unknown-linux-musl
-          - runner: ubuntu-24.04-arm
+          - leg: aarch64-native-a
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+          - leg: aarch64-native-b
+            runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+            copy: true
+          - leg: aarch64-cross
+            runner: ubuntu-24.04
             target: aarch64-unknown-linux-musl
     runs-on: ${{ matrix.runner }}
-    defaults:
-      run:
-        working-directory: prototypes/41-reproducible-musl
     env:
       SOURCE_DATE_EPOCH: "1792429677"
+      CARGO_TERM_VERBOSE: "true"
+      TARGET: ${{ matrix.target }}
+      LEG: ${{ matrix.leg }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - run: rustup toolchain install
-      - run: rustc -Vv
-      - run: ./build.sh ${{ matrix.target }} out
-      - run: sha256sum out/${{ matrix.target }}/*
-      - run: out/${{ matrix.target }}/probe | tail -1
+      - name: choose the build directory
+        run: |
+          src=$GITHUB_WORKSPACE/prototypes/41-reproducible-musl
+          if [ "${{ matrix.copy }}" = true ]; then
+            dir=$RUNNER_TEMP/w/deep/build-dir-b
+            mkdir -p "$dir" "$RUNNER_TEMP/b"
+            cp -r "$src"/Cargo.toml "$src"/Cargo.lock "$src"/rust-toolchain.toml "$src"/src "$src"/*.sh "$dir"/
+            echo "PATH=$PATH:$HOME/.cargo/bin" >> "$GITHUB_ENV"
+            echo "CARGO_HOME=$RUNNER_TEMP/b/cargo" >> "$GITHUB_ENV"
+            echo "RUSTUP_HOME=$RUNNER_TEMP/b/rustup" >> "$GITHUB_ENV"
+          else
+            dir=$src
+          fi
+          echo "DIR=$dir" >> "$GITHUB_ENV"
+      - run: cd "$DIR" && pwd && rustup toolchain install && rustc -Vv && cargo -V
+      - run: cd "$DIR" && ./build.sh "$TARGET" out
+      - run: cd "$DIR" && ./hashes.sh "$TARGET" | tee "out/$TARGET/sha256-$LEG.txt"
+      - run: cd "$DIR" && "out/$TARGET/probe" | tail -1
+        if: matrix.leg != 'aarch64-cross'
+      - name: stage the artifact
+        run: |
+          a=$RUNNER_TEMP/artifact/$LEG
+          mkdir -p "$a"
+          cd "$DIR"
+          cp "out/$TARGET"/* "$a"/
+          cd target
+          find release/deps "$TARGET/release/deps" -type f \
+            \( -name '*.rlib' -o -name '*.o' \) -size -20M -exec cp --parents {} "$a"/ \;
+          du -sh "$a"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ matrix.leg }}
+          path: ${{ runner.temp }}/artifact/${{ matrix.leg }}
+          if-no-files-found: error
+          retention-days: 14
