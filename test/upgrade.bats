@@ -107,7 +107,7 @@ web() {
 # never returns; stubborn also ignores TERM; killjob kills the process that started it; https makes
 # --help list --https-only, and bighelp does so ahead of more text than a pipe holds.
 tool() {
-	printf '#!/bin/sh\nname=%s mode=%s rel=%s\n' "$1" "${2-}" "$REL" >"$SB/bin/$1"
+	printf '#!/bin/sh\nname=%s mode=%s rel=%s STUB_LOG=%s\n' "$1" "${2-}" "$REL" "$SB/log" >"$SB/bin/$1"
 	cat >>"$SB/bin/$1" <<'EOF'
 if [ "${1-}" = --help ]; then
 	echo "Usage: $name [OPTION]... [URL]..."
@@ -482,9 +482,9 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 @test "with shasum and no sha256sum the upgrade succeeds" {
 	toolbox sha256sum shasum
 	if command -v sha256sum >/dev/null; then
-		printf '#!/bin/sh\necho "$*" >>"$STUB_LOG/calls.shasum"\n[ "$1" = -a ] && [ "$2" = 256 ] || exit 2\nexec %s "$3"\n' "$(command -v sha256sum)" >"$SB/min/shasum"
+		printf '#!/bin/sh\necho "$*" >>"'"$SB/log"'/calls.shasum"\n[ "$1" = -a ] && [ "$2" = 256 ] || exit 2\nexec %s "$3"\n' "$(command -v sha256sum)" >"$SB/min/shasum"
 	else
-		printf '#!/bin/sh\necho "$*" >>"$STUB_LOG/calls.shasum"\nexec %s "$@"\n' "$(command -v shasum)" >"$SB/min/shasum"
+		printf '#!/bin/sh\necho "$*" >>"'"$SB/log"'/calls.shasum"\nexec %s "$@"\n' "$(command -v shasum)" >"$SB/min/shasum"
 	fi
 	chmod +x "$SB/min/shasum"
 	base "$REL/new"
@@ -494,9 +494,34 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	[[ $(<"$SB/log/calls.shasum") == "-a 256 $TMPDIR/lendk."??????"/$ASSET" ]]
 }
 
+# bats test_tags=port:only
+@test "the tools get the allowlist and the proxy and certificate variables, never a key the caller set" {
+	local t f
+	for t in gzip tar sha256sum; do
+		printf '#!/bin/sh\nenv >%q\nexec %q "$@"\n' "$SB/log/env.$t" "$(command -v "$t")" >"$SB/bin/$t"
+		chmod +x "$SB/bin/$t"
+	done
+	web new
+	K1=$SENTINEL HTTPS_PROXY=http://proxy.test:3128 no_proxy=localhost SSL_CERT_DIR=/etc/ssl/certs \
+		CURL_CA_BUNDLE=/etc/ssl/ca.pem run_lendk upgrade
+	assert_eq "$status" 0
+	for f in "$SB"/log/curl.*/env "$SB"/log/env.{gzip,tar,sha256sum}; do
+		[[ -s $f ]]
+		refute_contains "$(<"$f")" "$SENTINEL"
+		refute_contains "$(<"$f")" K1=
+		refute_contains "$(<"$f")" LENDK_INSTALL_BASE_URL
+		refute_contains "$(grep '^PATH=' "$f")" "$SHIMS"
+		grep -qx 'HTTPS_PROXY=http://proxy.test:3128' "$f"
+		grep -qx 'no_proxy=localhost' "$f"
+		grep -qx 'SSL_CERT_DIR=/etc/ssl/certs' "$f"
+		grep -qx 'CURL_CA_BUNDLE=/etc/ssl/ca.pem' "$f"
+		grep -qx "HOME=$HOME" "$f"
+	done
+}
+
 @test "the tools get /dev/null as stdin" {
 	local f
-	printf '#!/bin/sh\ncat >>"$STUB_LOG/gzip.stdin"\necho call >>"$STUB_LOG/gzip.calls"\nexec %s "$@"\n' "$(command -v gzip)" >"$SB/bin/gzip"
+	printf '#!/bin/sh\ncat >>"'"$SB/log"'/gzip.stdin"\necho call >>"'"$SB/log"'/gzip.calls"\nexec %s "$@"\n' "$(command -v gzip)" >"$SB/bin/gzip"
 	chmod +x "$SB/bin/gzip"
 	web new
 	printf 'kept\n' | { "$LENDK" upgrade >/dev/null 2>&1; cat >"$SB/rest"; }
