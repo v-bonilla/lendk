@@ -115,3 +115,9 @@ _Avoid_: error code, exit code
 **FIX**:
 The next step a failure message names, worded separately for an interactive and a non-interactive call.
 _Avoid_: hint, suggestion
+
+### Releases
+
+**Platform**:
+An OS and architecture pair that a release ships one archive for.
+_Avoid_: target, triple

@@ -192,18 +192,62 @@ within() {
 sha256() {
 	if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi
 }
-# pack SRC DIR: a release in make dist's layout under DIR, from the lendk-X.Y.Z tree in SRC.
+# The release shape of the lendk under test (#28): bin/lendk's script reads 1.x's lendk.tar.gz and
+# fetches it before SHA256SUMS; the binary reads its platform's lendk-PLATFORM.tar.gz and fetches
+# SHA256SUMS first. MARK is the marker each looks for in a new file, MARK_LINE the line carrying it
+# in a fixture script, and RUNNING the version the lendk under test prints.
+if [[ $(head -c 2 "$LENDK" 2>/dev/null) == '#!' ]]; then
+	PLATFORM='' ASSET=lendk.tar.gz FETCHES=(lendk.tar.gz SHA256SUMS)
+	MARK_LINE=$(sed -n 2p "$ROOT/bin/lendk")
+else
+	case $(uname -s) in Darwin) PLATFORM=apple-darwin ;; *) PLATFORM=unknown-linux-musl ;; esac
+	case $(uname -m) in arm64 | aarch64) PLATFORM=aarch64-$PLATFORM ;; *) PLATFORM=x86_64-$PLATFORM ;; esac
+	ASSET=lendk-$PLATFORM.tar.gz FETCHES=(SHA256SUMS "$ASSET")
+	MARK_LINE='# lendk binary v1: give API keys to the commands mapped to them.'
+fi
+MARK=${MARK_LINE#\# }
+RUNNING=$("$LENDK" --version 2>/dev/null)
+RUNNING=${RUNNING#lendk }
+# pack SRC DIR: a release in its archive shape under DIR, from the lendk-X.Y.Z tree in SRC.
 pack() {
 	mkdir -p "$2/latest/download"
-	(cd "$1" && tar -cf - lendk-*) | gzip >"$2/latest/download/lendk.tar.gz"
-	(cd "$2/latest/download" && sha256 lendk.tar.gz >SHA256SUMS)
+	(cd "$1" && tar -cf - lendk-*) | gzip >"$2/latest/download/$ASSET"
+	(cd "$2/latest/download" && sha256 "$ASSET" >SHA256SUMS)
 }
-# release DIR VERSION: pack the working tree's lendk as VERSION, with LICENSE and skills, under DIR.
+# standin FILE VERSION: a script carrying the binary's marker that prints lendk VERSION for
+# --version, refuses upgrade, and hands any other call to the lendk under test after logging it
+# to $STUB_LOG/standin. So no hook changes a shipped binary's version.
+standin() {
+	printf '#!/bin/sh\n%s\n' "$MARK_LINE" >"$1"
+	cat >>"$1" <<EOF
+case \${1-} in
+--version) echo 'lendk $2' ;;
+upgrade)
+	echo 'lendk: upgrade: a stand-in never upgrades. Stop and ask the user.' >&2
+	exit 125
+	;;
+*)
+	[ -z "\${STUB_LOG-}" ] || echo "\$0 \$*" >>"\$STUB_LOG/standin"
+	exec '$UNDER_TEST' "\$@"
+	;;
+esac
+EOF
+	chmod 755 "$1"
+}
+# release DIR VERSION: pack lendk as VERSION, with LICENSE and skills, under DIR. For the script,
+# bin/lendk with VERSION written in; for the binary, the binary under test at its own version,
+# else a stand-in.
 release() {
 	local src=$1.src/lendk-$2
 	mkdir -p "$src/bin"
-	sed "s/^LENDK_VERSION=.*/LENDK_VERSION=$2/" "$ROOT/bin/lendk" >"$src/bin/lendk"
-	chmod 755 "$src/bin/lendk"
+	if [[ -z $PLATFORM ]]; then
+		sed "s/^LENDK_VERSION=.*/LENDK_VERSION=$2/" "$ROOT/bin/lendk" >"$src/bin/lendk"
+		chmod 755 "$src/bin/lendk"
+	elif [[ $2 == "$RUNNING" ]]; then
+		cp "$UNDER_TEST" "$src/bin/lendk"
+	else
+		standin "$src/bin/lendk" "$2"
+	fi
 	cp "$ROOT/LICENSE" "$src/"
 	cp -R "$ROOT/skills" "$src/"
 	pack "$1.src" "$1"

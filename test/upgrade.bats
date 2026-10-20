@@ -4,17 +4,20 @@
 # shellcheck disable=SC2012,SC2016,SC2030,SC2031,SC2034
 
 setup_file() {
+	# load un-exports LENDK, so each test reads the lendk under test from BATS_LENDK_UNDER_TEST.
+	export BATS_LENDK_UNDER_TEST=${LENDK-}
 	load helpers/common
 	export BATS_LENDK_REL=$BATS_FILE_TMPDIR/rel BATS_LENDK_SUM
-	BATS_LENDK_SUM=$(cksum <"$ROOT/bin/lendk")
+	BATS_LENDK_SUM=$(cksum <"$ROOT/bin/lendk")$(cksum <"$UNDER_TEST")
 	release "$BATS_LENDK_REL/new" 99.0.0
-	release "$BATS_LENDK_REL/same" "$(sed -n 's/^LENDK_VERSION=//p' "$ROOT/bin/lendk")"
+	release "$BATS_LENDK_REL/same" "$RUNNING"
 	release "$BATS_LENDK_REL/old" 0.0.1
 	release "$BATS_LENDK_REL/ten" 10.0.0
 	release "$BATS_LENDK_REL/nines" 9.9.9
 }
 
 setup() {
+	[[ -z $BATS_LENDK_UNDER_TEST ]] || LENDK=$BATS_LENDK_UNDER_TEST
 	load helpers/common
 	sandbox
 	REL=$BATS_LENDK_REL
@@ -28,11 +31,13 @@ setup() {
 	chmod 755 "$BIN/lendk"
 	LENDK=$BIN/lendk
 	NOTICE=
+	mkdir -p "$HOME/.claude/skills/lendk"
+	cp "$ROOT/skills/lendk/SKILL.md" "$HOME/.claude/skills/lendk/"
 	mark
 }
 
 teardown() {
-	assert_eq "$(cksum <"$ROOT/bin/lendk")" "$BATS_LENDK_SUM"
+	assert_eq "$(cksum <"$ROOT/bin/lendk")$(cksum <"$UNDER_TEST")" "$BATS_LENDK_SUM"
 }
 
 inode() { ls -i "$1" | awk '{ print $1 }'; }
@@ -41,12 +46,34 @@ inode() { ls -i "$1" | awk '{ print $1 }'; }
 mark() {
 	SUM=$(cksum <"$LENDK")
 	INODE=$(inode "$LENDK")
+	HOME_STATE=$(home_state)
 }
 
-# unchanged: lendk's file is the one mark saw, alone in its directory, and TMPDIR is empty.
+# home_state: every path under HOME but lendk's directory, such as the map, the shims and a skill
+# copy, with its listing and checksum.
+home_state() {
+	local p
+	find "$HOME" -path "$BIN" -prune -o -print | LC_ALL=C sort | while IFS= read -r p; do
+		printf '%s %s %s\n' "$p" "$(command ls -ldn "$p" | awk '{ print $1, $5 }')" "$([[ -f $p && ! -L $p ]] && cksum <"$p")"
+	done
+}
+
+# mapped: a map and its shim in place, then mark.
+mapped() {
+	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
+	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
+	run_lendk sync
+	assert_eq "$status" 0
+	[[ -x $SHIMS/stub ]]
+	mark
+}
+
+# unchanged: lendk's file is the one mark saw, alone in its directory, nothing else under HOME
+# changed, and TMPDIR is empty.
 unchanged() {
 	assert_eq "$(cksum <"$LENDK")" "$SUM"
 	assert_eq "$(inode "$LENDK")" "$INODE"
+	assert_eq "$(home_state)" "$HOME_STATE"
 	assert_eq "$(ls -A "$BIN")" lendk
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
@@ -142,12 +169,12 @@ toolbox() {
 }
 
 # candidate NAME VERSION LINE...: serve a release whose lendk-VERSION/bin/lendk is a bash script with
-# lendk's second line, then each LINE.
+# the marker's line, then each LINE.
 candidate() {
 	local d=$SB/cand-$1/lendk-$2/bin
 	mkdir -p "$d"
 	{
-		printf '#!/usr/bin/env bash\n%s\n' "$(sed -n 2p "$ROOT/bin/lendk")"
+		printf '#!/usr/bin/env bash\n%s\n' "$MARK_LINE"
 		printf '%s\n' "${@:3}"
 	} >"$d/lendk"
 	pack "$SB/cand-$1" "$SB/rel-$1"
@@ -181,7 +208,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	store_entry K1 "$SENTINEL"
 	run_lendk sync
 	assert_eq "$status" 0
-	assert_eq "$(sed -n 2p "$LENDK")" "$(sed -n "s/^upgrade_mark='\(.*\)'$/\1/p" "$LENDK")"
+	LC_ALL=C grep -qaF "$MARK" "$LENDK"
 	before=$(snapshot | grep -v "^$LENDK \|^$SHIMS")
 	base "$REL/new"
 	run_lendk upgrade
@@ -210,6 +237,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	unchanged
 	assert_eq "$(printf 'kept\n' | { "$LENDK" upgrade >/dev/null 2>&1; cat; })" kept
 	assert_eq "$("$LENDK" --version)" "lendk 99.0.0"
+	cp "$UNDER_TEST" "$LENDK"
 	mv "$LENDK" "$SB/real"
 	ln -s "$SB/real" "$LENDK"
 	LENDK_PROMPT=never run_lendk upgrade
@@ -231,7 +259,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	mapfile -t lines < <(calls curl)
 	assert_eq "${#lines[@]}" 2
 	[[ ${lines[0]} == "-fsSL --proto =https --tlsv1.2 -o $TMPDIR/lendk."??????"/SHA256SUMS https://releases.test/new/latest/download/SHA256SUMS" ]]
-	[[ ${lines[1]} == "-fsSL --proto =https --tlsv1.2 -o $TMPDIR/lendk."??????"/lendk.tar.gz https://releases.test/new/latest/download/lendk.tar.gz" ]]
+	[[ ${lines[1]} == "-fsSL --proto =https --tlsv1.2 -o $TMPDIR/lendk."??????"/$ASSET https://releases.test/new/latest/download/$ASSET" ]]
 	cmp "$LENDK" "$REL/new.src/lendk-99.0.0/bin/lendk"
 }
 
@@ -251,7 +279,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 		mapfile -t lines < <(calls wget)
 		assert_eq "${#lines[@]}" 2
 		[[ ${lines[0]} == "-q$opt -O $TMPDIR/lendk."??????"/SHA256SUMS https://releases.test/new/latest/download/SHA256SUMS" ]]
-		[[ ${lines[1]} == "-q$opt -O $TMPDIR/lendk."??????"/lendk.tar.gz https://releases.test/new/latest/download/lendk.tar.gz" ]]
+		[[ ${lines[1]} == "-q$opt -O $TMPDIR/lendk."??????"/$ASSET https://releases.test/new/latest/download/$ASSET" ]]
 		assert_eq "$("$LENDK" --version)" "lendk 99.0.0"
 	done
 }
@@ -310,33 +338,60 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 }
 
 @test "a failed download and one cut short change nothing" {
+	mapped
 	local half
 	web new fail
 	run_lendk upgrade
-	nothing "cannot download https://releases.test/new/latest/download/lendk.tar.gz"
+	nothing "cannot download https://releases.test/new/latest/download/${FETCHES[0]}"
 	web new half
 	run_lendk upgrade
-	head -c "$(($(wc -c <"$REL/new/latest/download/lendk.tar.gz") / 2))" "$REL/new/latest/download/lendk.tar.gz" >"$SB/half"
-	nothing "lendk.tar.gz has SHA-256 $(sum "$SB/half"), but SHA256SUMS lists $(sum "$REL/new/latest/download/lendk.tar.gz")"
+	head -c "$(($(wc -c <"$REL/new/latest/download/$ASSET") / 2))" "$REL/new/latest/download/$ASSET" >"$SB/half"
+	nothing "$ASSET has SHA-256 $(sum "$SB/half"), but SHA256SUMS lists $(sum "$REL/new/latest/download/$ASSET")"
 	base "$SB/none"
 	run_lendk upgrade
-	nothing "cannot download file://$SB/none/latest/download/lendk.tar.gz"
+	nothing "cannot download file://$SB/none/latest/download/${FETCHES[0]}"
 }
 
-@test "another checksum, or SHA256SUMS without the asset, changes nothing" {
+@test "another checksum changes nothing" {
+	mapped
 	local got
 	cp -R "$REL/new" "$SB/rel"
-	got=$(sum "$SB/rel/latest/download/lendk.tar.gz")
-	printf '%064d  lendk.tar.gz\n' 0 >"$SB/rel/latest/download/SHA256SUMS"
+	got=$(sum "$SB/rel/latest/download/$ASSET")
+	printf '%064d  %s\n' 0 "$ASSET" >"$SB/rel/latest/download/SHA256SUMS"
 	base "$SB/rel"
 	run_lendk upgrade
-	nothing "lendk.tar.gz has SHA-256 $got, but SHA256SUMS lists $(printf '%064d' 0)"
+	nothing "$ASSET has SHA-256 $got, but SHA256SUMS lists $(printf '%064d' 0)"
+}
+
+# bats test_tags=port:retire
+@test "SHA256SUMS without the asset changes nothing" {
+	local got
+	cp -R "$REL/new" "$SB/rel"
+	got=$(sum "$SB/rel/latest/download/$ASSET")
 	printf '%s  other.tar.gz\n' "$got" >"$SB/rel/latest/download/SHA256SUMS"
+	base "$SB/rel"
 	run_lendk upgrade
-	nothing "lendk.tar.gz has SHA-256 $got, but SHA256SUMS lists nothing"
+	nothing "$ASSET has SHA-256 $got, but SHA256SUMS lists nothing"
+}
+
+# bats test_tags=port:only
+@test "a release with no archive for this platform fails before the archive download, naming the platform" {
+	mapped
+	local other got
+	[[ $PLATFORM == x86_64-* ]] && other=aarch64-${PLATFORM#*-} || other=x86_64-${PLATFORM#*-}
+	cp -R "$REL/new" "$SB/rel"
+	got=$(sum "$SB/rel/latest/download/$ASSET")
+	mv "$SB/rel/latest/download/$ASSET" "$SB/rel/latest/download/lendk-$other.tar.gz"
+	printf '%s  lendk-%s.tar.gz\n%s  lendk.tar.gz\n' "$got" "$other" "$got" >"$SB/rel/latest/download/SHA256SUMS"
+	REL=$SB
+	web rel
+	run_lendk upgrade
+	nothing "the latest release has no archive for $PLATFORM"
+	[[ $(calls curl) == "-fsSL --proto =https --tlsv1.2 -o $TMPDIR/lendk."??????"/SHA256SUMS https://releases.test/rel/latest/download/SHA256SUMS" ]]
 }
 
 @test "an archive without lendk, or holding a file that is not lendk, changes nothing" {
+	mapped
 	mkdir -p "$SB/a/lendk-99.0.0" "$SB/b/lendk-99.0.0/bin" "$SB/c/lendk-99.0.0/bin" "$SB/c/lendk-98.0.0/bin"
 	cp "$ROOT/LICENSE" "$SB/a/lendk-99.0.0/"
 	sed '2s/.*/# another tool/' "$REL/new.src/lendk-99.0.0/bin/lendk" >"$SB/b/lendk-99.0.0/bin/lendk"
@@ -351,7 +406,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 		pack "$SB/$r" "$SB/rel-$r"
 		base "$SB/rel-$r"
 		run_lendk upgrade
-		nothing "lendk.tar.gz holds no lendk-X.Y.Z/bin/lendk"
+		nothing "$ASSET holds no lendk-X.Y.Z/bin/lendk"
 	done
 }
 
@@ -378,32 +433,77 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
+# bats test_tags=port:only
+@test "a new file without the marker, or whose staged run fails or prints anything but lendk X.Y.Z, changes nothing" {
+	mapped
+	local body n=0
+	mkdir -p "$SB/a/lendk-99.0.0/bin"
+	printf '#!/bin/sh\necho "lendk 99.0.0"\n' >"$SB/a/lendk-99.0.0/bin/lendk"
+	pack "$SB/a" "$SB/rel-a"
+	base "$SB/rel-a"
+	run_lendk upgrade
+	nothing "$ASSET holds no lendk-X.Y.Z/bin/lendk"
+	for body in 'echo "lendk 99.0.0"; exit 1' 'echo "x lendk 99.0.0"' 'echo "lendk 99.0.0 x"' 'echo "lendk 99.0.0"; echo more' \
+		'echo "lendk 99.00.0"' 'echo "lendk 099.0.0"' 'echo "lendk 99.0.9999999999"' 'exec /bin/false'; do
+		n=$((n + 1))
+		candidate "$n" 99.0.0 "$body"
+		run_lendk upgrade
+		nothing "the downloaded lendk does not run on $PLATFORM"
+	done
+	# A file the platform cannot run, such as one with no interpreter, fails at the same run.
+	mkdir -p "$SB/x/lendk-99.0.0/bin"
+	printf '#!/nonexistent/interpreter\n%s\n' "$MARK_LINE" >"$SB/x/lendk-99.0.0/bin/lendk"
+	pack "$SB/x" "$SB/rel-x"
+	base "$SB/rel-x"
+	run_lendk upgrade
+	nothing "the downloaded lendk does not run on $PLATFORM"
+}
+
+# bats test_tags=port:only
+@test "the staged run is a helper: beside lendk with mode 0755, under the allowlisted environment, PATH without the shims" {
+	# Only the first run, the staged one, writes the log.
+	candidate env 99.0.0 '[ "$1" = --version ] || exit 0' "[ -e '$SB/staged.env' ] || { env; ls -ln \"\$0\"; } >'$SB/staged.env'" 'echo "lendk 99.0.0"'
+	K1=$SENTINEL PATH=$SHIMS:$PATH run_lendk upgrade
+	assert_eq "$status" 0
+	assert_eq "$output" "upgraded lendk $VERSION to 99.0.0 at $LENDK"
+	refute_contains "$(<"$SB/staged.env")" "$SENTINEL"
+	refute_contains "$(grep '^PATH=' "$SB/staged.env")" "$SHIMS"
+	refute_contains "$(<"$SB/staged.env")" LENDK_INSTALL_BASE_URL
+	grep -q "^-rwxr-xr-x .* $BIN/\.lendk\.[A-Za-z0-9]\{6\}$" "$SB/staged.env"
+}
+
 @test "the member's directory and --version name one version, written without leading zeros or overflow" {
+	mapped
 	candidate a 99.0.0 'echo "lendk 98.0.0"'
 	run_lendk upgrade
-	nothing "lendk.tar.gz holds no lendk-98.0.0/bin/lendk"
+	nothing "$ASSET holds no lendk-98.0.0/bin/lendk"
 	local v
 	for v in 099.0.0 99.00.0 99999999999999999999.0.0 9999999999.0.0; do
 		candidate "$v" "$v" "echo 'lendk $v'"
 		run_lendk upgrade
-		nothing "lendk.tar.gz holds no lendk-X.Y.Z/bin/lendk"
+		nothing "$ASSET holds no lendk-X.Y.Z/bin/lendk"
 	done
 }
 
-@test "an archive that does not unpack, or a fetch that ends without a result, is a local failure" {
+@test "an archive that does not unpack is a local failure" {
+	mapped
 	mkdir -p "$SB/rel/latest/download"
-	printf 'not an archive\n' >"$SB/rel/latest/download/lendk.tar.gz"
-	(cd "$SB/rel/latest/download" && sha256 lendk.tar.gz >SHA256SUMS)
+	printf 'not an archive\n' >"$SB/rel/latest/download/$ASSET"
+	(cd "$SB/rel/latest/download" && sha256 "$ASSET" >SHA256SUMS)
 	base "$SB/rel"
 	run_lendk upgrade
-	nothing "$TMPDIR: cannot unpack lendk.tar.gz"
+	nothing "$TMPDIR: cannot unpack $ASSET"
 	# The listing works and the extraction fails.
 	toolbox tar
 	printf '#!/bin/sh\n[ "$1" != -xOf ] || exit 2\nexec %s "$@"\n' "$(command -v tar)" >"$SB/min/tar"
 	chmod +x "$SB/min/tar"
 	base "$REL/new"
 	PATH=$SB/min run_lendk upgrade
-	nothing "$TMPDIR: cannot unpack lendk.tar.gz"
+	nothing "$TMPDIR: cannot unpack $ASSET"
+}
+
+# bats test_tags=port:retire
+@test "a fetch that ends without a result is a local failure" {
 	web new killjob
 	run_lendk upgrade
 	nothing "$TMPDIR: the fetch ended without a result"
@@ -439,7 +539,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	PATH=$SB/min run_lendk upgrade
 	assert_eq "$status" 0
 	assert_eq "$output" "upgraded lendk $VERSION to 99.0.0 at $LENDK"
-	[[ $(<"$SB/log/calls.shasum") == "-a 256 $TMPDIR/lendk."??????"/lendk.tar.gz" ]]
+	[[ $(<"$SB/log/calls.shasum") == "-a 256 $TMPDIR/lendk."??????"/$ASSET" ]]
 }
 
 @test "the tools get /dev/null as stdin" {
@@ -450,7 +550,8 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	printf 'kept\n' | { "$LENDK" upgrade >/dev/null 2>&1; cat >"$SB/rest"; }
 	assert_eq "$(<"$SB/rest")" kept
 	assert_eq "$("$LENDK" --version)" "lendk 99.0.0"
-	assert_eq "$(wc -l <"$SB/log/gzip.calls")" 2
+	# bin/lendk unpacks through gzip twice, to list and to extract; the binary unpacks once.
+	assert_eq "$(wc -l <"$SB/log/gzip.calls")" "$([[ -n $PLATFORM ]] && echo 1 || echo 2)"
 	assert_eq "$(calls curl | wc -l)" 2
 	for f in "$SB"/log/curl.*/stdin "$SB/log/gzip.stdin"; do
 		[[ -f $f && ! -s $f ]]
@@ -472,11 +573,27 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 		assert_eq "$output" "upgraded lendk $VERSION to 99.0.0 at $LENDK"
 		mapfile -t lines <"$SB/log/calls.curl"
 		assert_eq "${#lines[@]}" 2
-		assert_eq "${lines[0]##* }" https://github.com/v-bonilla/lendk/releases/latest/download/lendk.tar.gz
-		assert_eq "${lines[1]##* }" https://github.com/v-bonilla/lendk/releases/latest/download/SHA256SUMS
+		assert_eq "${lines[0]##* }" "https://github.com/v-bonilla/lendk/releases/latest/download/${FETCHES[0]}"
+		assert_eq "${lines[1]##* }" "https://github.com/v-bonilla/lendk/releases/latest/download/${FETCHES[1]}"
 	done
 }
 
+# bats test_tags=port:only
+@test "a release that is not newer is up to date and changes nothing" {
+	base "$REL/same"
+	run_lendk upgrade
+	assert_eq "$status" 0
+	assert_eq "$output" "lendk $VERSION is up to date: the latest release is $VERSION"
+	assert_eq "$stderr" "$NOTICE"
+	unchanged
+	base "$REL/old"
+	run_lendk upgrade
+	assert_eq "$status" 0
+	assert_eq "$output" "lendk $VERSION is up to date: the latest release is 0.0.1"
+	unchanged
+}
+
+# bats test_tags=port:rework
 @test "a release that is not newer is up to date, also for an install ahead of it, compared number by number" {
 	base "$REL/same"
 	run_lendk upgrade
@@ -516,7 +633,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(ls -A "$SB/v1")" lendk
 }
 
-@test "a file that is not lendk's, or a directory the user cannot write, is refused before any fetch" {
+@test "a directory the user cannot write is refused before any fetch" {
 	[[ $(id -u) != 0 ]] || skip "root writes to any directory"
 	web new
 	NOTICE=
@@ -524,6 +641,36 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	run_lendk upgrade
 	chmod 755 "$BIN"
 	nothing "$BIN cannot be written"
+	assert_eq "$(calls curl)" ""
+}
+
+# bats test_tags=port:only
+@test "a path that is not the running lendk's file is refused before any fetch" {
+	mapped
+	local rc=0
+	web new
+	NOTICE=
+	set -m
+	LENDK_TEST_PAUSE=2 LENDK_TEST_AT=self "$LENDK" upgrade </dev/null >"$SB/stdout" 2>"$SB/stderr" &
+	lpid=$!
+	set +m
+	sleep 0.5
+	# Another file, with the same bytes, takes the path lendk ran from.
+	cp "$UNDER_TEST" "$SB/other"
+	mv "$SB/other" "$LENDK"
+	mark
+	wait "$lpid" || rc=$?
+	assert_eq "$rc" 125
+	assert_eq "$(<"$SB/stderr")" "lendk: upgrade: $LENDK is not lendk's own file. Stop and ask the user."
+	assert_eq "$(<"$SB/stdout")" ""
+	unchanged
+	assert_eq "$(calls curl)" ""
+}
+
+# bats test_tags=port:retire
+@test "a file that is not lendk's is refused before any fetch" {
+	web new
+	NOTICE=
 	sed '2s/.*/# another tool/' "$ROOT/bin/lendk" >"$LENDK"
 	mark
 	run_lendk upgrade
@@ -552,7 +699,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	run_lendk upgrade
 	assert_eq "$status" 0
 	[[ $(inode "$LENDK") != "$INODE" ]]
-	cmp - "$ROOT/bin/lendk" <&"$fd"
+	cmp - "$UNDER_TEST" <&"$fd"
 	exec {fd}<&-
 	cmp "$LENDK" "$REL/new.src/lendk-99.0.0/bin/lendk"
 	assert_eq "$(ls -A "$BIN")" lendk
@@ -584,6 +731,28 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
+# bats test_tags=port:only
+@test "sync runs through the new file at lendk's path, and with an invalid map line the upgrade stands" {
+	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
+	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
+	base "$REL/new"
+	run_lendk upgrade
+	assert_eq "$status" 0
+	# The new file is a stand-in, which logs each call it hands on.
+	assert_eq "$(<"$SB/log/standin")" "$LENDK sync"
+	[[ -x $SHIMS/stub ]]
+	cp "$UNDER_TEST" "$LENDK"
+	printf 'stub K1\ngh 1BAD\n' >"$MAP"
+	run_lendk upgrade
+	assert_eq "$output" "upgraded lendk $VERSION to 99.0.0 at $LENDK"
+	assert_eq "$stderr" "$NOTICE"$'\n'"lendk: map: $MAP:2: '1BAD' is not a valid key name. Stop and ask the user."
+	assert_class map 125
+	assert_eq "$(<"$SB/log/standin")" "$LENDK sync"$'\n'"$LENDK sync"
+	assert_eq "$("$LENDK" --version)" "lendk 99.0.0"
+	assert_eq "$(ls -A "$BIN")" lendk
+}
+
+# bats test_tags=port:rework
 @test "sync runs through the new file, and with an invalid map line the upgrade stands" {
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
 	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
@@ -750,6 +919,32 @@ stopped() {
 	assert_eq "$(sums)" "$before"
 }
 
+# bats test_tags=port:only
+@test "TERM, INT, HUP or KILL once both files exist leaves neither, the watchdog removing them" {
+	local sig i rc
+	base "$REL/new"
+	for sig in TERM INT HUP KILL; do
+		set -m
+		LENDK_TEST_PAUSE=9 LENDK_TEST_AT=start LENDK_TEST_FAMILY=$SENTINEL "$LENDK" upgrade </dev/null >"$SB/stdout" 2>"$SB/stderr" &
+		lpid=$!
+		set +m
+		for ((i = 0; i < 50; i++)); do
+			[[ -n $(ls -A "$TMPDIR") && -n $(compgen -G "$BIN/.lendk.*") ]] && break
+			sleep 0.1
+		done
+		[[ -n $(ls -A "$TMPDIR") && -n $(compgen -G "$BIN/.lendk.*") ]]
+		sleep 0.3
+		# lendk and its watchdog run, and no helper has started.
+		assert_eq "$(family | wc -l)" 2
+		kill "-$sig" -- "$lpid"
+		rc=0
+		wait "$lpid" || rc=$?
+		assert_eq "$rc" "$((128 + $(kill -l "$sig")))"
+		stopped
+	done
+}
+
+# bats test_tags=port:rework
 @test "TERM, INT or HUP before the watchdog starts removes both files and is re-raised" {
 	local sig i rc
 	base "$REL/new"

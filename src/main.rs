@@ -19,3 +19,4 @@ mod shims;
 mod sys;
 mod tables;
 mod unlock;
+mod upgrade;
