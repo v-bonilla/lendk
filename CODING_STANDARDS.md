@@ -4,15 +4,12 @@ How lendk's code, tests, docs and commits are written, and the process failures 
 
 ## Code
 
-- `bin/lendk` runs on bash 4.4: no bash 5 feature, and `EPOCHREALTIME` or `SRANDOM` only as `${VAR-}`. Its opening lines, up to the version test, also parse and run in bash 3.2 and POSIX sh, so an older shell gets `unsupported` (ADR 0010).
-- POSIX utilities and options only, plus `mktemp [-d] TEMPLATE`, plain `readlink` and fractional `sleep`. `upgrade` alone, and no other verb, also uses tar, gzip, `sha256sum` or `shasum`, and curl or wget, with options GNU, BSD and busybox share. The lint rejects `stat`, `readlink -f`, `timeout`, `flock`, `setsid`, `sed -i` and `date +%N`, and allows `/proc` and `ps` only between the `# lint: tty-owner` markers.
-- External utilities run through `command -p`, never through the caller's PATH or the shims. `upgrade` alone finds its tools on the caller's PATH without the shim directory. The run path avoids forks: prefer expansions and globals to `$(...)` there.
-- No `set -e`: check each failure and call `fail`. Read optional variables as `${VAR-}` under `set -u`.
-- Only `backend_has` and `backend_read` name `pass` or the store. The source names `curl` and `wget` only between the `# lint: network begin` and `# lint: network end` markers, which hold the one function `upgrade` downloads through, and never `nc` or `/dev/tcp` (ADR 0013).
-- Runtime needs bash, pass, GnuPG and POSIX utilities, and `upgrade` alone the tools above. Development adds the bats-core submodule, shellcheck through `uvx`, rustup with the toolchain `rust-toolchain.toml` pins, `cargo-deny` and `cargo-vet` from `make deps`, and Docker for `make check-docker`. A crate joins only through `deny.toml`'s allow list (ADR 0016).
-- `install.sh` is POSIX sh for dash, busybox sh and bash 3.2: all work in functions, `main "$@"` as the last line, every ending through `finish CLASS TEXT`.
+- lendk is the Rust binary below. Runtime needs pass and GnuPG, and `upgrade` alone tar, gzip, `sha256sum` or `shasum`, and curl or wget, found on the caller's PATH without the shim directory. Development adds the bats-core submodule, shellcheck through `uvx`, rustup with the toolchain `rust-toolchain.toml` pins, `cargo-deny` and `cargo-vet` from `make deps`, and Docker for `make check-docker`. A crate joins only through `deny.toml`'s allow list (ADR 0016).
+- `install.sh` is POSIX sh for dash, busybox sh and bash 3.2: all work in functions, `main "$@"` as the last line, every ending through `finish CLASS TEXT`. The tests and their helpers run on bash 4.4: no bash 5 feature, and `EPOCHREALTIME` or `SRANDOM` only as `${VAR-}`.
+- `install.sh` and the tests use POSIX utilities, with options GNU, BSD and busybox share, plus `mktemp [-d] TEMPLATE`, plain `readlink` and fractional `sleep`; `stat`, `readlink -f`, `flock`, `setsid`, `sed -i` and `date +%N` differ or are missing on macOS or busybox. They run external utilities through `command -p` wherever the caller's PATH or a stub must not decide which one runs.
+- No `set -e` in `install.sh` or the tests: check each failure. Read optional variables as `${VAR-}` under `set -u`.
 - shellcheck reports zero findings (`make lint`). Tabs indent shell, bats, fixtures and the `Makefile`; LF, UTF-8 and a final newline everywhere (`.editorconfig`).
-- Functions are `snake_case`, and a verb's entry point is `NAME_verb`. Each has a header comment `# name ARG...: what it does`, naming the globals it sets. Inside a function, comment only a reason the code cannot show: a platform quirk, a bash 4.4 limit, a measured cost.
+- Shell functions are `snake_case`. Each has a header comment `# name ARG...: what it does`, naming the globals it sets. Inside a function, comment only a reason the code cannot show: a platform quirk, a bash 4.4 limit, a measured cost.
 
 ## Rust
 
@@ -22,13 +19,13 @@ How lendk's code, tests, docs and commits are written, and the process failures 
 - `#![deny(unsafe_code)]` holds crate-wide; the System calls module alone is allowed `unsafe`, and each block carries a `// SAFETY:` comment (`undocumented_unsafe_blocks`).
 - lendk declares `#![no_main]` with a C `main(argc, argv, envp)`, and reads its arguments and environment from those. `clippy.toml` bans `std::env`'s readers and setters and `Command::{env, envs}` outside the helpers module, which alone allows `clippy::disallowed_methods`, calls `env_clear()` and sets only its allowlist. It bans the socket types of `std::net` and `std::os::unix::net` everywhere.
 - Plaintext lives in one `Plaintext` buffer lendk owns: no `Clone`, no `Display`, a `Debug` that shows none of the bytes, sized once before the first decrypt and never reallocated in place, kept out of swap with `mlock`, marked `MADV_DONTDUMP` on Linux, and zeroed on drop and on every exit path. It is read through `read(2)`, never through std's buffered `Stdin`, `Command::output()` or a crate that returns a `String`. Plaintext enters a library only as the copy that library's API requires, made from lendk's buffer, zeroed on drop, and dropped as soon as the call returns.
-- The source names `curl` and `wget` only between the `// lint: network begin` and `// lint: network end` markers (ADR 0013).
+- The source names `curl` and `wget` only between the `// lint: network begin` and `// lint: network end` markers, which hold the functions `upgrade` downloads through (ADR 0013). Only the Pass reader module, `src/pass.rs`, runs pass.
 - `cargo fmt` formats the source, and clippy reports zero findings at `-D warnings` (`make lint`).
 
 ## Tables and messages
 
-- The verbs, map grammar, name lists, class table and environment variables live once in code, between the `# lint: tables begin` and `# lint: tables end` markers of `bin/lendk`, and `--help` prints them. The Rust port holds them once in the Tables module, `src/tables.rs`, and `test/contract.bats` holds its `--help` byte-identical to `bin/lendk`'s.
-- A failure ends through `fail CLASS TEXT`, or the Failure module in the port, which takes the exit hint and the FIX for the call's mode from the `classes` rows. Each class has an interactive and a non-interactive FIX, and the non-interactive one hands the step to the user or points to `lendk --help` (ADR 0012).
+- The verbs, map grammar, name lists, class table and environment variables live once in code, in the Tables module, `src/tables.rs`, and `--help` prints them. `test/contract.bats` holds `--help` byte-identical to the frozen 1.x lendk's, `test/fixtures/lendk-1.x`, until the 2.x list replaces the 1.x one.
+- A failure ends through the Failure module, `src/failure.rs`, which takes the exit hint and the FIX for the call's mode from the class rows. Each class has an interactive and a non-interactive FIX, and the non-interactive one hands the step to the user or points to `lendk --help` (ADR 0012).
 - All of these, and the shim text, are stable within 1.x: add entries, never rename or remove one, and change a description only to keep it true (ADR 0011). The change that adds an entry also appends it to the frozen 1.x list in `test/frozen/`, and the release that ships it raises the minor version.
 
 ## Tests
@@ -37,7 +34,7 @@ How lendk's code, tests, docs and commits are written, and the process failures 
 - `setup` loads `helpers/common` and calls `sandbox`. Call lendk through `run_lendk`, which fails on any stderr line but a `lendk: CLASS: TEXT. FIX` or `lendk: notice: TEXT.` line, and on a non-interactive line that suggests a forbidden action.
 - Assert a failure with `assert_class CLASS STATUS`, which checks the `lendk: CLASS:` line with the status, never the exit code alone. Compare whole lines or whole output with `assert_eq` and `assert_line`. Judge processes by state with `gone` and `none_within`: a zombie counts as gone. Use `$SENTINEL` as the value.
 - Guard an optional tool with `require TOOL`. Tag a test that starts containers with `# bats test_tags=docker`.
-- Call lendk as `$LENDK`, never as `bin/lendk`, so the suite runs whichever lendk the environment names. Tag a test that pins bash or the text of `bin/lendk` with `port:retire`, a test whose property a port keeps by another mechanism with `port:rework`, and a test that must call `lendk-fn`, because no verb reaches its behavior, with `port:unit`. Tag a test of a property only the port has, which the bash run of the suite leaves out, with `port:only`. Before tagging, move any assertion that holds for any lendk into an untagged test. `test/helpers/common.bash` defines the four tags.
+- Call lendk as `$LENDK`, which names the release binary `make build` writes unless the environment names another file by its absolute path. A behavior no verb reaches is a `cargo test` case in its module, never a test that calls into lendk's internals.
 - Write only under `$SB`: the containers mount the repository read-only. Test code runs on busybox and macOS too, so use the helpers' portable `wc`, `timeout`, `now_ms` and `pty_script`; only helpers call `script`.
 - A string the lint forbids is assembled at run time, as `test/lint.bats` does.
 
@@ -63,7 +60,7 @@ A review flags each of these:
 - A doc that narrates its own history, or a README or skill statement the code no longer backs.
 - A name list, class table or verb list copied where no test compares it with `lendk --help`.
 - A crate outside `deny.toml`'s allow list, or an exemption added to `supply-chain/`.
-- A second file in `bin/`, a non-portable utility, or a network tool outside the network region.
+- A non-portable utility in `install.sh` or the tests, or a network tool outside the network region.
 - A gate reported as passed without its command and result.
 - A tag, push, release or visibility change made without the maintainer.
 - The developer's own pass store or GnuPG home read or written.

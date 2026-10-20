@@ -20,7 +20,7 @@ Bodies and comments follow the repository's content rules: no key value, email a
 
 ## Workflow
 
-A behavior change, to what `bin/lendk` or `install.sh` does or to what `--help` or the README promises, starts as an issue. Any other change, such as docs, tests, refactoring or CI, goes straight to a commit on `dev`.
+A behavior change, to what lendk or `install.sh` does or to what `--help` or the README promises, starts as an issue. Any other change, such as docs, tests, refactoring or CI, goes straight to a commit on `dev`.
 
 - **Bug**: an issue labelled `needs-triage`, which `/triage` takes from there.
 - **Feature or release**: a spec issue (`/to-spec`) and its tickets (`/to-tickets`). Each ticket is a sub-issue of the spec, with native blocking edges as in **Blocking** below.

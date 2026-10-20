@@ -1,16 +1,10 @@
 #!/usr/bin/env bats
-# CLI surface: --help, --version, usage errors, inherited functions, environment settings.
+# CLI surface: --help, --version, usage errors, environment settings.
 # shellcheck disable=SC2030,SC2031
 
 setup() {
 	load helpers/common
 	sandbox
-}
-
-# settings: print the timeout load_env sets; no verb shows it short of waiting it out.
-settings() {
-	# shellcheck disable=SC2016
-	LENDK=$SB/bin/lendk-fn run_lendk eval 'load_env; printf "%s\n" "$timeout"'
 }
 
 # lends_at MAP SHIMS STORE PREFIX: add writes the map at MAP and the shim in SHIMS, and run gives the
@@ -60,30 +54,6 @@ lends_at() {
 	assert_class usage 2
 }
 
-# bats test_tags=port:retire
-@test "exported functions named like commands and builtins leave --help and --version byte-identical" {
-	local clean hijacked
-	clean=$("$LENDK" --help; "$LENDK" --version)
-	# shellcheck disable=SC2016
-	hijacked=$(bash -c '
-		for name in printf env mktemp pass sed cat unset set declare builtin read exit test [; do
-			eval "$name() { echo hijacked-$name; }"
-			export -f "${name?}"
-		done
-		"$0" --help
-		"$0" --version' "$LENDK")
-	assert_eq "$hijacked" "$clean"
-}
-
-# bats test_tags=port:unit
-@test "inherited functions are gone before any command runs" {
-	lendk_probe() { echo inherited; }
-	export -f lendk_probe
-	run lendk-fn declare -F lendk_probe
-	assert_eq "$status" 1
-	assert_eq "$output" ""
-}
-
 @test "default paths follow HOME" {
 	unset PASSWORD_STORE_DIR
 	lends_at "$HOME/.config/lendk/map" "$HOME/.local/share/lendk/shims" "$HOME/.password-store" env
@@ -121,19 +91,6 @@ timeout_line() {
 		assert_eq "$status" 0
 		assert_eq "$stderr" ""
 	done
-}
-
-# bats test_tags=port:unit
-@test "the default LENDK_TIMEOUT is 60 s with LENDK_PROMPT=allow and 10 s otherwise" {
-	local value
-	for value in auto never; do
-		LENDK_PROMPT=$value settings
-		assert_eq "$output" 10
-	done
-	LENDK_PROMPT=allow settings
-	assert_eq "$output" 60
-	LENDK_TIMEOUT=3600 settings
-	assert_eq "$output" 3600
 }
 
 @test "any other LENDK_PROMPT is usage" {

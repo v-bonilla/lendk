@@ -1,22 +1,23 @@
 # Shared test helpers; every test file loads this and calls sandbox from setup.
 # shellcheck disable=SC2034,SC2016
 ROOT=$(cd "$BATS_TEST_DIRNAME/.." && pwd)
-# LENDK: the lendk under test, which the environment may name by its absolute path; bin/lendk
-# when unset. UNDER_TEST keeps it for tests that point LENDK at a copy. Neither reaches lendk.
-LENDK=${LENDK:-$ROOT/bin/lendk}
+# LENDK: the lendk under test, which the environment may name by its absolute path; the release
+# binary make build writes when unset. UNDER_TEST keeps it for tests that point LENDK at a copy.
+# Neither reaches lendk.
+if [[ -z ${LENDK-} ]]; then
+	if [[ $(uname -s) == Linux ]]; then
+		LENDK=$ROOT/target/$(uname -m)-unknown-linux-musl/release/lendk
+	else
+		LENDK=$ROOT/target/$(rustc -vV | sed -n 's/^host: //p')/release/lendk
+	fi
+fi
 [[ $LENDK == /* ]] || { echo "LENDK must be an absolute path, not $LENDK"; exit 1; }
 UNDER_TEST=$LENDK
 export -n LENDK
-# Tags for the tests a port of lendk to another language retires or reworks, selected with
-# --filter-tags:
-# - port:retire: the test pins bash or bin/lendk's source text, and the port drops it.
-# - port:rework: the test pins a property the port keeps through another mechanism, and the
-#   port rewrites it.
-# - port:unit: the test calls lendk-fn, since no verb reaches its behavior, and the port turns it
-#   into a unit test.
-# - port:only: the test pins a property only the port has, such as a lendk that is not dumpable;
-#   the bash run of the suite leaves it out until the port replaces bin/lendk.
 FIXTURES=$ROOT/test/fixtures
+# The Rust toolchain make install builds with, found before sandbox moves HOME.
+RUSTUP_DIR=${RUSTUP_HOME:-$HOME/.rustup} CARGO_DIR=${CARGO_HOME:-$HOME/.cargo}
+CARGO_BIN=$(command -v cargo 2>/dev/null) && CARGO_BIN=${CARGO_BIN%/*}
 CLASSES='usage|guarded|unsupported|locked|canceled|timeout|map|unmapped|missing-key|decrypt|unsafe|write|upgrade|exec|not-found|lendk-missing'
 FORBIDDEN='lendk add|lendk rm|lendk run [A-Z@]|lendk upgrade|pass |printenv|env -0|export -p|npm|cargo|pip install|brew'
 sandbox() {
@@ -35,9 +36,16 @@ sandbox() {
 	done
 	export HOME=$SB/home TMPDIR=$SB/tmp PASSWORD_STORE_DIR=$SB/store PATH=$SB/bin:$PATH STUB_LOG=$SB/log
 	SENTINEL=lendk-sentinel-$RANDOM$RANDOM$RANDOM
-	# lendk-fn FUNCTION ARG...: call one of lendk's functions, the file's definitions loaded.
-	printf '#!/usr/bin/env bash\nsource <(sed %q %q)\n"$@"\n' '$d' "$LENDK" >"$SB/bin/lendk-fn"
-	chmod +x "$SB/bin/lendk-fn"
+}
+
+# cargo_env: export what make install's cargo build needs, with no network: the pinned toolchain
+# and the fetched crates, used read-only, a CARGO_HOME of the test's own, and one build directory
+# for the test file.
+cargo_env() {
+	mkdir -p "$SB/cargo"
+	ln -s "$CARGO_DIR/registry" "$SB/cargo/registry"
+	export RUSTUP_HOME=$RUSTUP_DIR CARGO_HOME=$SB/cargo CARGO_TARGET_DIR=$BATS_FILE_TMPDIR/target CARGO_NET_OFFLINE=true
+	PATH=$PATH:$CARGO_BIN
 }
 
 # run_lendk ARG...: status, output (stdout), stderr; every stderr line must follow the message contract, and the
@@ -46,8 +54,6 @@ run_lendk() {
 	local line
 	# upgrade replaces the file it runs from, so it only ever runs on a copy.
 	if [[ ${1-} == upgrade ]]; then
-		[[ ! $LENDK -ef $ROOT/bin/lendk ]] ||
-			{ echo "run_lendk refuses upgrade on the working tree's bin/lendk" >&2; return 1; }
 		[[ ! $LENDK -ef $UNDER_TEST ]] ||
 			{ echo "run_lendk refuses upgrade on the lendk under test: $LENDK" >&2; return 1; }
 		[[ $(cd -P "${LENDK%/*}" 2>/dev/null && pwd)/ != "$(cd -P "$ROOT" && pwd)"/* ]] ||
@@ -131,14 +137,14 @@ gone() {
 # LENDK_TEST_FAMILY=$SENTINEL, and of the fake pass calls and their children, which the fake records
 # in $SB/log/pids. A lendk that is not dumpable hides its environment, never its command line.
 family() {
-	local p f a0 a1
+	local p f a0
 	local -A seen=()
 	{
 		if [[ -d /proc/self ]]; then
 			for f in /proc/[0-9]*/cmdline; do
-				a0='' a1=''
-				{ IFS= read -r -d '' a0 && IFS= read -r -d '' a1; } 2>/dev/null <"$f"
-				[[ $a0 == "$LENDK" || ($a0 == *bash && $a1 == "$LENDK") ]] || continue
+				a0=''
+				IFS= read -r -d '' a0 2>/dev/null <"$f"
+				[[ $a0 == "$LENDK" ]] || continue
 				p=${f#/proc/}
 				printf '%s\n' "${p%/cmdline}"
 			done
@@ -192,22 +198,31 @@ within() {
 sha256() {
 	if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi
 }
-# The release shape of the lendk under test (#28): bin/lendk's script reads 1.x's lendk.tar.gz and
-# fetches it before SHA256SUMS; the binary reads its platform's lendk-PLATFORM.tar.gz and fetches
-# SHA256SUMS first. MARK is the marker each looks for in a new file, MARK_LINE the line carrying it
-# in a fixture script, and RUNNING the version the lendk under test prints.
-if [[ $(head -c 2 "$LENDK" 2>/dev/null) == '#!' ]]; then
-	PLATFORM='' ASSET=lendk.tar.gz FETCHES=(lendk.tar.gz SHA256SUMS)
-	MARK_LINE=$(sed -n 2p "$ROOT/bin/lendk")
-else
-	case $(uname -s) in Darwin) PLATFORM=apple-darwin ;; *) PLATFORM=unknown-linux-musl ;; esac
-	case $(uname -m) in arm64 | aarch64) PLATFORM=aarch64-$PLATFORM ;; *) PLATFORM=x86_64-$PLATFORM ;; esac
-	ASSET=lendk-$PLATFORM.tar.gz FETCHES=(SHA256SUMS "$ASSET")
-	MARK_LINE='# lendk binary v1: give API keys to the commands mapped to them.'
-fi
+# The release shape (#28): the platform's lendk-PLATFORM.tar.gz, with SHA256SUMS fetched first.
+# MARK is the marker lendk looks for in a new file, MARK_LINE the line carrying it in a stand-in,
+# and RUNNING the version the lendk under test prints.
+case $(uname -s) in Darwin) PLATFORM=apple-darwin ;; *) PLATFORM=unknown-linux-musl ;; esac
+case $(uname -m) in arm64 | aarch64) PLATFORM=aarch64-$PLATFORM ;; *) PLATFORM=x86_64-$PLATFORM ;; esac
+ASSET=lendk-$PLATFORM.tar.gz FETCHES=(SHA256SUMS "$ASSET")
+MARK_LINE='# lendk binary v1: give API keys to the commands mapped to them.'
 MARK=${MARK_LINE#\# }
 RUNNING=$("$LENDK" --version 2>/dev/null)
 RUNNING=${RUNNING#lendk }
+# release_1x DIR: the frozen 1.x lendk's release in 1.x's shape, lendk.tar.gz holding lendk-X.Y.Z/
+# with bin/lendk, the skill and LICENSE, and its SHA256SUMS, under DIR/latest/download and
+# DIR/download/vX.Y.Z. It serves install.sh's 1.x path until install.sh installs the binary.
+release_1x() {
+	local v src=$1.src
+	v=$(sed -n 's/^LENDK_VERSION=//p' "$FIXTURES/lendk-1.x")
+	mkdir -p "$src/lendk-$v/bin" "$1/latest/download" "$1/download/v$v"
+	cp "$FIXTURES/lendk-1.x" "$src/lendk-$v/bin/lendk"
+	chmod 755 "$src/lendk-$v/bin/lendk"
+	cp "$ROOT/LICENSE" "$src/lendk-$v/"
+	cp -R "$ROOT/skills" "$src/lendk-$v/"
+	(cd "$src" && tar -cf - "lendk-$v") | gzip >"$1/latest/download/lendk.tar.gz"
+	(cd "$1/latest/download" && sha256 lendk.tar.gz >SHA256SUMS)
+	cp "$1"/latest/download/* "$1/download/v$v/"
+}
 # pack SRC DIR: a release in its archive shape under DIR, from the lendk-X.Y.Z tree in SRC.
 pack() {
 	mkdir -p "$2/latest/download"
@@ -234,16 +249,12 @@ esac
 EOF
 	chmod 755 "$1"
 }
-# release DIR VERSION: pack lendk as VERSION, with LICENSE and skills, under DIR. For the script,
-# bin/lendk with VERSION written in; for the binary, the binary under test at its own version,
-# else a stand-in.
+# release DIR VERSION: pack lendk as VERSION, with LICENSE and skills, under DIR: the binary under
+# test at its own version, else a stand-in.
 release() {
 	local src=$1.src/lendk-$2
 	mkdir -p "$src/bin"
-	if [[ -z $PLATFORM ]]; then
-		sed "s/^LENDK_VERSION=.*/LENDK_VERSION=$2/" "$ROOT/bin/lendk" >"$src/bin/lendk"
-		chmod 755 "$src/bin/lendk"
-	elif [[ $2 == "$RUNNING" ]]; then
+	if [[ $2 == "$RUNNING" ]]; then
 		cp "$UNDER_TEST" "$src/bin/lendk"
 	else
 		standin "$src/bin/lendk" "$2"

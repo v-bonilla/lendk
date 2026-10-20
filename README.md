@@ -149,7 +149,7 @@ git clone https://github.com/v-bonilla/lendk
 make -C lendk install                  # PREFIX defaults to ~/.local; DESTDIR is honored
 ```
 
-`make install` renames a new file over the old one, so a running lendk keeps reading its copy.
+`make install` builds the lendk binary with `cargo build --release --locked` under the toolchain `rust-toolchain.toml` pins, so it needs [rustup](https://rustup.rs), which fetches that toolchain, and the crates `Cargo.lock` names. It then renames the binary over the old file, so a running lendk keeps reading its copy.
 
 ### For AI agents
 
@@ -307,6 +307,12 @@ The name lists, as `lendk --help` prints them:
 lendk protects against ambient exposure: keys reach only mapped commands, `lendk run` targets and their descendants. It also keeps plaintext keys out of rc files and dotfile repos, and keeps agents from hanging on prompts.
 
 A call waits at most `LENDK_TIMEOUT` plus 2 s for pass and gpg, or in `lendk upgrade` for the download and its checks, cleanup included. When the time runs out, lendk stops them and ends the call with a `timeout` line, or an `upgrade` line in `lendk upgrade`.
+
+The lendk binary built from source holds values in memory this way:
+
+- It marks itself non-dumpable before it reads anything, so no core dump holds its memory, and other processes running as you cannot read its memory or its `/proc/PID/environ`.
+- It keeps the values in one buffer, kept out of swap with `mlock` as a best effort: where the memory-lock limit is too low, the call still runs. The buffer is excluded from core dumps and zeroed before lendk execs the target or exits.
+- The target gets the values in its environment, which other processes running as you can read, as below.
 
 It does not protect against:
 
@@ -477,12 +483,11 @@ Fix it one of two ways:
 
 ## Requirements
 
-- bash 4.4 or later
 - GnuPG 2.4 or later
 - pass 1.7 or later, with a store initialized by `pass init`
-- POSIX utilities
 - tar, gzip, `sha256sum` or `shasum`, and curl or wget, for `lendk upgrade` only
-- `git` and `make` to install from source
+- `git`, `make` and [rustup](https://rustup.rs) to install from source; `make install` builds with the toolchain `rust-toolchain.toml` pins
+- bash 4.4 or later and POSIX utilities for the release the installer fetches, lendk 1.1.0, which is one bash file
 
 lendk supports Linux and macOS; CI runs the full test suite on both. On macOS it needs bash and GnuPG from Homebrew (`brew install bash gnupg pass`), since the system bash is 3.2. Homebrew's bash must come first on the login PATH: `/etc/profile` puts `/usr/bin` first, so keep `eval "$(brew shellenv)"` in `~/.profile` (or `~/.bash_profile`) and `~/.zprofile`, above lendk's blocks. Development needs Docker for `make check-docker` and `uv` for shellcheck; `make deps` fetches bats-core.
 

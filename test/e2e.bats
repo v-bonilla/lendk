@@ -13,7 +13,7 @@ setup() {
 	# ~/bin, which the skel profile puts on PATH after /etc/profile resets it: gh, pass and gpg
 	# stand-ins, and an outer command calling gh.
 	SYS=$HOME/bin
-	mkdir -p "$SYS" "$SB/other" "$SB/src/bin"
+	mkdir -p "$SYS" "$SB/other" "$SB/src"
 	ln -s "$FIXTURES/stub-target" "$SYS/gh"
 	ln -s "$FIXTURES/stub-target" "$SB/other/gh"
 	ln -s "$FIXTURES/fake-pass" "$SYS/pass"
@@ -27,8 +27,7 @@ setup() {
 	cp "$FIXTURES/bashrc" "$HOME/.bashrc"
 	LOGIN_PATH=$SYS:${BASH%/*}:/usr/bin:/bin
 	# The clone source: a scratch repository holding the working tree's install inputs.
-	cp "$ROOT/Makefile" "$ROOT/LICENSE" "$SB/src/"
-	cp "$LENDK" "$SB/src/bin/"
+	cp -R "$ROOT/Makefile" "$ROOT/LICENSE" "$ROOT/Cargo.toml" "$ROOT/Cargo.lock" "$ROOT/rust-toolchain.toml" "$ROOT/src" "$SB/src/"
 	git -C "$SB/src" init -q
 	git -C "$SB/src" add -A
 	git -C "$SB/src" -c user.name=test -c user.email=test commit -qm src
@@ -45,7 +44,10 @@ login_env() {
 # with the store entry written for the fake pass; the init line in ~/.profile reaches the login
 # shells that run the later commands. Then the other init blocks.
 from_source_setup() {
-	login_env bash -c "git clone -q $(printf %q "$SB/src") lendk && make -s -C lendk install"
+	cargo_env
+	login_env env RUSTUP_HOME="$RUSTUP_HOME" CARGO_HOME="$CARGO_HOME" CARGO_TARGET_DIR="$CARGO_TARGET_DIR" \
+		CARGO_NET_OFFLINE=true PATH="$LOGIN_PATH:$CARGO_BIN" \
+		bash -c "git clone -q $(printf %q "$SB/src") lendk && make -s -C lendk install" >/dev/null
 	login_env bash -c '~/.local/bin/lendk init sh >> ~/.profile'
 	store_entry GH_TOKEN "$SENTINEL"
 	login_env bash -lc 'lendk add gh GH_TOKEN' >/dev/null

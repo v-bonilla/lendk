@@ -1,3 +1,5 @@
+Superseded by [ADR 0016](0016-dependencies-admitted-by-rule.md).
+
 # One bash 4.4 file on POSIX utilities
 
 lendk is one executable bash file, `bin/lendk`, which needs bash 4.4, GnuPG 2.4, pass 1.7 and POSIX utilities at run time, and nothing else. Its opening lines, up to the version test, parse and run in bash 3.2 and any POSIX sh, so an older shell, such as macOS's own bash 3.2, gets a `lendk: unsupported:` line with its FIX instead of a syntax error. The reasons:

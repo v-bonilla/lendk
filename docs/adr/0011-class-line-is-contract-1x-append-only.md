@@ -10,6 +10,6 @@ Callers, agents above all, need one stable signal for what went wrong. Before ex
 ## Consequences
 
 - A description may still change to stay true; names, exit hints, FIX texts and the shim text may not.
-- The tables live once, between the `# lint: tables begin` and `# lint: tables end` markers of `bin/lendk`, and `lendk --help` prints them.
+- The tables live once, in the Tables module, `src/tables.rs`, and `lendk --help` prints them.
 - `test/frozen/` holds every 1.x verb line, name-list word, class with its exit hint, FIX text and variable name, and the shim text. `test/contract.bats` fails when `lendk --help`, or the shim `lendk sync` writes, lacks one of them. A release that adds to the tables appends to `test/frozen/` in the same change.
 - When the kernel refuses a target that passed lendk's checks, bash's own lines come first, and the `exec` line still ends stderr.

@@ -1,12 +1,12 @@
 #!/usr/bin/env bats
-# install.sh against a make dist release served from file://, in a scratch HOME and PREFIX.
+# install.sh against the frozen 1.x lendk's release served from file://, in a scratch HOME and PREFIX.
 # shellcheck disable=SC2016,SC2086 # INST_SH holds a command and its words
 
 setup_file() {
 	export BATS_LENDK_REL=$BATS_FILE_TMPDIR/rel BATS_LENDK_SYS=$BATS_FILE_TMPDIR/sys
 	local REL=$BATS_LENDK_REL SYS=$BATS_LENDK_SYS
-	local src=$BATS_FILE_TMPDIR/src d version
-	version=$(sed -n 's/^LENDK_VERSION=//p' "$BATS_TEST_DIRNAME/../bin/lendk")
+	local d
+	load helpers/common
 	# sys: every command on PATH except the ones a test stubs or hides.
 	mkdir -p "$SYS"
 	local IFS=:
@@ -15,25 +15,13 @@ setup_file() {
 	done
 	unset IFS
 	(cd "$SYS" && rm -f bash pass gpg gpg2 curl wget apt-get dnf pacman zypper apk brew systemctl sudo)
-	command -v git >/dev/null && command -v make >/dev/null || return 0
-	# The release: make dist on a commit of this tree.
-	mkdir -p "$src"
-	cp -R "$BATS_TEST_DIRNAME/../bin" "$BATS_TEST_DIRNAME/../skills" "$BATS_TEST_DIRNAME/../Makefile" "$BATS_TEST_DIRNAME/../LICENSE" "$BATS_TEST_DIRNAME/../install.sh" "$src/"
-	git -C "$src" init -q
-	git -C "$src" add -A
-	git -C "$src" -c user.name=test -c user.email=test commit -qm src
-	make -s -C "$src" dist >/dev/null
-	mkdir -p "$REL/latest/download" "$REL/download/v$version"
-	cp "$src"/dist/* "$REL/latest/download/"
-	cp "$src"/dist/* "$REL/download/v$version/"
+	release_1x "$REL"
 }
 
 setup() {
 	load helpers/common
 	sandbox
 	REL=$BATS_LENDK_REL SYS=$BATS_LENDK_SYS
-	require git
-	require make
 	[[ -f $REL/latest/download/lendk.tar.gz ]]
 	STUB=$SB/stub
 	mkdir -p "$STUB"
@@ -41,7 +29,7 @@ setup() {
 	stub gpg 'echo "gpg (GnuPG) 2.4.5"'
 	stub pass 'exit 0'
 	stub curl 'echo "curl: no network in tests" >&2; exit 7'
-	VERSION=$(sed -n 's/^LENDK_VERSION=//p' "$ROOT/bin/lendk")
+	VERSION=$(sed -n 's/^LENDK_VERSION=//p' "$FIXTURES/lendk-1.x")
 	SHIMS=$HOME/.local/share/lendk/shims
 	# PM installs pass: HINT is what the installer prints, RUNS what it runs without a terminal.
 	if [[ $(uname -s) == Darwin ]]; then
@@ -77,7 +65,7 @@ login() {
 	inst
 	assert_eq "$status" 0
 	assert_eq "$final" "lendk-install: ok: lendk $VERSION installed to $HOME/.local/bin/lendk"
-	cmp "$ROOT/bin/lendk" "$HOME/.local/bin/lendk"
+	cmp "$FIXTURES/lendk-1.x" "$HOME/.local/bin/lendk"
 	[[ -x $HOME/.local/bin/lendk ]]
 	assert_line "$output" "updated: $HOME/.profile (lendk-install block)"
 	assert_eq "$(grep -c '^# >>> lendk-install >>>$' "$HOME/.profile")" 1
@@ -333,12 +321,21 @@ login() {
 	assert_line "$output" '  --uninstall        remove what this installer added, never the map or the pass store'
 }
 
-@test "installer: its markers match the ones bin/lendk and the Makefile use" {
+@test "installer: the markers match across the frozen 1.x lendk, the Rust source, install.sh and the Makefile" {
 	local m
-	m=$(sed -n 2p "$ROOT/bin/lendk")
+	# 1.x's second line.
+	m=$(sed -n 2p "$FIXTURES/lendk-1.x")
 	grep -qxF "lendk_mark='$m'" "$ROOT/install.sh"
+	grep -qxF "LENDK_MARKER := \\$m" "$ROOT/Makefile"
+	# The binary's marker.
+	m=$(sed -n 's/^pub static MARKER: \[u8; [0-9]*\] = \*b"\(.*\)";$/\1/p' "$ROOT/src/upgrade.rs")
+	[[ -n $m ]]
+	grep -qxF "BIN_MARKER := $m" "$ROOT/Makefile"
+	# The shim's second line.
 	m=$(grep -o "'# lendk shim v1:[^']*'" "$ROOT/install.sh")
-	grep -qF "${m//\'/}" "$ROOT/bin/lendk"
+	m=${m//\'/}
+	grep -qxF "MARKER := \\$m" "$ROOT/Makefile"
+	assert_eq "$(sed -n 2p "$ROOT/test/frozen/shim")" "$m"
 }
 
 @test "installer: runs to the end under dash, busybox sh and the system bash" {

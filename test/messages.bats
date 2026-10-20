@@ -1,36 +1,10 @@
 #!/usr/bin/env bats
-# Every class line fail prints follows the message contract in both modes; run_lendk checks each line.
+# The FIX texts in both modes; run_lendk checks each class line against the message contract.
 # shellcheck disable=SC2016
 
 setup() {
 	load helpers/common
 	sandbox
-}
-
-# fail_line [ENV=VALUE...] -- ID TEXT [TOKEN=VALUE...]: run lendk's fail through run_lendk.
-fail_line() {
-	local vars=()
-	while [[ $1 != -- ]]; do vars+=("$1"); shift; done
-	shift
-	# shellcheck disable=SC2034
-	local LENDK=$SB/bin/lendk-fn
-	((${#vars[@]} == 0)) || export "${vars[@]}"
-	run_lendk fail "$@"
-}
-
-# bats test_tags=port:unit
-@test "every class gives one contract line and its exit hint, in both modes" {
-	local row id hint mode
-	while IFS= read -r row; do
-		id=${row%%|*}
-		hint=${row#*|}
-		hint=${hint%%|*}
-		for mode in never allow; do
-			fail_line LENDK_PROMPT=$mode -- "$id" "planted text for $id"
-			[[ $stderr == "lendk: ${id%%:*}: planted text for $id. "* ]]
-			assert_class "${id%%:*}" "$hint"
-		done
-	done < <(LENDK=$SB/bin/lendk-fn; "$LENDK" eval 'printf "%s\n" "${classes[@]}"')
 }
 
 # map LINE...: write a private map at the default path.
