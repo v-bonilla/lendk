@@ -53,7 +53,6 @@ check: lint test
 
 images:
 	docker pull -q bash:3.2.57 >/dev/null
-	docker pull -q bash:4.3.48 >/dev/null
 	docker build -q -t lendk-test:ubuntu -f test/docker/ubuntu.Dockerfile test/docker
 	docker build -q -t lendk-test:bash44 -f test/docker/bash44.Dockerfile test/docker
 
