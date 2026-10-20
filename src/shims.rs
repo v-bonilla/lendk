@@ -18,13 +18,18 @@ pub fn self_path(env: &Env, argv0: &[u8]) -> Vec<u8> {
     if ran.starts_with(b"/") {
         return ran;
     }
+    absolute(env, &ran)
+}
+
+/// `rel` made absolute against PWD, when it names the working directory, else `getcwd`.
+pub fn absolute(env: &Env, rel: &[u8]) -> Vec<u8> {
     let cwd = match env.get("PWD") {
         Some(pwd) if pwd.starts_with(b"/") && sys::same_file(pwd, b".") => pwd.to_vec(),
         _ => std::env::current_dir()
             .map(|d| std::os::unix::ffi::OsStrExt::as_bytes(d.as_os_str()).to_vec())
             .unwrap_or_default(),
     };
-    let rel = ran.strip_prefix(b"./").unwrap_or(&ran);
+    let rel = rel.strip_prefix(b"./").unwrap_or(rel);
     [&cwd[..], b"/", rel].concat()
 }
 
