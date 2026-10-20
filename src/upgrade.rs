@@ -3,7 +3,7 @@
 
 use crate::cli::Env;
 use crate::exec;
-use crate::failure::Failure;
+use crate::failure::{self, Failure};
 use crate::helpers::{self, Watchdog};
 use crate::map::{self, Paths, path};
 use crate::pass::TempDir;
@@ -347,10 +347,14 @@ pub fn upgrade(
         None
     };
     if set.is_some() {
-        let mut notice = b"lendk: notice: the release comes from ".to_vec();
-        notice.extend_from_slice(base);
-        notice.extend_from_slice(b", set by LENDK_INSTALL_BASE_URL.\n");
-        let _ = std::io::stderr().write_all(&notice);
+        failure::notice(
+            &[
+                &b"the release comes from "[..],
+                base,
+                b", set by LENDK_INSTALL_BASE_URL",
+            ]
+            .concat(),
+        );
     }
     let tmp_base = env
         .get("TMPDIR")

@@ -4,12 +4,11 @@
 use crate::cli::{self, Env};
 use crate::edit::{Call, Outcome};
 use crate::exec;
-use crate::failure::Failure;
+use crate::failure::{self, Failure};
 use crate::map::{self, Paths, Scan, path};
 use crate::pass;
 use crate::shims;
 use crate::sys;
-use std::io::Write;
 
 /// A problem as `TEXT (FIX)`; NFIX replaces FIX in a non-interactive call, `ask the user` by
 /// default (ADR 0012).
@@ -266,24 +265,29 @@ fn globals(call: &Call, scan: &Scan) -> Vec<Vec<u8>> {
     out
 }
 
+/// The notice for a map with no command, with the next step for the call's mode.
+pub fn empty_map_notice(interactive: bool) {
+    let next: &[u8] = if interactive {
+        b"map one with lendk add CMD KEY"
+    } else {
+        b"ask the user which commands to map"
+    };
+    failure::notice(
+        &[
+            &b"no command is mapped yet, so lendk gives no keys; "[..],
+            next,
+        ]
+        .concat(),
+    );
+}
+
 /// `lendk check [NAME...]`: the headers, the problems no row holds, then the rows; exit 1 only
 /// when a shown item has a problem.
 pub fn check(call: &Call, names: &[&[u8]]) -> Outcome {
     let paths = call.paths;
     let scan = map::scan(&paths.map);
     if scan.cmds.is_empty() && scan.groups.is_empty() && scan.bad.is_empty() {
-        let next: &[u8] = if call.interactive {
-            b"map one with lendk add CMD KEY"
-        } else {
-            b"ask the user which commands to map"
-        };
-        let notice = [
-            &b"lendk: notice: no command is mapped yet, so lendk gives no keys; "[..],
-            next,
-            b".\n",
-        ]
-        .concat();
-        let _ = std::io::stderr().write_all(&notice);
+        empty_map_notice(call.interactive);
     }
     let global = globals(call, &scan);
     let lendk = shims::self_path(call.env, call.argv0);

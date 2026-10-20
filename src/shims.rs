@@ -261,7 +261,7 @@ impl Drop for Lock {
     }
 }
 
-/// What a write of the shims reports: notices, printed at once, and failures, printed by the
+/// What a write of the shims reports: notice texts, printed at once, and failures, printed by the
 /// caller after the map's violations.
 #[derive(Default)]
 pub struct Report {
@@ -331,12 +331,9 @@ pub fn write(shims: &[u8], lendk: &[u8], scan: &Scan, lock: &mut Lock) -> Report
                 report.failures.push(failure);
             }
         } else {
-            let notice = [
-                b"lendk: notice: ",
-                &f[..],
-                b" is not a lendk shim, so sync leaves it.\n",
-            ];
-            report.notices.push(notice.concat());
+            report
+                .notices
+                .push([&f[..], b" is not a lendk shim, so sync leaves it"].concat());
         }
     }
     for f in foreign {

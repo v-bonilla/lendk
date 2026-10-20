@@ -3,7 +3,7 @@
 
 use crate::check;
 use crate::cli::Env;
-use crate::failure::Failure;
+use crate::failure::{Failure, notice};
 use crate::map::{self, Paths, Scan};
 use crate::run::Ending;
 use crate::shims::{self, Lock};
@@ -11,7 +11,6 @@ use crate::tables::{
     GUARDED_AGENT_CLIS, GUARDED_INTERPRETERS, GUARDED_LAUNCHERS, GUARDED_PACKAGE_TOOLS,
     GUARDED_SHELLS, RESERVED_CMDS,
 };
-use std::io::Write;
 
 /// What a verb hands back: its stdout and exit status, or the lines to report.
 pub type Outcome = Result<(Vec<u8>, i32), Ending>;
@@ -22,10 +21,6 @@ pub struct Call<'a> {
     pub paths: &'a Paths,
     pub interactive: bool,
     pub argv0: &'a [u8],
-}
-
-fn notice(text: &[u8]) {
-    let _ = std::io::stderr().write_all(text);
 }
 
 fn usage(text: impl Into<Vec<u8>>) -> Ending {
@@ -165,19 +160,7 @@ fn edit_end(call: &Call, lock: Lock, name: &[u8]) -> Outcome {
     if std::fs::metadata(map::path(&call.paths.map)).is_err()
         || scan.cmds.len() + scan.groups.len() + scan.bad.len() == 0
     {
-        let fix: &[u8] = if call.interactive {
-            b"map one with lendk add CMD KEY"
-        } else {
-            b"ask the user which commands to map"
-        };
-        notice(
-            &[
-                b"lendk: notice: no command is mapped yet, so lendk gives no keys; ",
-                fix,
-                b".\n",
-            ]
-            .concat(),
-        );
+        check::empty_map_notice(call.interactive);
     }
     let out = check::rows(call.env, call.paths, &scan, &lendk, call.interactive).print(&[name]);
     Ok((out, if failed { 125 } else { 0 }))
@@ -254,14 +237,7 @@ pub fn add(call: &Call, words: &[&[u8]]) -> Outcome {
         Some(_) => {}
     }
     if guarded {
-        notice(
-            &[
-                b"lendk: notice: ",
-                name,
-                b" runs other programs, so its keys reach all of them.\n",
-            ]
-            .concat(),
-        );
+        notice(&[name, b" runs other programs, so its keys reach all of them"].concat());
     }
     edit_end(call, lock, name)
 }
@@ -300,30 +276,12 @@ pub fn rm(call: &Call, words: &[&[u8]]) -> Outcome {
     };
     let (scan, mut lock) = edit_begin(call, &rm_check)?;
     let Some(e) = scan.get(name) else {
-        notice(
-            &[
-                b"lendk: notice: ",
-                name,
-                b" is not in ",
-                map_path,
-                b", so nothing changed.\n",
-            ]
-            .concat(),
-        );
+        notice(&[name, b" is not in ", map_path, b", so nothing changed"].concat());
         return edit_end(call, lock, name);
     };
     for w in words {
         if !e.words.iter().any(|x| x == w) {
-            notice(
-                &[
-                    b"lendk: notice: ",
-                    name,
-                    b" does not hold ",
-                    w,
-                    b", so nothing changed for it.\n",
-                ]
-                .concat(),
-            );
+            notice(&[name, b" does not hold ", w, b", so nothing changed for it"].concat());
         }
     }
     let kept: Vec<&[u8]> = if words.is_empty() {

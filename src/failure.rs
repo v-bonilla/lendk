@@ -72,6 +72,11 @@ impl Failure {
     }
 }
 
+/// Prints the contract's notice line, `lendk: notice: TEXT.`, to stderr.
+pub fn notice(text: &[u8]) {
+    let _ = std::io::stderr().write_all(&[&b"lendk: notice: "[..], text, b".\n"].concat());
+}
+
 fn replace(haystack: &[u8], from: &[u8], to: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(haystack.len());
     let mut i = 0;
