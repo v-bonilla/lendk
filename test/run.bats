@@ -99,13 +99,12 @@ direct_env() {
 
 # bats test_tags=port:only
 @test "the target's environment is the caller's entries in order, less those named like an injected key, then the keys and LENDK_INJECTED" {
-	map 'envtgt K1 @g' '@g K2 K3'
-	ln -s "$(type -P env)" "$SB/bin/envtgt"
+	map 'env K1 @g' '@g K2 K3'
 	store_entry K1 "$SENTINEL-1"
 	store_entry K2 "$SENTINEL-2"
 	export K3=preset K1='' LENDK_INJECTED='X K1'
 	env -0 | tr '\0' '\n' | grep -v '^_=' >"$SB/caller"
-	"$LENDK" run -- envtgt -0 </dev/null 2>"$SB/stderr" | tr '\0' '\n' | grep -v '^_=' >"$SB/target"
+	"$LENDK" run -- env -0 </dev/null 2>"$SB/stderr" | tr '\0' '\n' | grep -v '^_=' >"$SB/target"
 	assert_eq "$(<"$SB/stderr")" ""
 	assert_eq "$(<"$SB/target")" "$(grep -v -e '^K1=' -e '^LENDK_INJECTED=' "$SB/caller")
 K1=$SENTINEL-1
