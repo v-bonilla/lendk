@@ -156,6 +156,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
+# bats test_tags=unit
 @test "a 200 kB first line reads in under 1 s" {
 	map 'stub K1'
 	: >"$SB/store/env/K1.gpg"

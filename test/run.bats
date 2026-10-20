@@ -17,10 +17,19 @@ map() {
 	chmod 600 "$HOME/.config/lendk/map"
 }
 
-# run_fake ARG...: lendk run ARG... with a backend that logs each key to $SB/reads and returns value-KEY.
+# run_fake ARG...: lendk run ARG... with an entry value-KEY in the store for each key the map or ARG names.
 run_fake() {
-	local LENDK=$SB/bin/lendk-fn
-	run_lendk eval "backend_has() { :; }; read_values() { local k; for k; do printf '%s\n' \"\$k\" >>$(printf %q "$SB/reads"); lendk_values[\$k]=value-\$k; done; }; main run $(printf '%q ' "$@")"
+	local k
+	for k in $(sed 's/#.*//' "$HOME/.config/lendk/map") "$@"; do
+		[[ $k =~ ^[A-Z][A-Z0-9_]*$ ]] && store_entry "$k" "value-$k"
+	done
+	run_lendk run "$@"
+}
+
+# reads: the keys the backend read, sorted.
+reads() {
+	local d
+	for d in "$SB"/log/pass.*; do [[ -e $d/argv ]] && tr '\0' '\n' <"$d/argv" | sed -n 's|^env/||p'; done | sort
 }
 
 # target_env: the environment file the one stub-target call logged.
@@ -76,7 +85,7 @@ env_diff() {
 	map 'stub K1 K2'
 	K1=caller K2='' run_fake -- stub
 	assert_eq "$status" 0
-	assert_eq "$(<"$SB/reads")" K2
+	assert_eq "$(reads)" K2
 	tr '\0' '\n' <"$(target_env)" | grep -qx K1=caller
 	tr '\0' '\n' <"$(target_env)" | grep -qx K2=value-K2
 }
@@ -155,12 +164,12 @@ env_diff() {
 	map 'stub A'
 	run_fake B -- stub
 	assert_eq "$status" 0
-	assert_eq "$(<"$SB/reads")" B
+	assert_eq "$(reads)" B
 	refute_contains "$(tr '\0' '\n' <"$(target_env)")" A=
-	rm -r "$SB/log" "$SB/reads"
+	rm -r "$SB/log"
 	run_fake -- "$SB/bin/stub"
 	assert_eq "$status" 0
-	assert_eq "$(<"$SB/reads")" A
+	assert_eq "$(reads)" A
 }
 
 @test "a CMD without an entry and without named keys is unmapped" {
