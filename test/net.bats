@@ -12,7 +12,7 @@ setup() {
 	chmod 600 "$MAP"
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
 	ln -s "$FIXTURES/stub-target" "$SB/bin/other"
-	printf '%s\n' "$SENTINEL" >"$SB/store/env/K1.gpg"
+	store_entry K1 "$SENTINEL"
 }
 
 teardown() {

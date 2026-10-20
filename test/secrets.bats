@@ -17,7 +17,7 @@ map() {
 }
 
 # entry KEY VALUE: store VALUE, a newline and a second line as KEY's entry.
-entry() { printf '%s\nsecond line\n' "$2" >"$SB/store/env/$1.gpg"; }
+entry() { store_entry "$1" "$2" 'second line'; }
 
 # target_var NAME: NAME's value in the one stub-target call's environment.
 target_var() {
@@ -136,7 +136,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 
 @test "the value is the first line without its newline, spaces and glob characters kept" {
 	map 'stub K1'
-	printf '  a * b\\n  \nsecond\n' >"$SB/store/env/K1.gpg"
+	store_entry K1 '  a * b\n  ' second
 	run_lendk run -- stub
 	assert_eq "$status" 0
 	assert_eq "$(target_var K1)" '  a * b\n  '
@@ -144,11 +144,11 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 
 @test "an empty first line or an empty entry is missing-key" {
 	map 'stub K1'
-	printf '\nsecond\n' >"$SB/store/env/K1.gpg"
+	store_entry K1 '' second
 	run_lendk run -- stub
 	assert_eq "$stderr" "lendk: missing-key: env/K1 has an empty first line. Stop and ask the user."
 	assert_class missing-key 125
-	: >"$SB/store/env/K1.gpg"
+	store_entry K1
 	LENDK_PROMPT=allow run_lendk run -- stub
 	assert_eq "$stderr" "lendk: missing-key: env/K1 has an empty first line. Set it: pass edit env/K1"
 	assert_class missing-key 125

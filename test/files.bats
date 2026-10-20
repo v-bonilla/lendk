@@ -15,7 +15,7 @@ setup() {
 	ln -s "$FIXTURES/stub-target" "$SB/bin/other"
 	printf '#!/bin/sh\nls -A "$TMPDIR" >"$STUB_LOG/tmp-at-exec"\n' >"$SB/bin/tmpls"
 	chmod +x "$SB/bin/tmpls"
-	for k in K1 K2 K3 K4; do printf '%s-%s\n' "$SENTINEL" "$k" >"$SB/store/env/$k.gpg"; done
+	for k in K1 K2 K3 K4; do store_entry "$k" "$SENTINEL-$k"; done
 	run_lendk sync
 	assert_eq "$status" 0
 	export PATH=$SHIMS:$PATH

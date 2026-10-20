@@ -15,7 +15,7 @@ setup() {
 	done
 	skel_profile >"$HOME/.profile"
 	cp "$FIXTURES/bashrc" "$HOME/.bashrc"
-	printf '%s\n' "$SENTINEL" >"$SB/store/env/GH_TOKEN.gpg"
+	store_entry GH_TOKEN "$SENTINEL"
 	run_lendk add gh GH_TOKEN
 	assert_eq "$status" 0
 }

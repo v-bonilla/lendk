@@ -24,7 +24,7 @@ map() {
 # keys KEY...: store entries for KEY....
 keys() {
 	local k
-	for k; do printf 'value\n' >"$SB/store/env/$k.gpg"; done
+	for k; do store_entry "$k" value; done
 }
 
 # stub_gpg VERSION: gpg and gpg2 on PATH reporting VERSION.

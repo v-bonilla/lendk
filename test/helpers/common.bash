@@ -45,6 +45,20 @@ run_lendk() {
 	# The sandbox's download stubs record their calls, and no call of the suite may start one.
 	[[ ! -e $SB/log/net ]] || { echo "lendk started a download tool: $(<"$SB/log/net")" >&2; return 1; }
 }
+# store_entry KEY [LINE...]: KEY's store entry holds LINE..., each ended by a newline, or no line.
+# store_entry -n KEY...: no entry for KEY....
+# Black-box tests write the store only through this; backend-bound tests use pass's layout directly.
+store_entry() {
+	if [[ $1 == -n ]]; then
+		shift
+		local k
+		for k; do rm -f "$SB/store/env/$k.gpg"; done
+	elif (($# > 1)); then
+		printf '%s\n' "${@:2}" >"$SB/store/env/$1.gpg"
+	else
+		: >"$SB/store/env/$1.gpg"
+	fi
+}
 assert_eq() { [[ $1 == "$2" ]] || { printf 'expected: %q\nactual:   %q\n' "$2" "$1" >&2; return 1; }; }
 assert_line() { [[ $'\n'$1$'\n' == *$'\n'"$2"$'\n'* ]] || { printf 'no line %q in:\n%s\n' "$2" "$1" >&2; return 1; }; }
 refute_contains() { [[ $1 != *"$2"* ]] || { printf 'unexpected %q in:\n%s\n' "$2" "$1" >&2; return 1; }; }
