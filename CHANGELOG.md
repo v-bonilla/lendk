@@ -14,6 +14,10 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 
 - `install.sh` reads the release's `SHA256SUMS` first and installs the binary for the machine's OS and CPU when the release has one, after checking its SHA-256, its marker and a `--version` run, with no bash, GnuPG or pass needed. It keeps installing 1.1.0's script while that is the latest release. Its login block drops the bash directory line.
 - The README's quick start and its Installation section show one install command, which also copies the agent skill to `~/.claude/skills/lendk` with `--skill-dir`.
+- The download and unpack tools of `lendk upgrade` also get the caller's proxy and certificate variables, such as `HTTPS_PROXY`, `NO_PROXY` and `SSL_CERT_FILE`.
+- `make install` builds lendk from source and needs rustup with the toolchain `rust-toolchain.toml` pins.
+- A call that cannot prompt because gpg is set to `pinentry-mode loopback` ends with `locked` instead of prompting on the terminal.
+- A pass value whose first line holds a NUL byte ends the call with `decrypt`, and the target does not start.
 
 ## [1.1.0] - 2026-10-04
 
