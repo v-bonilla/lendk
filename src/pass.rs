@@ -194,16 +194,6 @@ pub fn gnupg(env: &Env, paths: &Paths, timeout: u64) -> Result<(), Failure> {
     )
 }
 
-/// A test hook: pauses for LENDK_TEST_PAUSE seconds when LENDK_TEST_AT, `exec` when unset,
-/// names `point`.
-pub fn test_pause(env: &Env, point: &[u8]) {
-    if env.get("LENDK_TEST_AT").unwrap_or(b"exec") == point
-        && let Some(&[n @ b'0'..=b'9']) = env.get("LENDK_TEST_PAUSE")
-    {
-        std::thread::sleep(Duration::from_secs(u64::from(n - b'0')));
-    }
-}
-
 /// Reads each key's value as a `KEY=value` entry ended by NUL, and returns each entry's offset.
 /// All of it, the GnuPG check included, ends within `timeout` seconds, and no helper outlives
 /// the call.
@@ -280,7 +270,7 @@ pub fn read(
             .map_err(|e| decrypt(&name, key, e.to_string().as_bytes()))?;
         drop(status);
         if offsets.is_empty() {
-            test_pause(env, b"job");
+            env.test_pause(b"job", b"exec");
         }
         let pushed = plaintext
             .push(key)

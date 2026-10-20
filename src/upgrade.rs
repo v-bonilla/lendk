@@ -101,15 +101,10 @@ fn shown(value: &[u8]) -> Vec<u8> {
         .collect()
 }
 
-/// A test hook: pauses for LENDK_TEST_PAUSE seconds at `point`, which LENDK_TEST_AT names:
-/// `self` before the inode check, `start` once both files exist, `rename` (the default) once
-/// the new file is staged.
+/// The test hook's points: `self` before the inode check, `start` once both files exist,
+/// `rename` (the default) once the new file is staged.
 fn pause(env: &Env, point: &[u8]) {
-    if env.get("LENDK_TEST_AT").unwrap_or(b"rename") == point
-        && let Some(&[n @ b'0'..=b'9']) = env.get("LENDK_TEST_PAUSE")
-    {
-        std::thread::sleep(Duration::from_secs(u64::from(n - b'0')));
-    }
+    env.test_pause(point, b"rename");
 }
 
 /// Whether `me` is a regular file and the running binary's own: the same device and inode.

@@ -43,6 +43,24 @@ impl Env<'_> {
     pub fn raw(&self) -> &[&'static CStr] {
         self.0
     }
+
+    /// The test hook's seconds: LENDK_TEST_PAUSE when it is one digit.
+    pub fn test_pause_secs(&self) -> Option<u64> {
+        match self.get("LENDK_TEST_PAUSE") {
+            Some(&[n @ b'0'..=b'9']) => Some(u64::from(n - b'0')),
+            _ => None,
+        }
+    }
+
+    /// The test hook: sleeps LENDK_TEST_PAUSE seconds when LENDK_TEST_AT, or `default` when it is
+    /// unset, names `point`.
+    pub fn test_pause(&self, point: &[u8], default: &[u8]) {
+        if self.get("LENDK_TEST_AT").unwrap_or(default) == point
+            && let Some(secs) = self.test_pause_secs()
+        {
+            std::thread::sleep(std::time::Duration::from_secs(secs));
+        }
+    }
 }
 
 /// Runs one call and returns its exit status.

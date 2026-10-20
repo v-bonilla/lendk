@@ -125,7 +125,7 @@ pub fn run(
         .filter(|k| env.get(k).is_none_or(<[u8]>::is_empty))
         .collect();
     let (plaintext, offsets) = read_keys(env, paths, interactive, timeout, &to_read)?;
-    pass::test_pause(env, b"exec");
+    env.test_pause(b"exec", b"exec");
     let injected: Vec<(&[u8], usize)> = to_read.iter().copied().zip(offsets).collect();
     let mut list: Vec<&[u8]> = Vec::new();
     let caller = env.get("LENDK_INJECTED").unwrap_or_default();

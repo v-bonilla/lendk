@@ -36,13 +36,6 @@ fn ending(mut failures: Vec<Failure>) -> Option<Ending> {
     })
 }
 
-fn pause(env: &Env) -> Option<u64> {
-    match env.get("LENDK_TEST_PAUSE") {
-        Some(&[n @ b'0'..=b'9']) => Some(u64::from(n - b'0')),
-        _ => None,
-    }
-}
-
 /// Writes the shims for the map under `lock`, then releases it; the map's violations, then
 /// the write failures.
 fn write_shims(call: &Call, mut lock: Lock) -> (Scan, Vec<Failure>) {
@@ -65,7 +58,7 @@ pub fn sync(call: &Call, words: &[&[u8]]) -> Outcome {
     }
     map::check_paths(&call.paths.map)?;
     shims::check_dir(&call.paths.shims)?;
-    let lock = Lock::take(&call.paths.shims, pause(call.env))?;
+    let lock = Lock::take(&call.paths.shims, call.env.test_pause_secs())?;
     let (_, lines) = write_shims(call, lock);
     ending(lines).map_or(Ok((Vec::new(), 0)), Err)
 }
@@ -129,7 +122,7 @@ fn edit_begin(
     }
     shims::check_dir(&call.paths.shims)?;
     scan_valid(call, verb_check)?;
-    let lock = Lock::take(&call.paths.shims, pause(call.env))?;
+    let lock = Lock::take(&call.paths.shims, call.env.test_pause_secs())?;
     let scan = scan_valid(call, verb_check)?;
     Ok((scan, lock))
 }
