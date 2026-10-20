@@ -393,11 +393,17 @@ login() {
 	rm "$STUB/pass"
 	stub sudo 'shift; exec "$@"'
 	# The package manager stands for any step the user interrupts.
-	# It signals the nearest ancestor running install.sh, since sh -c may exec it or fork it.
+	# It signals the nearest ancestor running install.sh, since sh -c may exec it or fork it. It reads
+	# /proc where there is one, since busybox ps has no -p.
 	stub "$PM" 'p=$PPID
 for i in 1 2 3; do
-	case $(ps -o args= -p "$p") in *install.sh*) kill -TERM "$p"; sleep 1; exit 0 ;; esac
-	p=$(ps -o ppid= -p "$p" | tr -d " ")
+	if [ -r /proc/$p/status ]; then
+		args=$(tr "\0" " " </proc/$p/cmdline) ppid=$(sed -n "s/^PPid:[[:space:]]*//p" /proc/$p/status)
+	else
+		args=$(ps -o args= -p "$p") ppid=$(ps -o ppid= -p "$p" | tr -d " ")
+	fi
+	case $args in *install.sh*) kill -TERM "$p"; sleep 1; exit 0 ;; esac
+	p=$ppid
 done
 exit 1'
 	inst --install-deps

@@ -126,7 +126,10 @@ stop_lendk() {
 @test "a backend stopped on the terminal gives timeout within the bound, leaves nothing, and its files are private under umask 000" {
 	local listing ms
 	echo tty >"$SB/store/env/K1.mode"
-	in_shell "umask 000; t=\$(date +%s%3N); LENDK_TIMEOUT=2 $(printf %q "$LENDK") run -- stub; echo rc=\$? ms=\$((\$(date +%s%3N) - t))" @5 exit
+	# ms: milliseconds from /proc/uptime, which busybox's date, lacking %N, cannot give.
+	printf '#!/bin/sh\nif [ -r /proc/uptime ]; then read -r u _ </proc/uptime; c=${u#*.}; echo $((${u%%.*} * 1000 + ${c#0} * 10)); else date +%%s%%3N; fi\n' >"$SB/bin/ms"
+	chmod +x "$SB/bin/ms"
+	in_shell "umask 000; t=\$(ms); LENDK_TIMEOUT=2 $(printf %q "$LENDK") run -- stub; echo rc=\$? ms=\$((\$(ms) - t))" @5 exit
 	ms=$(grep -o 'rc=120 ms=[0-9]*' <<<"$output") || { echo "$output" >&2; return 1; }
 	ms=${ms#*ms=}
 	((ms >= 2000 && ms < 3700)) || { echo "took $ms ms" >&2; return 1; }
