@@ -18,6 +18,6 @@ lendk depends on the standard library first. A crate joins only for what lendk m
 
 ## Consequences
 
-- `make check` runs `cargo deny --frozen check bans licenses sources`, `cargo vet --locked --frozen`, clippy at `-D warnings` and `cargo test`. CI checks RustSec advisories on each push and daily, against `dev`'s lockfile and the latest release tag's.
+- `make check` runs `cargo deny --frozen check -D warnings bans licenses sources` (with `-D warnings`, since a build script that misses its SHA-256 pin is otherwise only a warning), `cargo vet --locked --frozen`, clippy at `-D warnings` and `cargo test`. CI checks RustSec advisories on each push and daily, against `dev`'s lockfile and the latest release tag's.
 - An update is targeted, one `cargo update -p` per need, with its audits. Only the maintainer certifies an audit.
 - Copies of plaintext inside `age` and `scrypt` are zeroed on drop, except scrypt's work memory, and none is kept out of swap. The security model says so.

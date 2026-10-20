@@ -18,9 +18,12 @@ files=()
 while IFS= read -r f; do files+=("${f#./}"); done < <(find . \( "${prune[@]}" \) -prune -o -type f -print | sort)
 
 # No em-dashes, email addresses, home paths other than /home/alice, or real-looking keys.
+# supply-chain/imports.lock alone may hold email addresses: cargo-vet copies each third-party auditor's into it.
 emdash=$'\xe2\x80\x94'
 while IFS= read -r hit; do problem "$hit: em-dash"; done < <(grep -nHF -e "$emdash" -- "${files[@]}")
-while IFS= read -r hit; do problem "$hit: email address"; done < <(grep -nHE -e '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- "${files[@]}")
+while IFS= read -r hit; do
+	[[ $hit == supply-chain/imports.lock:* ]] || problem "$hit: email address"
+done < <(grep -nHE -e '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- "${files[@]}")
 while IFS= read -r hit; do
 	[[ ${hit#*:*:} =~ /(home|Users)/[A-Za-z0-9_.-]+ ]] || continue
 	stripped=${hit#*:*:}
