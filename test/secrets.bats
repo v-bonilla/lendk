@@ -232,3 +232,35 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 		assert_eq "$(target_var K2)" "7 $SENTINEL"
 	done
 }
+
+# bats test_tags=port:only
+@test "at LENDK_TEST_PAUSE, lendk's environment is not its user's to read and its locked memory covers the values" {
+	[[ -d /proc/self ]] || skip "no /proc"
+	map 'stub K1'
+	entry K1 "$SENTINEL"
+	LENDK_TEST_PAUSE=3 "$LENDK" run -- stub </dev/null 2>"$SB/stderr" &
+	local pid=$! i log='' lck owner
+	for ((i = 0; i < 50; i++)); do
+		log=$(compgen -G "$SB/log/pass.*") && [[ -s $log/pid ]] && gone "$(<"$log/pid")" && break
+		sleep 0.1
+	done
+	[[ -n $log ]]
+	[[ -e /proc/$pid/environ ]]
+	owner=mine
+	[[ -O /proc/$pid/environ ]] || owner=other
+	assert_line "$(family)" "$pid"
+	lck=$(sed -n 's/^VmLck:[[:space:]]*\([0-9]*\) kB$/\1/p' "/proc/$pid/status")
+	wait "$pid"
+	assert_eq "$owner" other
+	((lck * 1024 >= ${#SENTINEL} + 3)) || { echo "VmLck: $lck kB" >&2; return 1; }
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$(target_var K1)" "$SENTINEL"
+}
+
+@test "a call whose memory cannot be locked still runs" {
+	map 'stub K1'
+	entry K1 "$SENTINEL"
+	(ulimit -l 0 && "$LENDK" run -- stub </dev/null 2>"$SB/stderr")
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$(target_var K1)" "$SENTINEL"
+}

@@ -14,6 +14,8 @@ export -n LENDK
 #   port rewrites it.
 # - port:unit: the test calls lendk-fn, since no verb reaches its behavior, and the port turns it
 #   into a unit test.
+# - port:only: the test pins a property only the port has, such as a lendk that is not dumpable;
+#   the bash run of the suite leaves it out until the port replaces bin/lendk.
 FIXTURES=$ROOT/test/fixtures
 CLASSES='usage|guarded|unsupported|locked|canceled|timeout|map|unmapped|missing-key|decrypt|unsafe|write|upgrade|exec|not-found|lendk-missing'
 FORBIDDEN='lendk add|lendk rm|lendk run [A-Z@]|lendk upgrade|pass |printenv|env -0|export -p|npm|cargo|pip install|brew'
@@ -125,24 +127,34 @@ gone() {
 	fi
 	[[ ${stat%% *} == Z* ]]
 }
-# family: live PIDs of lendk's processes, which inherit LENDK_TEST_FAMILY=$SENTINEL, and of the fake
-# pass calls and their children, which the fake records in $SB/log/pids.
+# family: live PIDs of lendk's processes, whose command line runs $LENDK, of the helpers that inherit
+# LENDK_TEST_FAMILY=$SENTINEL, and of the fake pass calls and their children, which the fake records
+# in $SB/log/pids. A lendk that is not dumpable hides its environment, never its command line.
 family() {
-	local p f
-	if [[ -d /proc/self ]]; then
-		while IFS= read -r f; do
-			p=${f#/proc/}
-			p=${p%/environ}
-			gone "$p" || printf '%s\n' "$p"
-		done < <(grep -lF "LENDK_TEST_FAMILY=$SENTINEL" /proc/[0-9]*/environ 2>/dev/null)
-	else
-		# BSD ps -E appends each process's environment to its command.
-		while read -r p f; do
-			[[ $f != *"LENDK_TEST_FAMILY=$SENTINEL"* ]] || gone "$p" || printf '%s\n' "$p"
-		done < <(ps -A -E -ww -o pid= -o command= 2>/dev/null)
-	fi
-	[[ -f $SB/log/pids ]] || return 0
-	while read -r p; do gone "$p" || printf '%s\n' "$p"; done <"$SB/log/pids"
+	local p f a0 a1
+	local -A seen=()
+	{
+		if [[ -d /proc/self ]]; then
+			for f in /proc/[0-9]*/cmdline; do
+				a0='' a1=''
+				{ IFS= read -r -d '' a0 && IFS= read -r -d '' a1; } 2>/dev/null <"$f"
+				[[ $a0 == "$LENDK" || ($a0 == *bash && $a1 == "$LENDK") ]] || continue
+				p=${f#/proc/}
+				printf '%s\n' "${p%/cmdline}"
+			done
+			grep -lF "LENDK_TEST_FAMILY=$SENTINEL" /proc/[0-9]*/environ 2>/dev/null | sed 's|^/proc/||; s|/environ$||'
+		else
+			# BSD ps -E appends each process's environment to its command.
+			while read -r p f; do
+				[[ $f != *"LENDK_TEST_FAMILY=$SENTINEL"* ]] || printf '%s\n' "$p"
+			done < <(ps -A -E -ww -o pid= -o command= 2>/dev/null)
+		fi
+		[[ ! -f $SB/log/pids ]] || cat "$SB/log/pids"
+	} | while read -r p; do
+		[[ -z ${seen[$p]-} ]] || continue
+		seen[$p]=1
+		gone "$p" || printf '%s\n' "$p"
+	done
 }
 # none_within SECONDS: family is empty within SECONDS.
 none_within() {
