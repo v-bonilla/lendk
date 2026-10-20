@@ -69,13 +69,9 @@ fn check_name(name: &[u8]) -> Result<(), Ending> {
             return Err(usage(problem));
         }
     } else if !map::valid_cmd(name) {
-        return Err(usage(
-            [b"'", name, b"' is not a valid command name"].concat(),
-        ));
+        return Err(usage(map::invalid_cmd(name)));
     } else if RESERVED_CMDS.iter().any(|r| r.as_bytes() == name) {
-        return Err(usage(
-            [name, b" is lendk's own runtime and cannot be mapped"].concat(),
-        ));
+        return Err(usage(map::runtime(name)));
     }
     Ok(())
 }
@@ -191,7 +187,7 @@ pub fn add(call: &Call, words: &[&[u8]]) -> Outcome {
             if let Some(g) = w.strip_prefix(b"@")
                 && scan.get(w).is_none()
             {
-                let text = [&map_path[..], b": group ", w, b" is not defined"].concat();
+                let text = [&map_path[..], b": ", &map::not_defined(w)].concat();
                 return Err(Failure::new("map:group", text).with("GROUP", g));
             }
         }

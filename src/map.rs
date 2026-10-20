@@ -231,11 +231,10 @@ pub fn expand_keys(map: &[u8], cmd: &[u8], words: &[&[u8]]) -> Result<Vec<Vec<u8
             );
         }
         if cmd_dup != 0 {
-            return Err(at(map, cmd_dup, &[cmd, b" is mapped twice"].concat()));
+            return Err(at(map, cmd_dup, &mapped_twice(cmd)));
         }
         if RESERVED_CMDS.iter().any(|r| r.as_bytes() == cmd) {
-            let text = [cmd, b" is lendk's own runtime and cannot be mapped"].concat();
-            return Err(at(map, cmd_line, &text));
+            return Err(at(map, cmd_line, &runtime(cmd)));
         }
         words = fields(&lines[cmd_line - 1]).split_off(1);
         if words.is_empty() {
@@ -260,18 +259,10 @@ pub fn expand_keys(map: &[u8], cmd: &[u8], words: &[&[u8]]) -> Result<Vec<Vec<u8
             continue;
         };
         let Some(&(_, line, dup)) = groups.iter().find(|g| g.0 == name) else {
-            return Err(at(
-                map,
-                src,
-                &[b"group ", word, b" is not defined"].concat(),
-            ));
+            return Err(at(map, src, &not_defined(word)));
         };
         if dup != 0 {
-            return Err(at(
-                map,
-                dup,
-                &[b"group ", word, b" is defined twice"].concat(),
-            ));
+            return Err(at(map, dup, &defined_twice(word)));
         }
         let gwords = fields(&lines[line - 1]).split_off(1);
         if gwords.is_empty() {
@@ -327,6 +318,27 @@ impl Scan {
     }
 }
 
+/// The map's problem texts, shared by run's read, the scan and the editing verbs.
+pub fn runtime(cmd: &[u8]) -> Vec<u8> {
+    [cmd, b" is lendk's own runtime and cannot be mapped"].concat()
+}
+
+pub fn invalid_cmd(cmd: &[u8]) -> Vec<u8> {
+    [b"'", cmd, b"' is not a valid command name"].concat()
+}
+
+fn mapped_twice(cmd: &[u8]) -> Vec<u8> {
+    [cmd, b" is mapped twice"].concat()
+}
+
+pub fn not_defined(group: &[u8]) -> Vec<u8> {
+    [b"group ", group, b" is not defined"].concat()
+}
+
+fn defined_twice(group: &[u8]) -> Vec<u8> {
+    [b"group ", group, b" is defined twice"].concat()
+}
+
 /// Whether `name` is a valid command name.
 pub fn valid_cmd(name: &[u8]) -> bool {
     name.first()
@@ -362,7 +374,7 @@ pub fn scan(map: &[u8]) -> Scan {
                 continue;
             }
             if s.groups.iter().any(|g| g == name) {
-                bad(name, [b"group ", name, b" is defined twice"].concat());
+                bad(name, defined_twice(name));
                 continue;
             }
             s.groups.push(name.to_vec());
@@ -376,16 +388,15 @@ pub fn scan(map: &[u8]) -> Scan {
             }
         } else {
             if !valid_cmd(name) {
-                bad(b"", [b"'", name, b"' is not a valid command name"].concat());
+                bad(b"", invalid_cmd(name));
                 continue;
             }
             if RESERVED_CMDS.iter().any(|r| r.as_bytes() == name) {
-                let text = [name, b" is lendk's own runtime and cannot be mapped"].concat();
-                bad(b"", text);
+                bad(b"", runtime(name));
                 continue;
             }
             if s.cmds.iter().any(|c| c == name) {
-                bad(name, [name, b" is mapped twice"].concat());
+                bad(name, mapped_twice(name));
                 continue;
             }
             s.cmds.push(name.to_vec());
@@ -416,11 +427,7 @@ pub fn scan(map: &[u8]) -> Scan {
                     continue;
                 }
                 let Some(g) = s.entries.iter().find(|g| g.name == *w) else {
-                    s.bad.push((
-                        e.line,
-                        e.name.clone(),
-                        [b"group ", &w[..], b" is not defined"].concat(),
-                    ));
+                    s.bad.push((e.line, e.name.clone(), not_defined(w)));
                     continue;
                 };
                 g.words

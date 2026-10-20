@@ -106,16 +106,8 @@ pub fn run(
     }
     map::check_paths(&paths.map)?;
     let base = cmd.rsplit(|&c| c == b'/').next().unwrap_or(cmd);
-    if named.is_empty() {
-        let first_ok = base
-            .first()
-            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'+');
-        let rest_ok = base
-            .iter()
-            .all(|c| c.is_ascii_alphanumeric() || b"._+-".contains(c));
-        if !first_ok || !rest_ok {
-            return Err(usage([b"'", cmd, b"' names no valid command"].concat()));
-        }
+    if named.is_empty() && !map::valid_cmd(base) {
+        return Err(usage([b"'", cmd, b"' names no valid command"].concat()));
     }
     let keys = map::expand_keys(&paths.map, base, &named)?;
     let target = exec::resolve(env, &paths.shims, cmd)?;
