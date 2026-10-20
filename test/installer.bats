@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# install.sh against the frozen 1.x lendk's release served from file://, in a scratch HOME and PREFIX.
+# install.sh against the frozen 1.x lendk's release and the binary's, served from file://.
 # shellcheck disable=SC2016,SC2086 # INST_SH holds a command and its words
 
 setup_file() {
@@ -16,12 +16,17 @@ setup_file() {
 	unset IFS
 	(cd "$SYS" && rm -f bash pass gpg gpg2 curl wget apt-get dnf pacman zypper apk brew systemctl sudo)
 	release_1x "$REL"
+	# The binary's release: the lendk under test in this platform's archive.
+	export BATS_LENDK_BREL=$BATS_FILE_TMPDIR/brel
+	release "$BATS_LENDK_BREL" "$RUNNING"
+	mkdir -p "$BATS_LENDK_BREL/download/v$RUNNING"
+	cp "$BATS_LENDK_BREL"/latest/download/* "$BATS_LENDK_BREL/download/v$RUNNING/"
 }
 
 setup() {
 	load helpers/common
 	sandbox
-	REL=$BATS_LENDK_REL SYS=$BATS_LENDK_SYS
+	REL=$BATS_LENDK_REL SYS=$BATS_LENDK_SYS BREL=$BATS_LENDK_BREL
 	[[ -f $REL/latest/download/lendk.tar.gz ]]
 	STUB=$SB/stub
 	mkdir -p "$STUB"
@@ -54,6 +59,15 @@ inst() {
 	final=${output##*$'\n'}
 	[[ $final =~ ^lendk-install:\ (ok|usage|unsupported-os|missing-deps|download|checksum|install|path):\ . ]] ||
 		{ printf 'bad final line: %s\n' "$final" >&2; return 1; }
+}
+
+# binst ARG...: inst against the binary's release.
+binst() { REL=$BREL inst "$@"; }
+
+# platform S M [ARM64]: uname prints S for -s and M for -m, and sysctl ARM64 for hw.optional.arm64.
+platform() {
+	stub uname "case \$1 in -s) echo $1 ;; -m) echo $2 ;; *) exit 1 ;; esac"
+	stub sysctl "[ \"\$*\" = '-n hw.optional.arm64' ] && echo ${3:-0}"
 }
 
 # login: PATH, then the lendk and bash a fresh bash login shell resolves.
@@ -112,12 +126,12 @@ login() {
 	assert_eq "${out[2]}" "$SB/good/bash"
 }
 
-@test "installer: --version picks the release by tag, and a missing release is a download failure" {
+@test "installer: --version picks the release by tag, and a missing release is a download failure of its SHA256SUMS" {
 	inst --version "$VERSION"
 	assert_eq "$status" 0
 	inst --version 9.9.9
 	assert_eq "$status" 1
-	assert_eq "$final" "lendk-install: download: cannot download file://$REL/download/v9.9.9/lendk.tar.gz"
+	assert_eq "$final" "lendk-install: download: cannot download file://$REL/download/v9.9.9/SHA256SUMS"
 }
 
 @test "installer: a checksum mismatch installs nothing" {
@@ -331,6 +345,7 @@ login() {
 	m=$(sed -n 's/^pub static MARKER: \[u8; [0-9]*\] = \*b"\(.*\)";$/\1/p' "$ROOT/src/upgrade.rs")
 	[[ -n $m ]]
 	grep -qxF "BIN_MARKER := $m" "$ROOT/Makefile"
+	grep -qxF "bin_mark='$m'" "$ROOT/install.sh"
 	# The shim's second line.
 	m=$(grep -o "'# lendk shim v1:[^']*'" "$ROOT/install.sh")
 	m=${m//\'/}
@@ -338,13 +353,15 @@ login() {
 	assert_eq "$(sed -n 2p "$ROOT/test/frozen/shim")" "$m"
 }
 
-@test "installer: runs to the end under dash, busybox sh and the system bash" {
+@test "installer: runs to the end under dash, busybox sh and the system bash, for 1.x and the binary" {
 	local shell n=0
 	for shell in dash 'busybox sh' /bin/bash; do
 		command -v "${shell%% *}" >/dev/null || continue
 		[[ $shell != busybox* ]] || busybox sh -c : 2>/dev/null || continue
 		rm -rf "$HOME" && mkdir -p "$HOME"
 		INST_SH=$shell inst
+		[[ $status == 0 ]] || { echo "$shell: $output" >&2; return 1; }
+		INST_SH=$shell binst
 		[[ $status == 0 ]] || { echo "$shell: $output" >&2; return 1; }
 		n=$((n + 1))
 	done
@@ -433,31 +450,209 @@ exit 1'
 	refute_contains "$output" 'quick-generate-key'
 }
 
+@test "installer: a binary release installs this platform's binary, needing no bash, GnuPG or pass" {
+	rm "$STUB/bash" "$STUB/gpg" "$STUB/pass"
+	platform Linux "$(uname -m)"
+	binst
+	assert_eq "$status" 0
+	assert_eq "$final" "lendk-install: ok: lendk $RUNNING installed to $HOME/.local/bin/lendk"
+	cmp "$UNDER_TEST" "$HOME/.local/bin/lendk"
+	[[ $(ls -l "$HOME/.local/bin/lendk") == -rwxr-xr-x* ]]
+	assert_eq "$(ls -A "$HOME/.local/bin")" lendk
+	assert_eq "$(sed -n 2p "$HOME/.profile")" "case :\$PATH: in *:'$HOME/.local/bin':*) ;; *) PATH='$HOME/.local/bin':\$PATH ;; esac"
+	refute_contains "$(<"$HOME/.profile")" bash
+	local out
+	mapfile -t out < <(login)
+	[[ ${out[0]} == "$SHIMS:"* ]]
+	assert_eq "${out[1]}" "$HOME/.local/bin/lendk"
+	binst --version "$RUNNING"
+	assert_eq "$status" 0
+	assert_line "$output" "unchanged: $HOME/.profile"
+}
+
+# standin_release DIR VERSION [ASSET]: a stand-in printing lendk VERSION, packed as ASSET.
+standin_release() {
+	ASSET=${3:-$ASSET} release "$1" "$2"
+}
+
+# sed_file SCRIPT FILE: FILE edited by sed in place, keeping its mode.
+sed_file() { sed "$1" "$2" >"$SB/sed.out" && cat "$SB/sed.out" >"$2"; }
+
+# nothing_installed: no lendk, no staged file, no login file.
+nothing_installed() {
+	[[ ! -e $HOME/.local/bin/lendk && ! -e $HOME/.profile ]]
+	assert_eq "$(ls -A "$HOME/.local/bin" 2>/dev/null)" ''
+}
+
+@test "installer: SHA256SUMS picks the platform's archive over lendk.tar.gz, and its lines may mark the file binary" {
+	local r=$SB/r
+	cp -R "$BREL" "$r"
+	cp "$REL/latest/download/lendk.tar.gz" "$r/latest/download/"
+	{ sed 's/  / */' "$BREL/latest/download/SHA256SUMS"; cat "$REL/latest/download/SHA256SUMS"; } >"$r/latest/download/SHA256SUMS"
+	REL=$r inst
+	assert_eq "$status" 0
+	cmp "$UNDER_TEST" "$HOME/.local/bin/lendk"
+	assert_line "$output" "downloading file://$r/latest/download/$ASSET"
+	sed_file "/$ASSET/d" "$r/latest/download/SHA256SUMS"
+	REL=$r inst
+	assert_eq "$status" 0
+	cmp "$FIXTURES/lendk-1.x" "$HOME/.local/bin/lendk"
+}
+
+@test "installer: a release with neither archive fails naming the release and the platform" {
+	local r=$SB/r
+	cp -R "$BREL" "$r"
+	sed_file s/lendk-/lendk-x/ "$r/latest/download/SHA256SUMS"
+	sed_file s/lendk-/lendk-x/ "$r/download/v$RUNNING/SHA256SUMS"
+	REL=$r inst
+	assert_eq "$status" 1
+	assert_eq "$final" "lendk-install: download: the latest release has no archive for $PLATFORM; nothing was installed"
+	REL=$r inst --version "$RUNNING"
+	assert_eq "$final" "lendk-install: download: the release $RUNNING has no archive for $PLATFORM; nothing was installed"
+	nothing_installed
+}
+
+@test "installer: an arm64 Mac in a Rosetta shell gets the arm64 archive, and an Intel Mac the x86_64 one" {
+	local a
+	for a in aarch64 x86_64; do
+		standin_release "$SB/$a" 7.0.0 "lendk-$a-apple-darwin.tar.gz"
+		rm -rf "$HOME" && mkdir -p "$HOME"
+		platform Darwin x86_64 "$([[ $a == aarch64 ]] && echo 1)"
+		REL=$SB/$a inst
+		assert_eq "$final" "lendk-install: ok: lendk 7.0.0 installed to $HOME/.local/bin/lendk"
+		grep -qF "$MARK" "$HOME/.local/bin/lendk"
+	done
+}
+
+@test "installer: another OS or CPU is unsupported-os, naming it and the from-source route" {
+	platform Linux riscv64
+	binst
+	assert_eq "$status" 1
+	assert_eq "$final" "lendk-install: unsupported-os: Linux riscv64 is not supported; lendk ships binaries for Linux and macOS on x86_64 and arm64, and builds from source elsewhere: https://github.com/v-bonilla/lendk#from-source"
+	refute_contains "$output" cargo
+	platform FreeBSD amd64
+	binst
+	assert_eq "$final" "lendk-install: unsupported-os: FreeBSD amd64 is not supported; lendk ships binaries for Linux and macOS on x86_64 and arm64, and builds from source elsewhere: https://github.com/v-bonilla/lendk#from-source"
+	nothing_installed
+	# While a release carries the 1.x script, it still installs on another CPU.
+	platform Linux riscv64
+	inst
+	assert_eq "$status" 0
+}
+
+@test "installer: a binary install without sha256sum or shasum is missing-deps and never skips the check" {
+	mkdir "$SB/sys"
+	find "$SYS" -mindepth 1 -maxdepth 1 ! -name sha256sum ! -name shasum -exec ln -s {} "$SB/sys/" \;
+	SYS=$SB/sys binst
+	assert_eq "$status" 1
+	assert_eq "$final" "lendk-install: missing-deps: missing: sha256sum; no supported package manager found, install them by hand"
+	nothing_installed
+	[[ $output != *downloading* ]]
+}
+
+@test "installer: each check failing on the binary installs nothing" {
+	local t=$SB/t v=$SB/t/lendk-7.0.0 r=$SB/r
+	mkdir -p "$v/bin"
+	standin "$v/bin/lendk" 7.0.0
+	# The archive's SHA-256.
+	cp -R "$BREL" "$r"
+	printf '%064d  %s\n' 0 "$ASSET" >"$r/latest/download/SHA256SUMS"
+	REL=$r inst
+	assert_eq "$final" "lendk-install: checksum: $ASSET has SHA-256 $(sha256 "$BREL/latest/download/$ASSET" | cut -d' ' -f1), SHA256SUMS lists '$(printf '%064d' 0)'; nothing was installed"
+	nothing_installed
+	# Exactly one lendk-X.Y.Z/bin/lendk.
+	mkdir -p "$t/lendk-7.0.1/bin" && cp "$v/bin/lendk" "$t/lendk-7.0.1/bin/"
+	pack "$t" "$SB/two"
+	REL=$SB/two inst
+	assert_eq "$final" "lendk-install: install: $ASSET holds no single lendk-X.Y.Z/bin/lendk; nothing was installed"
+	rm -r "$t/lendk-7.0.1" && mv "$v" "$t/lendk-7.0"
+	pack "$t" "$SB/none"
+	REL=$SB/none inst
+	assert_eq "$final" "lendk-install: install: $ASSET holds no single lendk-X.Y.Z/bin/lendk; nothing was installed"
+	mv "$t/lendk-7.0" "$v"
+	# The marker.
+	sed_file 2d "$v/bin/lendk"
+	pack "$t" "$SB/mark"
+	REL=$SB/mark inst
+	assert_eq "$final" "lendk-install: install: lendk-7.0.0/bin/lendk in $ASSET is not a lendk binary; nothing was installed"
+	nothing_installed
+	# The staged run: failing, or printing another version than the member's.
+	standin "$v/bin/lendk" 7.0.1
+	pack "$t" "$SB/other"
+	printf '#!/bin/sh\n# %s\nexit 1\n' "$MARK" >"$v/bin/lendk"
+	pack "$t" "$SB/fails"
+	for r in other fails; do
+		REL=$SB/$r inst
+		assert_eq "$final" "lendk-install: install: the downloaded lendk does not run on $PLATFORM; nothing was installed"
+		nothing_installed
+	done
+	# The version asked for.
+	standin "$v/bin/lendk" 7.0.0
+	pack "$t" "$SB/ask"
+	mkdir -p "$SB/ask/download" && mv "$SB/ask/latest/download" "$SB/ask/download/v7.0.2"
+	REL=$SB/ask inst --version 7.0.2
+	assert_eq "$final" "lendk-install: install: the release for 7.0.2 holds lendk 7.0.0"
+	nothing_installed
+}
+
+@test "installer: over a 1.x install, the login block loses its bash line and the existing shims run the binary" {
+	mkdir -p "$SB/good"
+	ln -s "$BASH" "$SB/good/bash"
+	rm "$STUB/bash"
+	stub bash 'exit 1'
+	status=0
+	env -i HOME="$HOME" PATH="$STUB:$SB/good:$SYS" SHELL=/bin/bash TMPDIR="$TMPDIR" PASSWORD_STORE_DIR="$PASSWORD_STORE_DIR" \
+		LENDK_INSTALL_BASE_URL="file://$REL" sh "$ROOT/install.sh" </dev/null >/dev/null 2>&1
+	grep -qF "'$SB/good'" "$HOME/.profile"
+	ln -s "$FIXTURES/stub-target" "$SB/bin/gh"
+	env PATH="$SB/good:$SB/bin:$PATH" "$HOME/.local/bin/lendk" add gh GH_TOKEN >/dev/null 2>&1
+	[[ -f $SHIMS/gh ]]
+	standin_release "$SB/b" 7.0.0
+	REL=$SB/b inst
+	assert_eq "$final" "lendk-install: ok: lendk 7.0.0 installed to $HOME/.local/bin/lendk"
+	refute_contains "$(<"$HOME/.profile")" "$SB/good"
+	assert_eq "$(grep -c '^# >>> lendk-install >>>$' "$HOME/.profile")" 1
+	mkdir -p "$STUB_LOG"
+	STUB_LOG=$STUB_LOG "$SHIMS/gh" >/dev/null 2>&1 || true
+	assert_eq "$(<"$STUB_LOG/standin")" "$HOME/.local/bin/lendk run -- gh"
+}
+
 # bats test_tags=docker
-@test "installer: runs under bash 3.2 and stops on missing deps" {
+@test "installer: under bash 3.2 it installs the binary, and stops on missing deps for 1.x" {
 	require docker
 	status=0
 	output=$(docker run --rm --pull never -u "$(id -u):$(id -g)" -e HOME=/tmp -e LENDK_INSTALL_BASE_URL=file:///rel \
 		-v "$ROOT/install.sh:/install.sh:ro" -v "$REL:/rel:ro" bash:3.2.57 bash /install.sh --yes 2>&1 </dev/null) || status=$?
 	assert_eq "$status" 1
 	assert_eq "${output##*$'\n'}" 'lendk-install: missing-deps: missing: bash>=4.4 gnupg>=2.4 pass; run: sudo apk add --no-cache bash gnupg pass (or rerun with --install-deps)'
+	status=0
+	output=$(docker run --rm --pull never -u "$(id -u):$(id -g)" -e HOME=/tmp -e LENDK_INSTALL_BASE_URL=file:///rel \
+		-v "$ROOT/install.sh:/install.sh:ro" -v "$BREL:/rel:ro" bash:3.2.57 \
+		sh -c 'bash /install.sh --yes && /tmp/.local/bin/lendk --version' 2>&1 </dev/null) || status=$?
+	[[ $status == 0 ]] || { echo "$output" >&2; return 1; }
+	assert_line "$output" "lendk-install: ok: lendk $RUNNING installed to /tmp/.local/bin/lendk"
+	assert_eq "${output##*$'\n'}" "lendk $RUNNING"
 }
 
 # bats test_tags=docker
 @test "installer: installs end to end under dash on Ubuntu and busybox sh on Alpine" {
 	require docker
-	local image shell
+	local image shell rel v
 	mkdir -p "$SB/cstub"
 	cp "$STUB/gpg" "$STUB/pass" "$STUB/curl" "$SB/cstub/"
 	for image in lendk-test:ubuntu:dash lendk-test:bash44:sh; do
 		shell=${image##*:}
 		image=${image%:*}
-		status=0
-		output=$(docker run --rm --pull never -u "$(id -u):$(id -g)" -e HOME=/tmp/h -e LENDK_INSTALL_BASE_URL=file:///rel \
-			-e PATH=/stub:/usr/local/bin:/usr/bin:/bin -v "$ROOT/install.sh:/install.sh:ro" -v "$REL:/rel:ro" -v "$SB/cstub:/stub:ro" \
-			"$image" sh -c "mkdir -p /tmp/h && $shell /install.sh --yes && env -i HOME=/tmp/h PATH=/usr/local/bin:/usr/bin:/bin bash -lc 'command -v lendk'" 2>&1 </dev/null) || status=$?
-		[[ $status == 0 ]] || { echo "$image: $output" >&2; return 1; }
-		assert_line "$output" "lendk-install: ok: lendk $VERSION installed to /tmp/h/.local/bin/lendk"
-		assert_eq "${output##*$'\n'}" /tmp/h/.local/bin/lendk
+		for rel in "$REL:$VERSION" "$BREL:$RUNNING"; do
+			v=${rel##*:}
+			rel=${rel%:*}
+			status=0
+			output=$(docker run --rm --pull never -u "$(id -u):$(id -g)" -e HOME=/tmp/h -e LENDK_INSTALL_BASE_URL=file:///rel \
+				-e PATH=/stub:/usr/local/bin:/usr/bin:/bin -v "$ROOT/install.sh:/install.sh:ro" -v "$rel:/rel:ro" -v "$SB/cstub:/stub:ro" \
+				"$image" sh -c "mkdir -p /tmp/h && $shell /install.sh --yes && env -i HOME=/tmp/h PATH=/usr/local/bin:/usr/bin:/bin bash -lc 'command -v lendk'" 2>&1 </dev/null) || status=$?
+			[[ $status == 0 ]] || { echo "$image: $output" >&2; return 1; }
+			assert_line "$output" "lendk-install: ok: lendk $v installed to /tmp/h/.local/bin/lendk"
+			assert_eq "${output##*$'\n'}" /tmp/h/.local/bin/lendk
+		done
 	done
 }

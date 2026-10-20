@@ -12,6 +12,7 @@ All notable changes to lendk are documented here. The format follows [Keep a Cha
 
 ### Changed
 
+- `install.sh` reads the release's `SHA256SUMS` first and installs the binary for the machine's OS and CPU when the release has one, after checking its SHA-256, its marker and a `--version` run, with no bash, GnuPG or pass needed. It keeps installing 1.1.0's script while that is the latest release. Its login block drops the bash directory line.
 - The README's quick start and its Installation section show one install command, which also copies the agent skill to `~/.claude/skills/lendk` with `--skill-dir`.
 
 ## [1.1.0] - 2026-10-04

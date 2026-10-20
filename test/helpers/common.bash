@@ -210,7 +210,7 @@ RUNNING=$("$LENDK" --version 2>/dev/null)
 RUNNING=${RUNNING#lendk }
 # release_1x DIR: the frozen 1.x lendk's release in 1.x's shape, lendk.tar.gz holding lendk-X.Y.Z/
 # with bin/lendk, the skill and LICENSE, and its SHA256SUMS, under DIR/latest/download and
-# DIR/download/vX.Y.Z. It serves install.sh's 1.x path until install.sh installs the binary.
+# DIR/download/vX.Y.Z. It serves install.sh's 1.x path, which installs it while latest is 1.x.
 release_1x() {
 	local v src=$1.src
 	v=$(sed -n 's/^LENDK_VERSION=//p' "$FIXTURES/lendk-1.x")

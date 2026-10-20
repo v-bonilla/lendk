@@ -11,14 +11,16 @@ The last output line is `lendk-install: ok: TEXT` or `lendk-install: CLASS: TEXT
 | Class | Exit | Meaning |
 |---|---|---|
 | `usage` | 2 | Bad option; see `--help`. |
-| `unsupported-os` | 1 | Only Linux and macOS are supported. |
+| `unsupported-os` | 1 | Only Linux and macOS on x86_64 or arm64 get a release; the line names the platform and the from-source route. |
 | `missing-deps` | 1 | The line names the package manager command. Ask the user before rerunning with `--install-deps`, which may use sudo. When that fails without a terminal, the line names the command for the user to run by hand, after `sudo -v`. |
-| `download` | 1 | Network failure, or no release for `--version`. |
+| `download` | 1 | Network failure, no release for `--version`, or a release without an archive for this platform. |
 | `checksum` | 1 | The download does not match `SHA256SUMS`; nothing was installed. Never bypass it. |
 | `install` | 1 | Cannot write `PREFIX/bin`, or a file the installer did not write is in the way. |
 | `path` | 1 | Cannot edit a login file. |
 
 Options: `--version X.Y.Z`, `--prefix DIR`, `--yes`, `--install-deps`, `--no-modify-path`, `--skill-dir DIR`, `--uninstall`, `--help`.
+
+The installer reads the release's `SHA256SUMS` first. A release with a binary for this platform needs curl or wget, gzip, tar, and `sha256sum` or `shasum`, and no bash, GnuPG or pass. A 1.x release, such as 1.1.0, also needs bash 4.4, GnuPG 2.4 and pass.
 
 When the pass store is not initialized, the installer prints the `gpg --quick-generate-key` and `pass init` steps. The user runs them in their own terminal, since gpg asks for a new passphrase.
 
