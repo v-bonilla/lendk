@@ -7,7 +7,7 @@ use crate::sys;
 use crate::tables;
 use crate::unlock;
 use crate::upgrade;
-use crate::{check, edit};
+use crate::{check, edit, init};
 use std::ffi::CStr;
 use std::io::Write;
 
@@ -114,7 +114,7 @@ pub fn main(args: &[&'static CStr], env: &[&'static CStr]) -> i32 {
         Some(b"add") => Some(edit::add),
         Some(b"rm") => Some(edit::rm),
         Some(b"check") => Some(check::check),
-        Some(b"init") => Some(check::init),
+        Some(b"init") => Some(init::init),
         _ => None,
     };
     if let Some(verb) = verb {

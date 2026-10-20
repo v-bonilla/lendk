@@ -11,6 +11,7 @@ mod edit;
 mod exec;
 mod failure;
 mod helpers;
+mod init;
 mod map;
 mod pass;
 mod plaintext;
