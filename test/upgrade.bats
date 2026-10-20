@@ -494,7 +494,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	[[ $(<"$SB/log/calls.shasum") == "-a 256 $TMPDIR/lendk."??????"/$ASSET" ]]
 }
 
-# bats test_tags=port:only
 @test "the tools get the allowlist and the proxy and certificate variables, never a key the caller set" {
 	local t f
 	for t in gzip tar sha256sum; do
