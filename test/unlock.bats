@@ -9,7 +9,7 @@ setup() {
 	mkdir -p "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
 	printf '@pair K1 K2\nstub K3 @pair\n' >"$MAP"
 	chmod 600 "$MAP"
-	for k in K1 K2 K3; do printf '%s-%s\n' "$SENTINEL" "$k" >"$SB/store/env/$k.gpg"; done
+	for k in K1 K2 K3; do store_entry "$k" "$SENTINEL-$k"; done
 }
 
 # read_calls: the entries the fake pass was asked for, in order.
@@ -30,7 +30,7 @@ read_calls() {
 }
 
 @test "without names, unlock decrypts the first mapped key present in the store" {
-	rm "$SB/store/env/K1.gpg"
+	store_entry -n K1
 	run_lendk unlock
 	assert_eq "$output" unlocked
 	assert_eq "$status" 0
@@ -38,7 +38,7 @@ read_calls() {
 }
 
 @test "no mapped key present gives missing-key, and a missing named key too" {
-	rm "$SB/store/env/"K?.gpg
+	store_entry -n K1 K2 K3
 	run_lendk unlock
 	assert_class missing-key 125
 	assert_eq "$stderr" "lendk: missing-key: no key mapped in $MAP is in the store. Stop and ask the user."

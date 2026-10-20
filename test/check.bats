@@ -29,7 +29,7 @@ map() {
 # keys KEY...: store entries for KEY....
 keys() {
 	local k
-	for k; do printf 'value\n' >"$SB/store/env/$k.gpg"; done
+	for k; do store_entry "$k" value; done
 }
 
 # stub_gpg VERSION: gpg and gpg2 on PATH reporting VERSION.
@@ -54,7 +54,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 
 @test "check calls no backend read, and an empty value shows as ok" {
 	healthy
-	: >"$SB/store/env/K1.gpg"
+	store_entry K1
 	run_lendk check
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
@@ -108,7 +108,7 @@ no_reads() { assert_eq "$(compgen -G "$SB/log/pass.*")" ""; }
 
 @test "check reports a key missing from the store on each row that uses it" {
 	healthy
-	rm "$SB/store/env/K2.gpg"
+	store_entry -n K2
 	run_lendk check
 	assert_line "$output" $'@g\tK2\tenv/K2 is not in the store (ask the user)'
 	assert_line "$output" $'stub\tK1 @g\tenv/K2 is not in the store (ask the user)'
