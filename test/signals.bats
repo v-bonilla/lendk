@@ -133,7 +133,8 @@ stop_lendk() {
 	local sig
 	for sig in TERM KILL; do
 		rm -f "$SB/log/pids"
-		LENDK_TEST_PAUSE=3 start_lendk stubborn
+		# bin/lendk pauses here at any LENDK_TEST_AT; the port at job, right after it starts the backend.
+		LENDK_TEST_PAUSE=3 LENDK_TEST_AT=job start_lendk stubborn
 		kill "-$sig" -- "-$lpid"
 		none_within 2
 		wait "$lpid" 2>/dev/null || true
@@ -163,6 +164,24 @@ stop_lendk() {
 	in_shell "$LENDK run -- stub | { sleep 0.5; IFS= read -r x </dev/tty; echo neighbor=\$x; }" @2 typed-secret @1.5 neighbor-line @1 exit
 	assert_line "$output" neighbor=neighbor-line
 	refute_contains "$output" Stopped
+}
+
+# bats test_tags=port:only
+@test "a backend stopped on the terminal gives timeout within the bound, leaves nothing, and its files are private under umask 000" {
+	local listing ms
+	echo tty >"$SB/store/env/K1.mode"
+	in_shell "umask 000; t=\$(date +%s%3N); LENDK_TIMEOUT=2 $(printf %q "$LENDK") run -- stub; echo rc=\$? ms=\$((\$(date +%s%3N) - t))" @5 exit
+	ms=$(grep -o 'rc=120 ms=[0-9]*' <<<"$output") || { echo "$output" >&2; return 1; }
+	ms=${ms#*ms=}
+	((ms >= 2000 && ms < 3700)) || { echo "took $ms ms" >&2; return 1; }
+	assert_line "$output" "lendk: timeout: env/K1: gpg did not finish within 2 s. Retry; a hardware token may need a touch, or raise LENDK_TIMEOUT."
+	refute_contains "$output" Stopped
+	none_within 1
+	assert_eq "$(compgen -G "$SB/log/target.*")" ""
+	assert_eq "$(ls -A "$TMPDIR")" ""
+	listing=$(cat "$SB"/log/pass.*/tmp-modes)
+	[[ $listing == *" err.K1"* && $listing == *" status.K1"* ]] || { echo "$listing" >&2; return 1; }
+	assert_eq "$(grep -E '^-' <<<"$listing" | grep -v '^-rw------- ')" ""
 }
 
 # bats test_tags=port:rework
