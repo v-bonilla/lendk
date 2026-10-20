@@ -5,6 +5,7 @@ use crate::map::Paths;
 use crate::run;
 use crate::sys;
 use crate::tables;
+use crate::unlock;
 use std::ffi::CStr;
 use std::io::Write;
 
@@ -47,12 +48,26 @@ pub fn main(args: &[&'static CStr], env: &[&'static CStr]) -> i32 {
     let env = Env(env);
     let words = args.get(1..).unwrap_or_default();
     let interactive = interactive(&env);
-    if words.first().map(|w| w.to_bytes()) == Some(b"run") {
+    let verb = words.first().map(|w| w.to_bytes());
+    if verb == Some(b"run") || verb == Some(b"unlock") {
         if let Err(failure) = check_env(&env) {
             return failure.report(interactive, b"env");
         }
         let paths = Paths::new(&env);
-        let Err(ending) = run::run(&env, &paths, interactive, &words[1..]);
+        let timeout = timeout(&env, interactive);
+        let ending = if verb == Some(b"run") {
+            let Err(ending) = run::run(&env, &paths, interactive, timeout, &words[1..]);
+            ending
+        } else {
+            let names: Vec<&[u8]> = words[1..].iter().map(|w| w.to_bytes()).collect();
+            match unlock::unlock(&env, &paths, interactive, timeout, &names) {
+                Ok(()) => {
+                    let _ = std::io::stdout().lock().write_all(b"unlocked\n");
+                    return 0;
+                }
+                Err(ending) => ending,
+            }
+        };
         for line in &ending.before {
             line.report(interactive, &paths.prefix);
         }
@@ -133,6 +148,14 @@ fn check_env(env: &Env) -> Result<(), Failure> {
     Ok(())
 }
 
+/// The bound of a call's backend work in seconds: LENDK_TIMEOUT, else 60 in an interactive call
+/// and 10 otherwise. check_env has validated LENDK_TIMEOUT.
+fn timeout(env: &Env, interactive: bool) -> u64 {
+    env.get("LENDK_TIMEOUT")
+        .and_then(|v| std::str::from_utf8(v).ok()?.parse().ok())
+        .unwrap_or(if interactive { 60 } else { 10 })
+}
+
 fn valid_timeout(value: &[u8]) -> bool {
     (1..=4).contains(&value.len())
         && value[0] != b'0'
@@ -141,4 +164,21 @@ fn valid_timeout(value: &[u8]) -> bool {
             .ok()
             .and_then(|s| s.parse::<u16>().ok())
             .is_some_and(|n| n <= 3600)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_default_lendk_timeout_is_60_s_with_lendk_prompt_allow_and_10_s_otherwise() {
+        let with = |entries: &[&'static CStr]| {
+            let env = Env(entries);
+            timeout(&env, interactive(&env))
+        };
+        assert_eq!(with(&[c"LENDK_PROMPT=never"]), 10);
+        assert_eq!(with(&[c"LENDK_PROMPT=allow"]), 60);
+        assert_eq!(with(&[c"LENDK_PROMPT=allow", c"LENDK_TIMEOUT=3600"]), 3600);
+        assert_eq!(timeout(&Env(&[c"LENDK_PROMPT=auto"]), false), 10);
+    }
 }
