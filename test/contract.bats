@@ -77,3 +77,9 @@ frozen_missing() {
 	assert_eq "$status" 0
 	assert_eq "$(cat "$SB/shims/stub")" "$want"
 }
+
+@test "--help is byte for byte the help of bin/lendk" {
+	"$LENDK" --help >"$SB/help"
+	"$ROOT/bin/lendk" --help >"$SB/help.1x"
+	cmp "$SB/help.1x" "$SB/help"
+}

@@ -1,0 +1,20 @@
+# Only the helpers module reads or sets the environment, and lendk opens no socket (ADR 0013, ADR 0016).
+# The helpers module alone carries #[allow(clippy::disallowed_methods)].
+disallowed-methods = [
+    { path = "std::env::var", reason = "lendk reads the environment it was started with, in the helpers module only" },
+    { path = "std::env::var_os", reason = "lendk reads the environment it was started with, in the helpers module only" },
+    { path = "std::env::vars", reason = "lendk reads the environment it was started with, in the helpers module only" },
+    { path = "std::env::vars_os", reason = "lendk reads the environment it was started with, in the helpers module only" },
+    { path = "std::env::set_var", reason = "only the helpers module sets a helper's environment" },
+    { path = "std::env::remove_var", reason = "only the helpers module sets a helper's environment" },
+    { path = "std::process::Command::env", reason = "only the helpers module sets a helper's environment, after env_clear" },
+    { path = "std::process::Command::envs", reason = "only the helpers module sets a helper's environment, after env_clear" },
+]
+disallowed-types = [
+    { path = "std::net::TcpStream", reason = "lendk reaches the network only through upgrade's download tool (ADR 0013)" },
+    { path = "std::net::TcpListener", reason = "lendk reaches the network only through upgrade's download tool (ADR 0013)" },
+    { path = "std::net::UdpSocket", reason = "lendk reaches the network only through upgrade's download tool (ADR 0013)" },
+    { path = "std::os::unix::net::UnixStream", reason = "lendk opens no socket (ADR 0013)" },
+    { path = "std::os::unix::net::UnixListener", reason = "lendk opens no socket (ADR 0013)" },
+    { path = "std::os::unix::net::UnixDatagram", reason = "lendk opens no socket (ADR 0013)" },
+]

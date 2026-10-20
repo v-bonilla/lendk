@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repository lint: content rules, no reference to the retired spec or its FR, NFR and AC IDs, portability of bin/lendk, one file in bin/.
+# Repository lint: content rules, no reference to the retired spec or its FR, NFR and AC IDs, portability of bin/lendk, the network markers of the Rust source, one file in bin/.
 # Usage: test/lint-repo.bash [ROOT]; prints one line per problem and exits 1 when there is any.
 set -u -o pipefail
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -18,9 +18,12 @@ files=()
 while IFS= read -r f; do files+=("${f#./}"); done < <(find . \( "${prune[@]}" \) -prune -o -type f -print | sort)
 
 # No em-dashes, email addresses, home paths other than /home/alice, or real-looking keys.
+# supply-chain/imports.lock alone may hold email addresses: cargo-vet copies each third-party auditor's into it.
 emdash=$'\xe2\x80\x94'
 while IFS= read -r hit; do problem "$hit: em-dash"; done < <(grep -nHF -e "$emdash" -- "${files[@]}")
-while IFS= read -r hit; do problem "$hit: email address"; done < <(grep -nHE -e '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- "${files[@]}")
+while IFS= read -r hit; do
+	[[ $hit == supply-chain/imports.lock:* ]] || problem "$hit: email address"
+done < <(grep -nHE -e '[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}' -- "${files[@]}")
 while IFS= read -r hit; do
 	[[ ${hit#*:*:} =~ /(home|Users)/[A-Za-z0-9_.-]+ ]] || continue
 	stripped=${hit#*:*:}
@@ -68,6 +71,13 @@ if [[ -f bin/lendk ]]; then
 		{ grep -E -e "$(cmdpos nc "$start")" <<<"$code"; grep -E -e '/dev/(tcp|udp)' <<<"$body"; } | sort -u)
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: /proc or ps outside the terminal-owner test"; done < <(grep -E -e "/proc|$(cmdpos ps "$start")" <<<"$code" | grep -v '^O')
 fi
+# The Rust source names curl and wget only between the network markers (ADR 0013).
+for f in "${files[@]}"; do
+	[[ $f == src/*.rs ]] || continue
+	while IFS= read -r hit; do problem "$f:$hit: curl or wget outside the network region"; done < <(awk '
+		/^[[:space:]]*\/\/ lint: network begin$/ { n = 1 } /^[[:space:]]*\/\/ lint: network end$/ { n = 0; next }
+		!n && /(^|[^A-Za-z0-9_-])(curl|wget)([^A-Za-z0-9_-]|$)/ { print NR }' "$f")
+done
 for f in "${files[@]}"; do
 	[[ $f == bin/lendk || $f == test/*.bats || $f == test/fixtures/* ]] || continue
 	while IFS= read -r hit; do problem "$f:$hit: only test helpers may call script"; done < <(grep -nE -e "$(cmdpos script)" -- "$f")

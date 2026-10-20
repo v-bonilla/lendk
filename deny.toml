@@ -1,0 +1,81 @@
+# What may enter lendk's crate tree (ADR 0016). make check runs bans, licenses and sources
+# offline; CI runs advisories.
+
+[graph]
+all-features = true
+targets = [
+    "x86_64-unknown-linux-musl",
+    "aarch64-unknown-linux-musl",
+    "aarch64-apple-darwin",
+    "x86_64-apple-darwin",
+]
+
+[bans]
+multiple-versions = "deny"
+wildcards = "deny"
+# A closed list: every crate the tree resolves to, and no other.
+allow = [
+    { crate = "lendk", reason = "lendk itself" },
+    { crate = "libc", reason = "OS calls the standard library lacks (ADR 0016)" },
+    { crate = "zeroize", reason = "zeroing plaintext (ADR 0016)" },
+]
+deny = [
+    { crate = "reqwest", reason = "network crate: lendk reaches the network only through upgrade's download tool (ADR 0013)" },
+    { crate = "hyper", reason = "network crate (ADR 0013)" },
+    { crate = "h2", reason = "network crate (ADR 0013)" },
+    { crate = "ureq", reason = "network crate (ADR 0013)" },
+    { crate = "curl", reason = "network crate (ADR 0013)" },
+    { crate = "rustls", reason = "network crate (ADR 0013)" },
+    { crate = "native-tls", reason = "network crate (ADR 0013)" },
+    { crate = "openssl", reason = "network crate (ADR 0013)" },
+    { crate = "tokio", reason = "async runtime: lendk runs one call and execs (ADR 0016)" },
+    { crate = "async-std", reason = "async runtime (ADR 0016)" },
+    { crate = "smol", reason = "async runtime (ADR 0016)" },
+    { crate = "which", reason = "finds age plugins, and lendk declined every age plugin (ADR 0016)" },
+    { crate = "security-framework", reason = "compiles a wrapper over Apple's TLS API (ADR 0013)" },
+    { crate = "opentelemetry", reason = "telemetry exporter (ADR 0013)" },
+    { crate = "opentelemetry-otlp", reason = "telemetry exporter (ADR 0013)" },
+    { crate = "tracing-opentelemetry", reason = "telemetry exporter (ADR 0013)" },
+    { crate = "sentry", reason = "telemetry exporter (ADR 0013)" },
+    { crate = "prometheus", reason = "telemetry exporter (ADR 0013)" },
+    { crate = "cc", reason = "compiles C into a -sys crate; only bindings to libraries the OS ships pass (ADR 0016)" },
+    { crate = "bindgen", reason = "generates bindings for a -sys crate that compiles C (ADR 0016)" },
+    { crate = "cmake", reason = "builds vendored C for a -sys crate (ADR 0016)" },
+]
+skip = []
+
+[bans.build]
+executables = "deny"
+allow-build-scripts = [{ crate = "libc" }]
+# Each build script pinned by the SHA-256 of its build.rs.
+bypass = [
+    { crate = "libc", build-script = "feede9bdbbcf70c6409faef8fb2f2c065e942107eb6596677bb36dce6c5075fb" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
+allow-git = []
+
+[licenses]
+allow = [
+    "MIT",
+    "Apache-2.0",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "Zlib",
+    "Unicode-3.0",
+    "CC0-1.0",
+]
+confidence-threshold = 0.93
+# The list is the policy for crates to come, not a record of today's tree.
+unused-allowed-license = "allow"
+
+[advisories]
+unmaintained = "all"
+unsound = "all"
+yanked = "deny"
+# Each entry: the ID, why lendk is unaffected, and the condition that ends it.
+ignore = []
