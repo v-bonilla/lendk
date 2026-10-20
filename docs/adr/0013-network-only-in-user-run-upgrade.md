@@ -1,6 +1,6 @@
 # Only a `lendk upgrade` the human runs uses the network
 
-lendk reads every mapped key, so any network use by it is a path for values to leave the machine, which a reviewer has to rule out. lendk sends no telemetry, checks for no update and never updates itself. It uses the network only in `lendk upgrade`, only when the human runs it, and only through the download tool it starts for the release's two assets. The source names `curl` and `wget` only in the one function that downloads, between the `# lint: network begin` and `# lint: network end` markers, and never `nc` or `/dev/tcp`. Reviewing lendk's network use is then reviewing one function.
+lendk reads every mapped key, so any network use by it is a path for values to leave the machine, which a reviewer has to rule out. lendk sends no telemetry, checks for no update and never updates itself. It uses the network only in `lendk upgrade`, only when the human runs it, and only through the download tool it starts for the release's two assets. The source names `curl` and `wget` only in the one function that downloads, between the `// lint: network begin` and `// lint: network end` markers, and never `nc` or `/dev/tcp`. Reviewing lendk's network use is then reviewing one function.
 
 ## Considered Options
 
