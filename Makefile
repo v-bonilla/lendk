@@ -63,7 +63,7 @@ check-docker: images build
 	$(DOCKER_RUN) --cap-add SYS_PTRACE \
 		-v "$(RUSTUP_DIR):/rustup:ro" -v "$(CARGO_DIR):/cargo:ro" -e RUSTUP_HOME=/rustup -e CARGO_HOME=/cargo \
 		-e PATH=/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-		-e TEST_REQUIRE="gpg pass zsh strace script python3 perl git make environment-d" \
+		-e TEST_REQUIRE="gpg pass zsh strace strace-ptrace script python3 perl git make environment-d" \
 		lendk-test:ubuntu $(BATS) --filter-tags '!docker' test/*.bats
 	$(DOCKER_RUN) -e TEST_REQUIRE=script lendk-test:bash44 $(BATS) --filter-tags '!docker' test/*.bats
 

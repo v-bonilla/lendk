@@ -108,6 +108,26 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	grep -qF '"PASSWORD_STORE_GPG_OPTS=--status-fd 9 --pinentry-mode error"' "$SB/trace"
 }
 
+# A tracer with CAP_SYS_PTRACE reads a lendk that is not dumpable: the Ubuntu image gives a copy
+# of strace that capability, and make check-docker adds it to the container's bounding set.
+@test "under a tracer with CAP_SYS_PTRACE the sentinel appears only in the target's execve, and there only in its environment" {
+	require strace-ptrace
+	map 'tgt K1 K2'
+	entry K1 "$SENTINEL-1"
+	entry K2 "$SENTINEL-2"
+	printf '#!/bin/sh\nexit 0\n' >"$SB/bin/tgt"
+	chmod 755 "$SB/bin/tgt"
+	local status=0 hits
+	strace-ptrace -f --seccomp-bpf -v -s 4096 -e trace=execve -o "$SB/trace" "$LENDK" run -- tgt </dev/null 2>"$SB/stderr" || status=$?
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$status" 0
+	grep -qF '"PASSWORD_STORE_GPG_OPTS=--status-fd 9 --pinentry-mode error"' "$SB/trace"
+	hits=$(grep -F -- "$SENTINEL" "$SB/trace")
+	assert_eq "$(grep -c . <<<"$hits")" 1
+	[[ $hits == *"execve(\"$SB/bin/tgt\", [\"tgt\"], ["* ]]
+	[[ ${hits%%], [*} != *"$SENTINEL"* ]]
+}
+
 @test "the target gets the caller's umask and descriptors, and lendk's files are private, under umask 000 and 022" {
 	map 'tgt K1'
 	entry K1 "$SENTINEL"
