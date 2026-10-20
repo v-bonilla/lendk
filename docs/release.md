@@ -16,7 +16,7 @@
    git tag -a vX.Y.Z -m 'lendk X.Y.Z' origin/main
    git push origin vX.Y.Z
    ```
-6. Build the release assets from the tagged commit: `make dist` writes `dist/lendk.tar.gz` (the git tree at HEAD under `lendk-X.Y.Z/`) and `dist/SHA256SUMS`.
+6. Build the release assets from the tagged commit. `make dist` builds none and exits 1: the per-platform archives `lendk-PLATFORM.tar.gz` and their `SHA256SUMS`, which `install.sh` and `lendk upgrade` read, come with the release workflow of #60, and no release is cut before it lands.
 7. Create the GitHub release for the tag with both assets, and the version's CHANGELOG entry as its notes. `install.sh` and `lendk upgrade` both read them from `releases/latest/download/`, so the release must not be a draft or a prerelease:
    ```
    gh release create vX.Y.Z --title 'lendk X.Y.Z' --notes-file NOTES.md dist/lendk.tar.gz dist/SHA256SUMS

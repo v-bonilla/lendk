@@ -1,4 +1,4 @@
-//! The command line: `--help`, `--version`, and usage for anything else until a verb is ported.
+//! The command line: `--help`, `--version`, the verbs, and usage for anything else.
 
 use crate::failure::Failure;
 use crate::map::Paths;

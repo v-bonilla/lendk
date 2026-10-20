@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# No process of a call outlives it, and the backend takes the terminal only for a loopback prompt.
+# No process of a call outlives it, and the backend never takes the terminal.
 # shellcheck disable=SC2016,SC2030,SC2031,SC2034
 
 setup() {

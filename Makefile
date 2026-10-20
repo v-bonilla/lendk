@@ -99,7 +99,6 @@ uninstall: prefix
 	fi; \
 	exit 0
 
-# The per-platform release archives come with the release workflow (#60); no 1.x release is cut
-# from this branch.
+# The per-platform release archives come with the release workflow (#60); make dist builds none.
 dist:
-	@echo 'make dist builds no release yet: the per-platform archives come with the release workflow' >&2; exit 1
+	@echo 'make dist builds no release: the per-platform archives come with the release workflow' >&2; exit 1
