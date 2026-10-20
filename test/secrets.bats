@@ -160,6 +160,18 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
+@test "a NUL byte in a value's first line is decrypt, and no part of the value reaches the target or the output" {
+	map 'stub K1 K2'
+	entry K1 "$SENTINEL-1"
+	printf '%s\0%s\nsecond\n' "$SENTINEL-a" "$SENTINEL-b" >"$SB/store/env/K2.gpg"
+	run_lendk run -- stub
+	assert_eq "$stderr" "lendk: decrypt: env/K2 has a NUL byte in its first line. Ask the user to run 'lendk unlock K2' in a terminal, then retry."
+	assert_class decrypt 125
+	refute_contains "$output$stderr" "$SENTINEL"
+	assert_eq "$(compgen -G "$SB/log/target.*")" ""
+	no_sentinel
+}
+
 @test "the sentinel reaches no output, file or helper, also through a nested call" {
 	map 'stub K1' 'nest K2'
 	entry K1 "$SENTINEL"

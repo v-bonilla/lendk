@@ -324,6 +324,14 @@ pub fn read(
             )
             .with("KEY", *key));
         }
+        if plaintext.as_bytes()[value_start..].contains(&0) {
+            plaintext.truncate(offset);
+            return Err(Failure::new(
+                "decrypt",
+                [&name[..], b" has a NUL byte in its first line"].concat(),
+            )
+            .with("KEY", *key));
+        }
         plaintext.push(b"\0").map_err(io_fail)?;
         offsets.push(offset);
     }
