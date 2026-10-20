@@ -7,6 +7,7 @@ use crate::failure::{Failure, notice};
 use crate::map::{self, Paths, Scan};
 use crate::run::Ending;
 use crate::shims::{self, Lock};
+use crate::tables;
 use crate::tables::{
     GUARDED_AGENT_CLIS, GUARDED_INTERPRETERS, GUARDED_LAUNCHERS, GUARDED_PACKAGE_TOOLS,
     GUARDED_SHELLS, RESERVED_CMDS,
@@ -24,7 +25,7 @@ pub struct Call<'a> {
 }
 
 fn usage(text: impl Into<Vec<u8>>) -> Ending {
-    Failure::new("usage", text).into()
+    Failure::new(&tables::USAGE, text).into()
 }
 
 /// The given failures as one ending: every one but the last is printed before it.
@@ -179,7 +180,9 @@ pub fn add(call: &Call, words: &[&[u8]]) -> Outcome {
     let guarded = !name.starts_with(b"@") && is_guarded(name);
     if guarded && !force {
         let text = [name, b" runs other programs, so its keys reach all of them"].concat();
-        return Err(Failure::new("guarded", text).with("CMD", name).into());
+        return Err(Failure::new(&tables::GUARDED, text)
+            .with("CMD", name)
+            .into());
     }
     let map_path = &call.paths.map;
     let add_check = |scan: &Scan| {
@@ -188,7 +191,7 @@ pub fn add(call: &Call, words: &[&[u8]]) -> Outcome {
                 && scan.get(w).is_none()
             {
                 let text = [&map_path[..], b": ", &map::not_defined(w)].concat();
-                return Err(Failure::new("map:group", text).with("GROUP", g));
+                return Err(Failure::new(&tables::MAP_GROUP, text).with("GROUP", g));
             }
         }
         Ok(())
@@ -258,7 +261,7 @@ pub fn rm(call: &Call, words: &[&[u8]]) -> Outcome {
                     b", so it cannot be removed",
                 ]
                 .concat();
-                return Err(Failure::new("map", text));
+                return Err(Failure::new(&tables::MAP, text));
             }
         }
         Ok(())

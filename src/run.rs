@@ -7,6 +7,7 @@ use crate::failure::Failure;
 use crate::map::{self, Paths};
 use crate::pass;
 use crate::plaintext::Plaintext;
+use crate::tables;
 use std::convert::Infallible;
 use std::ffi::CStr;
 
@@ -26,7 +27,7 @@ impl From<Failure> for Ending {
 }
 
 fn usage(text: impl Into<Vec<u8>>) -> Ending {
-    Failure::new("usage", text).into()
+    Failure::new(&tables::USAGE, text).into()
 }
 
 /// Whether `word` names an executable regular file, as bash's `type -P` finds it.
@@ -51,7 +52,7 @@ pub fn read_keys(
         .filter(|k| !pass::has(paths, k))
         .map(|k| {
             Failure::new(
-                "missing-key",
+                &tables::MISSING_KEY,
                 [&paths.prefix[..], b"/", k, b" is not in the store"].concat(),
             )
             .with("KEY", *k)
@@ -67,7 +68,7 @@ pub fn read_keys(
     // RLIMIT_MEMLOCK; pass gives no length in advance, so a longer value grows it by copy.
     let capacity: usize = keys.iter().map(|k| k.len() + 2 + 4096).sum();
     let mut plaintext = Plaintext::with_capacity(capacity)
-        .map_err(|_| Failure::new("write", "memory for the values cannot be mapped"))?;
+        .map_err(|_| Failure::new(&tables::WRITE, "memory for the values cannot be mapped"))?;
     let offsets = if keys.is_empty() {
         Vec::new()
     } else {

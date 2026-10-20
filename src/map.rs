@@ -4,6 +4,7 @@
 use crate::cli::Env;
 use crate::failure::Failure;
 use crate::sys;
+use crate::tables;
 use crate::tables::{DENIED_NAMES, DENIED_PREFIXES, RESERVED_CMDS};
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
@@ -119,8 +120,9 @@ pub fn check_paths(map: &[u8]) -> Result<(), Failure> {
         return Ok(());
     }
     let dir = dirname(&file).to_vec();
-    let unsafe_path =
-        |p: &[u8], what: &[u8]| Failure::new("unsafe", [p, what].concat()).with("PATH", p.to_vec());
+    let unsafe_path = |p: &[u8], what: &[u8]| {
+        Failure::new(&tables::UNSAFE, [p, what].concat()).with("PATH", p.to_vec())
+    };
     let mut metas = Vec::new();
     for p in [&dir, &file] {
         let meta = std::fs::metadata(path(p));
@@ -159,7 +161,7 @@ fn at(map: &[u8], line: usize, text: &[u8]) -> Failure {
     }
     out.extend_from_slice(b": ");
     out.extend_from_slice(text);
-    Failure::new("map", out)
+    Failure::new(&tables::MAP, out)
 }
 
 /// The first valid key word of the map, groups skipped, for which `present` holds; None when
@@ -227,7 +229,7 @@ pub fn expand_keys(map: &[u8], cmd: &[u8], words: &[&[u8]]) -> Result<Vec<Vec<u8
     if words.is_empty() {
         if cmd_line == 0 {
             return Err(
-                Failure::new("unmapped", [cmd, b" is not mapped"].concat()).with("CMD", cmd)
+                Failure::new(&tables::UNMAPPED, [cmd, b" is not mapped"].concat()).with("CMD", cmd),
             );
         }
         if cmd_dup != 0 {
@@ -476,7 +478,7 @@ pub fn write(
         .mode(0o700)
         .create(path(&dir))
         .map_err(|_| {
-            Failure::new("write", [&dir[..], b": cannot be created"].concat())
+            Failure::new(&tables::WRITE, [&dir[..], b": cannot be created"].concat())
                 .with("PATH", &dir[..])
         })?;
     let mut out = Vec::new();
@@ -511,7 +513,8 @@ pub fn write(
         let _ = std::fs::remove_file(path(&tmp));
         *temp = None;
         return Err(
-            Failure::new("write", [&file[..], b": cannot be written"].concat()).with("PATH", file),
+            Failure::new(&tables::WRITE, [&file[..], b": cannot be written"].concat())
+                .with("PATH", file),
         );
     }
     *temp = None;
@@ -564,7 +567,7 @@ mod tests {
         let keys = expand_keys(&map, b"x", &[b"K3", b"@g", b"K3"]).unwrap();
         assert_eq!(keys, [b"K3".to_vec(), b"K1".to_vec(), b"K2".to_vec()]);
         let err = expand_keys(&map, b"nope", &[]).unwrap_err();
-        assert_eq!(err.id, "unmapped");
+        assert_eq!(err.class.id, "unmapped");
         let err = expand_keys(&map, b"x", &[b"@none"]).unwrap_err();
         assert_eq!(
             text(err),

@@ -5,6 +5,7 @@ use crate::cli::Env;
 use crate::failure::Failure;
 use crate::map::{Scan, path};
 use crate::sys;
+use crate::tables;
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::time::{Duration, Instant};
@@ -88,17 +89,19 @@ pub fn check_dir(dir: &[u8]) -> Result<(), Failure> {
     if std::fs::symlink_metadata(path(dir)).is_err() {
         return Ok(());
     }
-    let fail = |class, text: &[u8]| Failure::new(class, [dir, text].concat()).with("PATH", dir);
+    let fail = |class: &'static tables::Class, text: &[u8]| {
+        Failure::new(class, [dir, text].concat()).with("PATH", dir)
+    };
     let meta = std::fs::metadata(path(dir));
     if !meta.as_ref().is_ok_and(std::fs::Metadata::is_dir) {
-        return Err(fail("write", b": not a directory"));
+        return Err(fail(&tables::WRITE, b": not a directory"));
     }
-    let meta = meta.map_err(|_| fail("write", b": not a directory"))?;
+    let meta = meta.map_err(|_| fail(&tables::WRITE, b": not a directory"))?;
     if meta.uid() != sys::euid() {
-        return Err(fail("unsafe", b" is owned by another user"));
+        return Err(fail(&tables::UNSAFE, b" is owned by another user"));
     }
     if meta.mode() & 0o022 != 0 {
-        return Err(fail("unsafe", b" is writable by others"));
+        return Err(fail(&tables::UNSAFE, b" is writable by others"));
     }
     Ok(())
 }
@@ -143,7 +146,8 @@ impl Lock {
             .mode(0o700)
             .create(path(shims))
             .map_err(|_| {
-                Failure::new("write", [shims, b": cannot be created"].concat()).with("PATH", shims)
+                Failure::new(&tables::WRITE, [shims, b": cannot be created"].concat())
+                    .with("PATH", shims)
             })?;
         let mut lock = Lock {
             dir: [shims, b".lock"].concat(),
@@ -172,8 +176,11 @@ impl Lock {
             {
                 let written = std::fs::write(path(&pid_file), format!("{}\n", std::process::id()));
                 return written.map_err(|_| {
-                    Failure::new("write", [&self.dir[..], b": cannot be written"].concat())
-                        .with("PATH", self.dir.clone())
+                    Failure::new(
+                        &tables::WRITE,
+                        [&self.dir[..], b": cannot be written"].concat(),
+                    )
+                    .with("PATH", self.dir.clone())
                 });
             }
             sys::hold_signals(false);
@@ -194,7 +201,7 @@ impl Lock {
             owner
         };
         Err(Failure::new(
-            "write",
+            &tables::WRITE,
             [&self.dir[..], b": held by PID ", &owner[..], b" for 10 s"].concat(),
         )
         .with("PATH", self.dir.clone()))
@@ -327,7 +334,8 @@ pub fn write(shims: &[u8], lendk: &[u8], scan: &Scan, lock: &mut Lock) -> Report
         if written.is_err() {
             let _ = std::fs::remove_file(path(&tmp));
             report.failures.push(
-                Failure::new("write", [&f[..], b": cannot be written"].concat()).with("PATH", f),
+                Failure::new(&tables::WRITE, [&f[..], b": cannot be written"].concat())
+                    .with("PATH", f),
             );
         }
     }
@@ -338,8 +346,9 @@ pub fn write(shims: &[u8], lendk: &[u8], scan: &Scan, lock: &mut Lock) -> Report
         }
         if is_shim(&f) {
             if std::fs::remove_file(path(&f)).is_err() {
-                let failure = Failure::new("write", [&f[..], b": cannot be removed"].concat())
-                    .with("PATH", f);
+                let failure =
+                    Failure::new(&tables::WRITE, [&f[..], b": cannot be removed"].concat())
+                        .with("PATH", f);
                 report.failures.push(failure);
             }
         } else {
@@ -352,7 +361,7 @@ pub fn write(shims: &[u8], lendk: &[u8], scan: &Scan, lock: &mut Lock) -> Report
         let text = [&f[..], b": is not a lendk shim, so sync leaves it"].concat();
         report
             .failures
-            .push(Failure::new("write", text).with("PATH", f));
+            .push(Failure::new(&tables::WRITE, text).with("PATH", f));
     }
     report
 }

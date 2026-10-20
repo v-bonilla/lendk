@@ -1,20 +1,22 @@
 //! Failure: a call ends with one class line, the FIX for its mode (ADR 0003) and the exit hint.
 
-use crate::tables::CLASSES;
+use crate::tables::Class;
+#[cfg(test)]
+use crate::tables::{self, CLASSES};
 use std::io::Write;
 
-/// A failure of class `id` (`CLASS` or `CLASS:FORM`, a row of the class table) with its TEXT.
+/// A failure of one row of the class table, `CLASS` or `CLASS:FORM`, with its TEXT.
 #[derive(Debug)]
 pub struct Failure {
-    pub id: &'static str,
+    pub class: &'static Class,
     pub text: Vec<u8>,
     subs: Vec<(&'static str, Vec<u8>)>,
 }
 
 impl Failure {
-    pub fn new(id: &'static str, text: impl Into<Vec<u8>>) -> Self {
+    pub fn new(class: &'static Class, text: impl Into<Vec<u8>>) -> Self {
         Failure {
-            id,
+            class,
             text: text.into(),
             subs: Vec::new(),
         }
@@ -29,16 +31,13 @@ impl Failure {
     /// The class line, `lendk: CLASS: TEXT. FIX`, and the exit hint, for the call's mode, with
     /// `env/` in the FIX read as the entry prefix `PREFIX/`.
     pub fn line(&self, interactive: bool, prefix: &[u8]) -> (Vec<u8>, i32) {
-        let row = CLASSES
-            .iter()
-            .find(|c| c.id == self.id)
-            .expect("every failure names a row of the class table");
+        let row = self.class;
         let fix = if interactive {
             row.interactive
         } else {
             row.non_interactive
         };
-        let class = self.id.split(':').next().unwrap_or(self.id);
+        let class = row.id.split(':').next().unwrap_or(row.id);
         let mut line = format!("lendk: {class}: ").into_bytes();
         line.extend_from_slice(&self.text);
         line.extend_from_slice(b". ");
@@ -98,7 +97,7 @@ mod tests {
 
     #[test]
     fn a_form_prints_its_class_name_and_the_fix_for_the_mode() {
-        let failure = Failure::new("map:group", "group @g is not defined");
+        let failure = Failure::new(&tables::MAP_GROUP, "group @g is not defined");
         assert_eq!(
             failure.line(true, b"env"),
             (
@@ -123,7 +122,7 @@ mod tests {
                 .find_map(|l| l.strip_prefix(class)?.strip_prefix(" (")?.strip_suffix(')'))
                 .unwrap_or_else(|| panic!("{class} is not in test/frozen/classes"));
             for interactive in [true, false] {
-                let (line, code) = Failure::new(row.id, "planted text").line(interactive, b"env");
+                let (line, code) = Failure::new(row, "planted text").line(interactive, b"env");
                 let line = String::from_utf8(line).unwrap();
                 assert!(line.starts_with(&format!("lendk: {class}: planted text. ")));
                 assert_eq!(line.matches('\n').count(), 1);
@@ -134,13 +133,13 @@ mod tests {
 
     #[test]
     fn a_substituted_value_is_never_rewritten_by_the_prefix_or_another_token() {
-        let failure = Failure::new("unsafe", "x").with("PATH", "/h/.env/KEY");
+        let failure = Failure::new(&tables::UNSAFE, "x").with("PATH", "/h/.env/KEY");
         assert_eq!(
             failure.line(true, b"api").0,
             b"lendk: unsafe: x. Fix it: chmod go-w /h/.env/KEY, or recreate it as your own\n"
                 .to_vec()
         );
-        let failure = Failure::new("missing-key", "x").with("KEY", "K");
+        let failure = Failure::new(&tables::MISSING_KEY, "x").with("KEY", "K");
         assert_eq!(
             failure.line(true, b"api").0,
             b"lendk: missing-key: x. Add it: pass insert api/K\n".to_vec()

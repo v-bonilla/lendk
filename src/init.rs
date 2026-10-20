@@ -3,12 +3,15 @@
 use crate::edit::{Call, Outcome};
 use crate::failure::Failure;
 use crate::shims;
+use crate::tables;
 
 /// `lendk init sh|bash|zsh|systemd`: the login block holding the absolute shim directory. It
 /// reads no map, and prints no code for a shim directory open to others.
 pub fn init(call: &Call, words: &[&[u8]]) -> Outcome {
     let [shell] = words else {
-        return Err(Failure::new("usage", "init takes one of sh, bash, zsh or systemd").into());
+        return Err(
+            Failure::new(&tables::USAGE, "init takes one of sh, bash, zsh or systemd").into(),
+        );
     };
     if ![&b"sh"[..], b"bash", b"zsh", b"systemd"].contains(shell) {
         let text = [
@@ -17,7 +20,7 @@ pub fn init(call: &Call, words: &[&[u8]]) -> Outcome {
             b"'",
         ]
         .concat();
-        return Err(Failure::new("usage", text).into());
+        return Err(Failure::new(&tables::USAGE, text).into());
     }
     let shims = &call.paths.shims;
     let dir = if shims.starts_with(b"/") {

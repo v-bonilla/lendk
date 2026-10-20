@@ -6,6 +6,7 @@ use crate::failure::Failure;
 use crate::map::{self, Paths};
 use crate::pass;
 use crate::run::{self, Ending};
+use crate::tables;
 
 /// Runs `lendk unlock`; on success the caller prints `unlocked`.
 pub fn unlock(
@@ -17,21 +18,21 @@ pub fn unlock(
 ) -> Result<(), Ending> {
     for word in words {
         if let Some(problem) = map::bad_word(word, None) {
-            return Err(Failure::new("usage", problem).into());
+            return Err(Failure::new(&tables::USAGE, problem).into());
         }
     }
     map::check_paths(&paths.map)?;
     let keys = if words.is_empty() {
         if std::fs::metadata(map::path(&paths.map)).is_err() {
             return Err(Failure::new(
-                "missing-key:nomap",
+                &tables::MISSING_KEY_NOMAP,
                 [&paths.map[..], b" does not exist"].concat(),
             )
             .into());
         }
         let Some(key) = map::first_key(&paths.map, |k| pass::has(paths, k))? else {
             return Err(Failure::new(
-                "missing-key:none",
+                &tables::MISSING_KEY_NONE,
                 [b"no key mapped in ", &paths.map[..], b" is in the store"].concat(),
             )
             .into());

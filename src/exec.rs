@@ -6,6 +6,7 @@ use crate::map::{dirname, path, resolve_links};
 use crate::plaintext::Plaintext;
 use crate::shims;
 use crate::sys;
+use crate::tables;
 use std::ffi::{CStr, CString, c_char};
 use std::io::Read;
 
@@ -71,14 +72,14 @@ pub fn resolve(env: &Env, shims: &[u8], cmd: &[u8]) -> Result<Vec<u8>, Failure> 
         });
         found.ok_or_else(|| {
             Failure::new(
-                "not-found",
+                &tables::NOT_FOUND,
                 [cmd, b" is not on PATH outside ", shims].concat(),
             )
             .with("CMD", cmd)
         })?
     };
     let not_executable = |p: &[u8]| {
-        Failure::new("exec", [p, b" is not executable"].concat())
+        Failure::new(&tables::EXEC, [p, b" is not executable"].concat())
             .with("PATH", p)
             .with("CMD", basename(cmd))
     };
@@ -112,7 +113,7 @@ pub fn exec(
     injected: &[(&[u8], usize)],
     list: &[u8],
 ) -> Failure {
-    let failure = Failure::new("exec", [target, b" is not executable"].concat())
+    let failure = Failure::new(&tables::EXEC, [target, b" is not executable"].concat())
         .with("PATH", target)
         .with("CMD", basename(cmd));
     let Ok(cmd0) = CString::new(cmd) else {

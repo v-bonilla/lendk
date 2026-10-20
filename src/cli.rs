@@ -156,18 +156,18 @@ pub fn main(args: &[&'static CStr], env: &[&'static CStr]) -> i32 {
 fn dispatch(words: &[&[u8]], env: &Env) -> Result<String, Failure> {
     match words.first().copied() {
         Some(b"--version") if words.len() == 1 => Ok(format!("lendk {}\n", tables::VERSION)),
-        Some(b"--version") => Err(Failure::new("usage", "--version takes no arguments")),
+        Some(b"--version") => Err(Failure::new(&tables::USAGE, "--version takes no arguments")),
         Some(b"--help") if words.len() == 1 => Ok(tables::help()),
-        Some(b"--help") => Err(Failure::new("usage", "--help takes no arguments")),
+        Some(b"--help") => Err(Failure::new(&tables::USAGE, "--help takes no arguments")),
         first => {
             check_env(env)?;
             let Some(verb) = first else {
-                return Err(Failure::new("usage", "no verb given"));
+                return Err(Failure::new(&tables::USAGE, "no verb given"));
             };
             let mut text = b"unknown verb '".to_vec();
             text.extend_from_slice(verb);
             text.push(b'\'');
-            Err(Failure::new("usage", text))
+            Err(Failure::new(&tables::USAGE, text))
         }
     }
 }
@@ -188,7 +188,7 @@ fn check_env(env: &Env) -> Result<(), Failure> {
         let mut text = format!("{name} is '").into_bytes();
         text.extend_from_slice(value);
         text.extend_from_slice(format!("'; {hint}").as_bytes());
-        Failure::new("usage", text)
+        Failure::new(&tables::USAGE, text)
     };
     if let Some(value) = env.get("LENDK_PROMPT")
         && !matches!(value, b"auto" | b"never" | b"allow")

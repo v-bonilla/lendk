@@ -9,6 +9,7 @@ use crate::map::{self, Paths, path};
 use crate::pass::TempDir;
 use crate::shims;
 use crate::sys;
+use crate::tables;
 use crate::tables::VERSION;
 use std::ffi::{CString, c_char};
 use std::io::Write;
@@ -141,12 +142,17 @@ impl Files {
         let made = (|| {
             let tmp = sys::mkdtemp(&[tmp_base, b"/lendk.XXXXXX"].concat()).map_err(|_| {
                 Failure::new(
-                    "upgrade:local",
+                    &tables::UPGRADE_LOCAL,
                     [tmp_base, b": cannot create a temporary directory"].concat(),
                 )
             })?;
             let tmp = TempDir(tmp);
-            let cannot = || Failure::new("upgrade:install", [dir, b" cannot be written"].concat());
+            let cannot = || {
+                Failure::new(
+                    &tables::UPGRADE_INSTALL,
+                    [dir, b" cannot be written"].concat(),
+                )
+            };
             // Closed before the watchdog forks, so no descriptor writes the file it runs.
             let (staged, _) =
                 sys::mkstemp(&[dir, b"/.lendk.XXXXXX"].concat()).map_err(|_| cannot())?;
@@ -206,7 +212,7 @@ impl Fetch<'_> {
         };
         job.wait(self.deadline).ok_or_else(|| {
             Failure::new(
-                "upgrade",
+                &tables::UPGRADE,
                 format!(
                     "fetching the release did not finish within {} s",
                     self.timeout
@@ -270,7 +276,7 @@ pub fn upgrade(
     words: &[&[u8]],
 ) -> Result<Vec<u8>, Failure> {
     if !words.is_empty() {
-        return Err(Failure::new("usage", "upgrade takes no arguments"));
+        return Err(Failure::new(&tables::USAGE, "upgrade takes no arguments"));
     }
     let set = env.get("LENDK_INSTALL_BASE_URL").filter(|b| !b.is_empty());
     let base = match set {
@@ -283,7 +289,7 @@ pub fn upgrade(
         }
         Some(b) => {
             return Err(Failure::new(
-                "usage",
+                &tables::USAGE,
                 [
                     &b"LENDK_INSTALL_BASE_URL is '"[..],
                     &shown(b),
@@ -295,7 +301,7 @@ pub fn upgrade(
     };
     let me = shims::self_path(env, argv0);
     let dir = map::dirname(&me).to_vec();
-    let install = |text: &[u8]| Failure::new("upgrade:install", [&me[..], text].concat());
+    let install = |text: &[u8]| Failure::new(&tables::UPGRADE_INSTALL, [&me[..], text].concat());
     if std::fs::symlink_metadata(path(&me)).is_ok_and(|m| m.is_symlink()) {
         return Err(install(
             b" is a symlink, so another tool manages this install",
@@ -317,7 +323,7 @@ pub fn upgrade(
     })?;
     let cannot_write = || {
         Failure::new(
-            "upgrade:install",
+            &tables::UPGRADE_INSTALL,
             [&dir[..], b" cannot be written"].concat(),
         )
     };
@@ -327,7 +333,7 @@ pub fn upgrade(
     let upath = helpers::path_without(env, &paths.shims);
     let missing = |name: &[u8]| {
         Failure::new(
-            "upgrade:local",
+            &tables::UPGRADE_LOCAL,
             [name, b" is not on PATH outside ", &paths.shims].concat(),
         )
     };
@@ -376,7 +382,7 @@ pub fn upgrade(
             Ok(())
         } else {
             Err(Failure::new(
-                "upgrade",
+                &tables::UPGRADE,
                 [&b"cannot download "[..], &url].concat(),
             ))
         }
@@ -390,7 +396,7 @@ pub fn upgrade(
         .map(<[u8]>::to_vec)
         .ok_or_else(|| {
             Failure::new(
-                "upgrade:install",
+                &tables::UPGRADE_INSTALL,
                 format!("the latest release has no archive for {platform}"),
             )
         })?;
@@ -413,13 +419,13 @@ pub fn upgrade(
             .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(c))
     {
         return Err(Failure::new(
-            "upgrade:local",
+            &tables::UPGRADE_LOCAL,
             [&sha[..], b": cannot compute a SHA-256"].concat(),
         ));
     }
     if got != want {
         return Err(Failure::new(
-            "upgrade",
+            &tables::UPGRADE,
             [
                 &asset[..],
                 b" has SHA-256 ",
@@ -432,7 +438,7 @@ pub fn upgrade(
     }
     let unpack = || {
         Failure::new(
-            "upgrade:local",
+            &tables::UPGRADE_LOCAL,
             [tmp_base, b": cannot unpack ", &asset].concat(),
         )
     };
@@ -445,7 +451,7 @@ pub fn upgrade(
     let list = fetch.read(b"list");
     let holds_no = |v: &[u8]| {
         Failure::new(
-            "upgrade",
+            &tables::UPGRADE,
             [&asset[..], b" holds no lendk-", v, b"/bin/lendk"].concat(),
         )
     };
@@ -477,7 +483,7 @@ pub fn upgrade(
         Some(v) if ran => v.to_vec(),
         _ => {
             return Err(Failure::new(
-                "upgrade",
+                &tables::UPGRADE,
                 format!("the downloaded lendk does not run on {platform}"),
             ));
         }
