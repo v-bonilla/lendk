@@ -74,11 +74,15 @@ injected() {
 
 @test "groups expand in word order and duplicates drop, keeping the first" {
 	map 'stub K2 @g K1 # @late' '@g K1 K2 K3'
-	export K3=three
+	unset K1 K2
+	local k
+	for k in K1 K2 K3; do printf 'value-%s\n' "$k" >"$SB/store/env/$k.gpg"; done
 	run_lendk run -- stub
 	assert_eq "$status" 0
-	# shellcheck disable=SC2016
-	LENDK=$SB/bin/lendk-fn run_lendk eval 'load_env; expand_keys stub; printf "%s\n" "${keys[*]}"; expand_keys x K3 @g K3; printf "%s\n" "${keys[*]}"'
-	assert_eq "$output" "K2 K1 K3
-K3 K1 K2"
+	assert_eq "$(injected)" "K2 K1 K3"
+	rm -r "$SB/log"
+	run_lendk run K3 @g K3 -- stub
+	assert_eq "$status" 0
+	assert_eq "$(injected)" "K3 K1 K2"
+	assert_eq "$(cat "$SB"/log/pass.*/argv | tr '\0' '\n' | grep -c '^env/K3$')" 1
 }

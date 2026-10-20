@@ -17,6 +17,8 @@
 #             terminal handoff, adds a line to its conts log
 # In modes stubborn and tty, a lister appends listings of lendk's temporary directory, which holds
 # the call's stderr file, to tmp-modes while the call runs.
+# Like pass, default the store to ~/.password-store.
+PASSWORD_STORE_DIR=${PASSWORD_STORE_DIR:-$HOME/.password-store}
 log=$PASSWORD_STORE_DIR/../log/pass.$$
 mkdir -p "$log"
 printf '%s\0' "$@" >"$log/argv"
