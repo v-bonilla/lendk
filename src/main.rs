@@ -6,6 +6,12 @@
 #![deny(clippy::undocumented_unsafe_blocks)]
 
 mod cli;
+mod exec;
 mod failure;
+mod helpers;
+mod map;
+mod pass;
+mod plaintext;
+mod run;
 mod sys;
 mod tables;
