@@ -1,5 +1,5 @@
 #!/usr/bin/env bats
-# The agent skill is a valid Agent Skill, and its verbs, classes and options match bin/lendk and install.sh.
+# The agent skill is a valid Agent Skill, and its verbs, classes and options match lendk --help and install.sh.
 # shellcheck disable=SC2013,SC2016
 
 setup() {

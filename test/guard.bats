@@ -1,44 +1,9 @@
 #!/usr/bin/env bats
-# The opening lines of bin/lendk reject bash older than 4.4.
+# lendk refuses a GnuPG below 2.4 before any decrypt.
 
 setup() {
 	load helpers/common
 	sandbox
-}
-
-# old_bash IMAGE [DOCKER-ARG...]: run lendk --version in IMAGE, stderr captured.
-old_bash() {
-	local image=$1
-	shift
-	status=0
-	stderr=$(docker run --rm --pull never "$@" -v "$LENDK:/lendk:ro" "$image" bash /lendk --version 2>&1 </dev/null) || status=$?
-}
-
-# bats test_tags=docker,port:retire
-@test "bash 3.2 gives unsupported with exit 125" {
-	require docker
-	old_bash bash:3.2.57
-	assert_eq "$stderr" "lendk: unsupported: bash 3.2.57 found; lendk needs bash 4.4 or later. Stop and ask the user."
-	assert_class unsupported 125
-}
-
-# bats test_tags=docker,port:retire
-@test "bash 4.3 gives unsupported with exit 125, and the interactive FIX when prompting is allowed" {
-	require docker
-	old_bash bash:4.3.48
-	assert_eq "$stderr" "lendk: unsupported: bash 4.3.48 found; lendk needs bash 4.4 or later. Stop and ask the user."
-	assert_class unsupported 125
-	old_bash bash:4.3.48 -e LENDK_PROMPT=allow
-	assert_eq "$stderr" "lendk: unsupported: bash 4.3.48 found; lendk needs bash 4.4 or later. Put a newer bash first on PATH."
-	assert_class unsupported 125
-}
-
-# bats test_tags=port:retire
-@test "the current bash passes the guard" {
-	run_lendk --version
-	assert_eq "$status" 0
-	[[ $output == "lendk "[0-9]*.[0-9]*.[0-9]* ]]
-	assert_eq "$stderr" ""
 }
 
 # stub_gpg NAME VERSION: a NAME on PATH reporting GnuPG VERSION.

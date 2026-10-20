@@ -147,16 +147,6 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	done
 }
 
-# bats test_tags=gpg,port:retire
-@test "with loopback in gpg.conf the passphrase typed into the terminal reaches gpg, and the target gets the value" {
-	branch plain
-	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
-	in_shell "$(printf %q "$LENDK") run -- stub; st=\$?; echo; echo status=\$st" @3 "$GPG_PASS" @3 exit
-	assert_line "$output" "status=0"
-	target_got
-	assert_eq "$(recorder_pids)" ""
-}
-
 # bats test_tags=gpg
 @test "with loopback in gpg.conf, a call in a command substitution gives locked and shows no prompt" {
 	branch plain

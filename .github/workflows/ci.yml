@@ -52,6 +52,8 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           submodules: true
+      # The release build, and the toolchain and crates the Ubuntu image's from-source tests mount.
+      - run: rustup toolchain install && cargo fetch --locked
       - run: make check-docker
 
   bench:
@@ -63,6 +65,7 @@ jobs:
         with:
           submodules: true
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pass gnupg
+      - run: rustup toolchain install && cargo fetch --locked
       - run: make bench
 
   macos:

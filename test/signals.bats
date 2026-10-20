@@ -81,27 +81,6 @@ stop_lendk() {
 	none_within 1
 }
 
-# bats test_tags=port:retire
-@test "a loopback prompt gets the terminal once and its typed line; the target gets the line" {
-	echo tty >"$SB/store/env/K1.mode"
-	in_shell "$LENDK run -- stub; echo rc=\$?" @2 typed-secret @1 exit
-	assert_line "$output" rc=0
-	refute_contains "$output" Stopped
-	refute_contains "$output" typed-secret
-	local logs=("$SB"/log/target.*) conts=("$SB"/log/pass.*/conts)
-	tr '\0' '\n' <"${logs[0]}/env" | grep -qx K1=typed-secret
-	assert_eq "$(<"${conts[0]}")" cont
-}
-
-# bats test_tags=port:retire
-@test "Ctrl-C at a loopback prompt gives canceled" {
-	echo tty >"$SB/store/env/K1.mode"
-	in_shell "$LENDK run -- stub; echo rc=\$?" @2 ^C @1 exit
-	assert_line "$output" "lendk: canceled: passphrase entry for env/K1 was canceled. Run the command again to retry."
-	assert_line "$output" rc=120
-	assert_eq "$(compgen -G "$SB/log/target.*")" ""
-}
-
 @test "a pipeline neighbor using the terminal runs while the backend works" {
 	echo slow >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub | { sleep 0.3; stty -echo; stty echo; echo neighbor-done; }" @3 exit
@@ -118,22 +97,11 @@ stop_lendk() {
 	[[ $output == *"lendk: timeout: env/K1: gpg did not finish within 1 s."* ]]
 }
 
-# bats test_tags=port:retire
-@test "with stderr redirected to a file, a loopback prompt still gets the terminal" {
-	echo tty >"$SB/store/env/K1.mode"
-	in_shell "$LENDK run -- stub 2>$SB/err; echo rc=\$?" @2 typed-secret @1 exit
-	assert_line "$output" rc=0
-	refute_contains "$output" typed-secret
-	assert_eq "$(<"$SB/err")" ""
-	local logs=("$SB"/log/target.*)
-	tr '\0' '\n' <"${logs[0]}/env" | grep -qx K1=typed-secret
-}
-
 @test "a signal before lendk records the job's PID leaves nothing behind" {
 	local sig
 	for sig in TERM KILL; do
 		rm -f "$SB/log/pids"
-		# bin/lendk pauses here at any LENDK_TEST_AT; the port at job, right after it starts the backend.
+		# LENDK_TEST_AT=job pauses right after lendk starts the backend.
 		LENDK_TEST_PAUSE=3 LENDK_TEST_AT=job start_lendk stubborn
 		kill "-$sig" -- "-$lpid"
 		none_within 2
@@ -155,22 +123,13 @@ stop_lendk() {
 	grep -qx -- '--status-fd 9' < <(tr '\0' '\n' <"$(compgen -G "$SB/log/pass.*")/env" | sed -n 's/^PASSWORD_STORE_GPG_OPTS=//p')
 }
 
-# bats test_tags=port:retire
-@test "a pipeline neighbor that reads the terminal during a loopback prompt resumes afterwards" {
-	# On macOS lendk hands the terminal back and resumes the neighbor, which then reads, but the
-	# interactive bash above still counts the neighbor as stopped and reclaims the terminal.
-	[[ $(uname -s) != Darwin ]] || skip 'macOS bash misses the neighbor resuming after SIGTTIN'
-	echo tty >"$SB/store/env/K1.mode"
-	in_shell "$LENDK run -- stub | { sleep 0.5; IFS= read -r x </dev/tty; echo neighbor=\$x; }" @2 typed-secret @1.5 neighbor-line @1 exit
-	assert_line "$output" neighbor=neighbor-line
-	refute_contains "$output" Stopped
-}
-
-# bats test_tags=port:only
 @test "a backend stopped on the terminal gives timeout within the bound, leaves nothing, and its files are private under umask 000" {
 	local listing ms
 	echo tty >"$SB/store/env/K1.mode"
-	in_shell "umask 000; t=\$(date +%s%3N); LENDK_TIMEOUT=2 $(printf %q "$LENDK") run -- stub; echo rc=\$? ms=\$((\$(date +%s%3N) - t))" @5 exit
+	# ms: milliseconds from /proc/uptime, which busybox's date, lacking %N, cannot give.
+	printf '#!/bin/sh\nif [ -r /proc/uptime ]; then read -r u _ </proc/uptime; c=${u#*.}; echo $((${u%%.*} * 1000 + ${c#0} * 10)); else date +%%s%%3N; fi\n' >"$SB/bin/ms"
+	chmod +x "$SB/bin/ms"
+	in_shell "umask 000; t=\$(ms); LENDK_TIMEOUT=2 $(printf %q "$LENDK") run -- stub; echo rc=\$? ms=\$((\$(ms) - t))" @5 exit
 	ms=$(grep -o 'rc=120 ms=[0-9]*' <<<"$output") || { echo "$output" >&2; return 1; }
 	ms=${ms#*ms=}
 	((ms >= 2000 && ms < 3700)) || { echo "took $ms ms" >&2; return 1; }
@@ -181,17 +140,5 @@ stop_lendk() {
 	assert_eq "$(ls -A "$TMPDIR")" ""
 	listing=$(cat "$SB"/log/pass.*/tmp-modes)
 	[[ $listing == *" err.K1"* && $listing == *" status.K1"* ]] || { echo "$listing" >&2; return 1; }
-	assert_eq "$(grep -E '^-' <<<"$listing" | grep -v '^-rw------- ')" ""
-}
-
-# bats test_tags=port:rework
-@test "under umask 000, lendk's files for the backend phase are private" {
-	local listing
-	echo tty >"$SB/store/env/K1.mode"
-	in_shell "umask 000; $LENDK run -- stub" @2 typed-secret @1 exit
-	echo stubborn >"$SB/store/env/K1.mode"
-	(umask 000 && LENDK_TIMEOUT=1 "$LENDK" run -- stub </dev/null 2>/dev/null) || true
-	listing=$(cat "$SB"/log/pass.*/tmp-modes)
-	[[ $listing == *" stopped"* && $listing == *" timeout"* ]] || { echo "$listing" >&2; return 1; }
 	assert_eq "$(grep -E '^-' <<<"$listing" | grep -v '^-rw------- ')" ""
 }

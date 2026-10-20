@@ -79,26 +79,3 @@ traced() {
 	targets=("$SB"/log/target.*)
 	assert_eq "${#targets[@]}" 1
 }
-
-# bats test_tags=port:retire
-@test "the source names curl and wget only in the network region, and no nc or /dev/tcp" {
-	assert_eq "$(grep -c '^# lint: network begin$' "$LENDK")" 1
-	assert_eq "$(grep -c '^# lint: network end$' "$LENDK")" 1
-	[[ $(sed -n '/^# lint: network begin$/,/^# lint: network end$/p' "$LENDK" | grep -cE 'curl|wget') -gt 0 ]]
-	run grep -nE '(^|[^A-Za-z0-9_-])(curl|wget|nc)([^A-Za-z0-9_-]|$)|/dev/(tcp|udp)' <(sed '/^# lint: network begin$/,/^# lint: network end$/d' "$LENDK")
-	assert_eq "$output" ""
-	run grep -nE '(^|[^A-Za-z0-9_-])nc([^A-Za-z0-9_-]|$)|/dev/(tcp|udp)' "$LENDK"
-	assert_eq "$output" ""
-	# The region is comment lines and one function, with no command of its own.
-	local region
-	region=$(sed -n '/^# lint: network begin$/,/^# lint: network end$/p' "$LENDK" | sed '1d;$d' | grep -v '^#')
-	assert_eq "$(sed -n 1p <<<"$region")" 'upgrade_download() {'
-	assert_eq "$(tail -n 1 <<<"$region")" '}'
-	assert_eq "$(grep -v "^$(printf '\t')" <<<"$region")" $'upgrade_download() {\n}'
-	# Only upgrade's own functions call it.
-	run awk '
-		/^[a-z_]+\(\) \{$/ { f = $1 }
-		/^\}$/ { f = "top level" }
-		/upgrade_download/ && !/^#/ && !/^upgrade_download\(\) \{$/ { print f }' "$LENDK"
-	assert_eq "$(sort -u <<<"$output")" $'upgrade_fetch()\nupgrade_verb()'
-}

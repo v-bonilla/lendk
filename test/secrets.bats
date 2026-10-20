@@ -88,27 +88,9 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(target_var K2)" "$SENTINEL-2"
 }
 
-# bats test_tags=port:rework
-@test "under strace the sentinel appears only in the target's execve, and there only in its environment" {
-	require strace
-	map 'tgt K1 K2'
-	entry K1 "$SENTINEL-1"
-	entry K2 "$SENTINEL-2"
-	printf '#!/bin/sh\nexit 0\n' >"$SB/bin/tgt"
-	chmod 755 "$SB/bin/tgt"
-	strace -f --seccomp-bpf -v -s 4096 -e trace=execve -o "$SB/trace" "$LENDK" run -- tgt </dev/null 2>"$SB/stderr"
-	assert_eq "$(<"$SB/stderr")" ""
-	local hits
-	hits=$(grep -F -- "$SENTINEL" "$SB/trace")
-	assert_eq "$(grep -c . <<<"$hits")" 1
-	[[ $hits == *"execve(\"$SB/bin/tgt\", [\"tgt\"], ["* ]]
-	[[ ${hits%%], [*} != *"$SENTINEL"* ]]
-}
-
 # A lendk that is not dumpable keeps its own memory, and so the target's environment at execve,
 # and its helpers' until they exec, from a tracer of the same user; the calls of the helpers'
 # own children, which carry the helper environment, stay readable.
-# bats test_tags=port:only
 @test "under strace the sentinel appears in no execve but lendk's own start, and the target receives it" {
 	require strace
 	map 'tgt K1 K2'
@@ -178,18 +160,6 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
-# bats test_tags=port:unit
-@test "a 200 kB first line reads in under 1 s" {
-	map 'stub K1'
-	: >"$SB/store/env/K1.gpg"
-	echo big >"$SB/store/env/K1.mode"
-	# The kernel refuses a 200 kB environment string at exec, so the read is timed on its own.
-	run lendk-fn eval 'load_env; declare -A lendk_env=([PATH]=$PATH [HOME]=$HOME [PASSWORD_STORE_DIR]=$PASSWORD_STORE_DIR) lendk_values=()
-		lendk_tmp=$(mktemp -d) lendk_gpg_tty=; TIMEFORMAT=%R; time read_values K1; echo "${#lendk_values[K1]}"' </dev/null
-	assert_eq "${lines[1]}" 200000
-	[[ ${lines[0]%%.*} == 0 ]] || { echo "took ${lines[0]} s" >&2; return 1; }
-}
-
 @test "the sentinel reaches no output, file or helper, also through a nested call" {
 	map 'stub K1' 'nest K2'
 	entry K1 "$SENTINEL"
@@ -205,26 +175,6 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	run_lendk run K2 -- nest
 	assert_eq "$status" 0
 	refute_contains "$output$stderr" "$SENTINEL"
-	no_sentinel
-	assert_eq "$(target_var K2)" "$SENTINEL-2"
-}
-
-# bats test_tags=port:retire
-@test "the sentinel reaches no output, file or helper under bash -x and an exported SHELLOPTS=xtrace" {
-	map 'stub K1' 'nest K2'
-	entry K1 "$SENTINEL"
-	entry K2 "$SENTINEL-2"
-	bash -x "$LENDK" run -- stub </dev/null >"$SB/out" 2>"$SB/stderr"
-	refute_contains "$(<"$SB/out")$(<"$SB/stderr")" "$SENTINEL"
-	[[ -s $SB/stderr ]]
-	no_sentinel
-	rm -rf "$SB/log" && mkdir "$SB/log"
-	# A nested call under xtrace: the outer target's key is preset for the inner lendk.
-	printf '#!/bin/sh\nexec %q run -- stub\n' "$LENDK" >"$SB/bin/nest"
-	chmod 755 "$SB/bin/nest"
-	env SHELLOPTS=xtrace "$LENDK" run K2 -- nest </dev/null >"$SB/out" 2>"$SB/stderr"
-	refute_contains "$(<"$SB/out")$(<"$SB/stderr")" "$SENTINEL"
-	[[ -s $SB/stderr ]]
 	no_sentinel
 	assert_eq "$(target_var K2)" "$SENTINEL-2"
 }
@@ -255,7 +205,6 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	done
 }
 
-# bats test_tags=port:only
 @test "at LENDK_TEST_PAUSE, lendk's environment is not its user's to read and its locked memory covers the values" {
 	[[ -d /proc/self ]] || skip "no /proc"
 	map 'stub K1'

@@ -200,21 +200,15 @@ agent_prompt() {
 }
 
 @test "the README's quick start runs as written and gh then receives GH_TOKEN" {
-	require git
-	require make
 	gpg_setup
-	local sys=$HOME/bin src=$SB/src rel=$SB/rel stub=$SB/stub login_path cmds
-	mkdir -p "$sys" "$src" "$rel/latest/download" "$stub"
+	local sys=$HOME/bin rel=$SB/rel stub=$SB/stub login_path cmds
+	mkdir -p "$sys" "$stub"
 	ln -s "$FIXTURES/stub-target" "$sys/gh"
 	skel_profile >"$HOME/.profile"
 	cp "$FIXTURES/bashrc" "$HOME/.bashrc"
-	# The release: make dist on a commit of this tree, served from file://.
-	cp -R "$ROOT/bin" "$ROOT/skills" "$ROOT/Makefile" "$ROOT/LICENSE" "$ROOT/install.sh" "$src/"
-	git -C "$src" init -q
-	git -C "$src" add -A
-	git -C "$src" -c user.name=test -c user.email=test commit -qm src
-	make -s -C "$src" dist >/dev/null
-	cp "$src"/dist/* "$rel/latest/download/"
+	# The release install.sh installs until it installs the binary: the frozen 1.x lendk's, served
+	# from file://.
+	release_1x "$rel"
 	# The installer looks for a downloader even when file:// URLs need none.
 	printf '#!/bin/sh\nexit 7\n' >"$stub/curl"
 	chmod +x "$stub/curl"

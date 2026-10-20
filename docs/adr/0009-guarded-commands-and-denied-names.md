@@ -11,4 +11,4 @@ Per-command least privilege fails quietly when the mapped command runs other pro
 
 - `lendk add` enforces the guard. A guarded command that a human writes into the map by hand gets its shim from `lendk sync` like any other mapped command.
 - The non-interactive FIX of `guarded` sends an agent to the human, so an agent never adds `--force` by itself: see [ADR 0012](0012-agent-fixes-never-widen-access.md).
-- The reserved commands, the denied prefixes and names, and the five guarded lists live once, in the tables of `bin/lendk`, and `lendk --help` prints them.
+- The reserved commands, the denied prefixes and names, and the five guarded lists live once, in the Tables module, `src/tables.rs`, and `lendk --help` prints them.

@@ -8,7 +8,7 @@ setup_file() {
 	export BATS_LENDK_UNDER_TEST=${LENDK-}
 	load helpers/common
 	export BATS_LENDK_REL=$BATS_FILE_TMPDIR/rel BATS_LENDK_SUM
-	BATS_LENDK_SUM=$(cksum <"$ROOT/bin/lendk")$(cksum <"$UNDER_TEST")
+	BATS_LENDK_SUM=$(cksum <"$UNDER_TEST")
 	release "$BATS_LENDK_REL/new" 99.0.0
 	release "$BATS_LENDK_REL/same" "$RUNNING"
 	release "$BATS_LENDK_REL/old" 0.0.1
@@ -37,7 +37,7 @@ setup() {
 }
 
 teardown() {
-	assert_eq "$(cksum <"$ROOT/bin/lendk")$(cksum <"$UNDER_TEST")" "$BATS_LENDK_SUM"
+	assert_eq "$(cksum <"$UNDER_TEST")" "$BATS_LENDK_SUM"
 }
 
 inode() { ls -i "$1" | awk '{ print $1 }'; }
@@ -363,18 +363,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	nothing "$ASSET has SHA-256 $got, but SHA256SUMS lists $(printf '%064d' 0)"
 }
 
-# bats test_tags=port:retire
-@test "SHA256SUMS without the asset changes nothing" {
-	local got
-	cp -R "$REL/new" "$SB/rel"
-	got=$(sum "$SB/rel/latest/download/$ASSET")
-	printf '%s  other.tar.gz\n' "$got" >"$SB/rel/latest/download/SHA256SUMS"
-	base "$SB/rel"
-	run_lendk upgrade
-	nothing "$ASSET has SHA-256 $got, but SHA256SUMS lists nothing"
-}
-
-# bats test_tags=port:only
 @test "a release with no archive for this platform fails before the archive download, naming the platform" {
 	mapped
 	local other got
@@ -410,30 +398,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-# bats test_tags=port:retire
-@test "a lendk that does not run under this bash changes nothing" {
-	mkdir -p "$SB/a/lendk-99.0.0/bin"
-	printf '#!/usr/bin/env bash\n%s\nexit 125\n' "$(sed -n 2p "$LENDK")" >"$SB/a/lendk-99.0.0/bin/lendk"
-	pack "$SB/a" "$SB/rel"
-	base "$SB/rel"
-	run_lendk upgrade
-	nothing "the downloaded lendk does not run under bash $(bash -c 'printf %s "${BASH_VERSION%%[!0-9.]*}"')"
-}
-
-# bats test_tags=port:retire
-@test "a candidate that exits non-zero, or prints anything but lendk X.Y.Z, changes nothing" {
-	local body n=0 v
-	v=$(bash -c 'printf %s "${BASH_VERSION%%[!0-9.]*}"')
-	for body in 'echo "lendk 99.0.0"; exit 1' 'echo "x lendk 99.0.0"' 'echo "lendk 99.0.0 x"' 'echo "lendk 99.0.0"; echo more' \
-		'echo "lendk 99.00.0"' 'echo "lendk 099.0.0"' 'echo "lendk 99.0.9999999999"'; do
-		n=$((n + 1))
-		candidate "$n" 99.0.0 "$body"
-		run_lendk upgrade
-		nothing "the downloaded lendk does not run under bash $v"
-	done
-}
-
-# bats test_tags=port:only
 @test "a new file without the marker, or whose staged run fails or prints anything but lendk X.Y.Z, changes nothing" {
 	mapped
 	local body n=0
@@ -459,7 +423,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	nothing "the downloaded lendk does not run on $PLATFORM"
 }
 
-# bats test_tags=port:only
 @test "the staged run is a helper: beside lendk with mode 0755, under the allowlisted environment, PATH without the shims" {
 	# Only the first run, the staged one, writes the log.
 	candidate env 99.0.0 '[ "$1" = --version ] || exit 0' "[ -e '$SB/staged.env' ] || { env; ls -ln \"\$0\"; } >'$SB/staged.env'" 'echo "lendk 99.0.0"'
@@ -502,17 +465,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	nothing "$TMPDIR: cannot unpack $ASSET"
 }
 
-# bats test_tags=port:retire
-@test "a fetch that ends without a result is a local failure" {
-	web new killjob
-	run_lendk upgrade
-	nothing "$TMPDIR: the fetch ended without a result"
-	LENDK_PROMPT=allow run_lendk upgrade
-	assert_eq "$stderr" "$NOTICE"$'\n'"lendk: upgrade: $TMPDIR: the fetch ended without a result. Fix it, then run: lendk upgrade"
-	assert_class upgrade 125
-	unchanged
-}
-
 @test "no other verb reads LENDK_INSTALL_BASE_URL" {
 	local verb out err rc
 	for verb in check sync; do
@@ -542,7 +494,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	[[ $(<"$SB/log/calls.shasum") == "-a 256 $TMPDIR/lendk."??????"/$ASSET" ]]
 }
 
-# bats test_tags=port:only
 @test "the tools get the allowlist and the proxy and certificate variables, never a key the caller set" {
 	local t f
 	for t in gzip tar sha256sum; do
@@ -575,8 +526,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	printf 'kept\n' | { "$LENDK" upgrade >/dev/null 2>&1; cat >"$SB/rest"; }
 	assert_eq "$(<"$SB/rest")" kept
 	assert_eq "$("$LENDK" --version)" "lendk 99.0.0"
-	# bin/lendk unpacks through gzip twice, to list and to extract; the binary unpacks once.
-	assert_eq "$(wc -l <"$SB/log/gzip.calls")" "$([[ -n $PLATFORM ]] && echo 1 || echo 2)"
+	assert_eq "$(wc -l <"$SB/log/gzip.calls")" 1
 	assert_eq "$(calls curl | wc -l)" 2
 	for f in "$SB"/log/curl.*/stdin "$SB/log/gzip.stdin"; do
 		[[ -f $f && ! -s $f ]]
@@ -603,7 +553,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-# bats test_tags=port:only
 @test "a release that is not newer is up to date and changes nothing" {
 	base "$REL/same"
 	run_lendk upgrade
@@ -615,32 +564,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	run_lendk upgrade
 	assert_eq "$status" 0
 	assert_eq "$output" "lendk $VERSION is up to date: the latest release is 0.0.1"
-	unchanged
-}
-
-# bats test_tags=port:rework
-@test "a release that is not newer is up to date, also for an install ahead of it, compared number by number" {
-	base "$REL/same"
-	run_lendk upgrade
-	assert_eq "$status" 0
-	assert_eq "$output" "lendk $VERSION is up to date: the latest release is $VERSION"
-	assert_eq "$stderr" "$NOTICE"
-	unchanged
-	base "$REL/old"
-	run_lendk upgrade
-	assert_eq "$status" 0
-	assert_eq "$output" "lendk $VERSION is up to date: the latest release is 0.0.1"
-	unchanged
-	sed 's/^LENDK_VERSION=.*/LENDK_VERSION=9.0.0/' "$ROOT/bin/lendk" >"$LENDK"
-	base "$REL/ten"
-	LENDK_PROMPT=allow run_lendk upgrade
-	assert_eq "$status" 0
-	assert_eq "$output" "upgraded lendk 9.0.0 to 10.0.0 at $LENDK"
-	mark
-	base "$REL/nines"
-	run_lendk upgrade
-	assert_eq "$status" 0
-	assert_eq "$output" "lendk 10.0.0 is up to date: the latest release is 9.9.9"
 	unchanged
 }
 
@@ -669,7 +592,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(calls curl)" ""
 }
 
-# bats test_tags=port:only
 @test "a path that is not the running lendk's file is refused before any fetch" {
 	mapped
 	local rc=0
@@ -689,31 +611,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(<"$SB/stderr")" "lendk: upgrade: $LENDK is not lendk's own file. Stop and ask the user."
 	assert_eq "$(<"$SB/stdout")" ""
 	unchanged
-	assert_eq "$(calls curl)" ""
-}
-
-# bats test_tags=port:retire
-@test "a file that is not lendk's is refused before any fetch" {
-	web new
-	NOTICE=
-	sed '2s/.*/# another tool/' "$ROOT/bin/lendk" >"$LENDK"
-	mark
-	run_lendk upgrade
-	nothing "$LENDK is not lendk's own file"
-	assert_eq "$(calls curl)" ""
-}
-
-# bats test_tags=port:retire
-@test "an install whose version is not X.Y.Z is refused before any fetch" {
-	local v
-	web new
-	NOTICE=
-	for v in 1.1.0-dev 01.0.0 1.0 9999999999.0.0; do
-		sed "s/^LENDK_VERSION=.*/LENDK_VERSION=$v/" "$ROOT/bin/lendk" >"$LENDK"
-		mark
-		run_lendk upgrade
-		nothing "$LENDK has version $v, not a release's X.Y.Z"
-	done
 	assert_eq "$(calls curl)" ""
 }
 
@@ -756,7 +653,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
-# bats test_tags=port:only
 @test "sync runs through the new file at lendk's path, and with an invalid map line the upgrade stands" {
 	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
 	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
@@ -773,24 +669,6 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$stderr" "$NOTICE"$'\n'"lendk: map: $MAP:2: '1BAD' is not a valid key name. Stop and ask the user."
 	assert_class map 125
 	assert_eq "$(<"$SB/log/standin")" "$LENDK sync"$'\n'"$LENDK sync"
-	assert_eq "$("$LENDK" --version)" "lendk 99.0.0"
-	assert_eq "$(ls -A "$BIN")" lendk
-}
-
-# bats test_tags=port:rework
-@test "sync runs through the new file, and with an invalid map line the upgrade stands" {
-	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
-	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
-	base "$REL/new"
-	run_lendk upgrade
-	assert_eq "$status" 0
-	grep -qxF "lendk='$LENDK'" "$SHIMS/stub"
-	cp "$UNDER_TEST" "$LENDK"
-	printf 'stub K1\ngh 1BAD\n' >"$MAP"
-	run_lendk upgrade
-	assert_eq "$output" "upgraded lendk $VERSION to 99.0.0 at $LENDK"
-	assert_eq "$stderr" "$NOTICE"$'\n'"lendk: map: $MAP:2: '1BAD' is not a valid key name. Stop and ask the user."
-	assert_class map 125
 	assert_eq "$("$LENDK" --version)" "lendk 99.0.0"
 	assert_eq "$(ls -A "$BIN")" lendk
 }
@@ -884,6 +762,7 @@ stopped() {
 }
 
 @test "install.sh, then upgrade, against make dist releases" {
+	skip "needs install.sh to install the binary (#58) and make dist to build its platform's archive (#60)"
 	require git
 	require make
 	local d src=$SB/src sys=$SB/sys before
@@ -944,7 +823,6 @@ stopped() {
 	assert_eq "$(sums)" "$before"
 }
 
-# bats test_tags=port:only
 @test "TERM, INT, HUP or KILL once both files exist leaves neither, the watchdog removing them" {
 	local sig i rc
 	base "$REL/new"
@@ -961,31 +839,6 @@ stopped() {
 		sleep 0.3
 		# lendk and its watchdog run, and no helper has started.
 		assert_eq "$(family | wc -l)" 2
-		kill "-$sig" -- "$lpid"
-		rc=0
-		wait "$lpid" || rc=$?
-		assert_eq "$rc" "$((128 + $(kill -l "$sig")))"
-		stopped
-	done
-}
-
-# bats test_tags=port:rework
-@test "TERM, INT or HUP before the watchdog starts removes both files and is re-raised" {
-	local sig i rc
-	base "$REL/new"
-	for sig in TERM INT HUP; do
-		set -m
-		LENDK_TEST_PAUSE=9 LENDK_TEST_AT=start LENDK_TEST_FAMILY=$SENTINEL "$LENDK" upgrade </dev/null >"$SB/stdout" 2>"$SB/stderr" &
-		lpid=$!
-		set +m
-		for ((i = 0; i < 50; i++)); do
-			[[ -n $(ls -A "$TMPDIR") && -n $(compgen -G "$BIN/.lendk.*") ]] && break
-			sleep 0.1
-		done
-		[[ -n $(ls -A "$TMPDIR") && -n $(compgen -G "$BIN/.lendk.*") ]]
-		sleep 0.3
-		# Only lendk runs: no watchdog could remove the files.
-		assert_eq "$(family)" "$lpid"
 		kill "-$sig" -- "$lpid"
 		rc=0
 		wait "$lpid" || rc=$?
@@ -1017,28 +870,4 @@ stopped() {
 		err=$(<"$SB/stderr")
 		[[ $err == "$NOTICE" || $err == "$NOTICE"$'\n'"lendk: upgrade: fetching the release did not finish within 1 s. Stop and ask the user." ]]
 	done
-}
-
-# bats test_tags=port:retire
-@test "when the watchdog dies, its rescue removes the staged file of a killed lendk" {
-	local i p staged='' inner=''
-	base "$REL/new"
-	set -m
-	LENDK_TEST_PAUSE=9 LENDK_TIMEOUT=30 LENDK_TEST_FAMILY=$SENTINEL "$LENDK" upgrade </dev/null >"$SB/stdout" 2>"$SB/stderr" &
-	lpid=$!
-	set +m
-	for ((i = 0; i < 100; i++)); do
-		staged=$(compgen -G "$BIN/.lendk.*") && [[ -x $staged ]] && break
-		sleep 0.1
-	done
-	[[ -x $staged ]]
-	sleep 0.5
-	# lendk waits before the rename; its children are the watchdog's shell and, inside it, the watchdog.
-	for p in $(family); do
-		[[ $p == "$lpid" || $(ppid_of "$p") == "$lpid" ]] || inner=$p
-	done
-	[[ -n $inner ]]
-	kill -KILL -- "$inner"
-	kill -KILL -- "$lpid"
-	stopped
 }

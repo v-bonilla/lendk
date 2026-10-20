@@ -8,7 +8,7 @@ How the engineering skills consume this repo's domain documentation when explori
 - **`docs/adr/`**: read ADRs that touch the area you're about to work in.
 - **`CODING_STANDARDS.md`** at the repo root: how code, tests, docs and commits are written.
 
-No doc ranks above another. Tests pin the public interface, which `lendk --help` prints from the tables region of `bin/lendk`; ADRs record decisions and their reasons; a conflict between code, tests and docs goes to the maintainer as an issue.
+No doc ranks above another. Tests pin the public interface, which `lendk --help` prints from the Tables module, `src/tables.rs`; ADRs record decisions and their reasons; a conflict between code, tests and docs goes to the maintainer as an issue.
 
 ## File structure
 
@@ -18,12 +18,12 @@ This is a single-context repo:
 /
 ├── CODING_STANDARDS.md
 ├── GLOSSARY.md
-├── bin/lendk
+├── src/
 └── docs/
     ├── adr/
     │   ├── 0001-path-shims-not-prefix-command.md
     │   ├── ...
-    │   └── 0015-install-only-from-project-repo.md
+    │   └── 0016-dependencies-admitted-by-rule.md
     ├── agents/
     └── release.md
 ```

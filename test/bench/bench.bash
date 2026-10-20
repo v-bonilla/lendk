@@ -8,10 +8,10 @@ set -u -o pipefail
 	HOME="${HOME:-/}" TMPDIR="${TMPDIR:-/tmp}" bash "$0"
 root=$(cd "$(dirname "$0")/../.." && pwd)
 runs=${BENCH_RUNS:-200}
-# LENDK: the lendk to measure, by its absolute path; bin/lendk when unset.
-lendk=${LENDK:-$root/bin/lendk}
+# LENDK: the lendk to measure, by its absolute path; make bench names the release binary when unset.
+lendk=${LENDK-}
 unset LENDK
-[[ $lendk == /* ]] || { echo "bench: LENDK must be an absolute path" >&2; exit 2; }
+[[ $lendk == /* ]] || { echo "bench: LENDK must name the lendk to measure by its absolute path" >&2; exit 2; }
 warmups=20
 real=$(command -v true) || exit 2
 [[ $real == /* ]] || real=/bin/true

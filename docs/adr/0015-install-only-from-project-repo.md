@@ -11,3 +11,4 @@ lendk reads every mapped key, so where its one file comes from is the root of it
 - The `lendk-missing` FIX, which a shim prints for every caller when lendk is gone, tells the human to reinstall lendk from its project repository.
 - `run_lendk` in `test/helpers/common.bash` fails any test whose non-interactive stderr names npm, cargo, `pip install` or brew.
 - `install.sh` and `lendk upgrade` read the same release assets, so both trust the same source.
+- `make install` builds lendk from the checkout with `cargo build --release --locked` under the toolchain `rust-toolchain.toml` pins, so it needs rustup, and the crates come only as `Cargo.lock` names them, behind `deny.toml` and `supply-chain/` ([ADR 0016](0016-dependencies-admitted-by-rule.md)). It renames the binary into `PREFIX/bin`, and `make uninstall` removes that file only when it holds the binary's marker or 1.x's second line, without running it.

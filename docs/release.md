@@ -1,6 +1,6 @@
 # Releasing lendk
 
-1. Set `LENDK_VERSION` in `bin/lendk` to the new version; `lendk --version` prints it.
+1. Set `version` in `Cargo.toml` to the new version; `lendk --version` prints it.
 2. In `CHANGELOG.md`, move the `Unreleased` entries under `## [X.Y.Z] - YYYY-MM-DD` with the release date, and update the comparison links.
 3. Run the three gates; each must exit 0:
    ```
