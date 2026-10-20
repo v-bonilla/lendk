@@ -365,14 +365,26 @@ pub fn upgrade(
         deadline: Instant::now() + Duration::from_secs(timeout),
         timeout,
     };
-    // The tools keep the caller's environment with PATH past the shims, as in 1.x (#26); the
-    // staged lendk gets the allowlist (ADR 0006).
-    let mut tool_vars = vec![(b"PATH".to_vec(), upath.clone())];
-    tool_vars.extend(
-        env.entries()
-            .filter(|(n, _)| *n != b"PATH")
-            .map(|(n, v)| (n.to_vec(), v.to_vec())),
-    );
+    // The tools get the allowlist (ADR 0006) plus the proxy and certificate variables a
+    // download needs (#37 decision 5); the staged lendk gets the allowlist alone.
+    const NET: [&str; 11] = [
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
+        "all_proxy",
+        "CURL_CA_BUNDLE",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+    ];
+    let net: Vec<(&[u8], Vec<u8>)> = NET
+        .iter()
+        .filter_map(|n| Some((n.as_bytes(), env.get(n)?.to_vec())))
+        .collect();
+    let tool_vars = helpers::helper_env(env, &paths.shims, &net);
     let platform = platform();
     let asset = format!("lendk-{platform}.tar.gz").into_bytes();
     let get = |name: &[u8]| -> Result<(), Failure> {
