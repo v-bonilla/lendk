@@ -18,7 +18,7 @@ pub fn has(paths: &Paths, key: &[u8]) -> bool {
 }
 
 /// A private temporary directory for the backend's stderr and status, removed on drop.
-struct TempDir(Vec<u8>);
+pub struct TempDir(pub Vec<u8>);
 
 impl Drop for TempDir {
     fn drop(&mut self) {
@@ -96,7 +96,7 @@ fn gpg_tty(env: &Env, interactive: bool) -> Option<Vec<u8>> {
 }
 
 /// The first executable `name` on `path_var`.
-fn find(path_var: &[u8], name: &[u8]) -> Option<Vec<u8>> {
+pub fn find(path_var: &[u8], name: &[u8]) -> Option<Vec<u8>> {
     path_var.split(|&c| c == b':').find_map(|dir| {
         let dir = if dir.is_empty() { &b"."[..] } else { dir };
         let file = [dir, b"/", name].concat();
@@ -159,7 +159,7 @@ fn check_gnupg(
     };
     let mut out = Plaintext::with_capacity(256)
         .map_err(|_| Failure::new("write", "memory for gpg's version cannot be mapped"))?;
-    if let Ok(mut job) = watchdog.spawn(&gpg, &[b"--version"], vars, None, None) {
+    if let Ok(mut job) = watchdog.spawn(&gpg, &[b"--version"], vars, (None, None), None) {
         let _ = helpers::read_first_line(job.stdout(), &mut out, deadline);
         job.wait(deadline);
     }
@@ -220,7 +220,7 @@ pub fn read(
     })?;
     let tmp = TempDir(tmp);
     let deadline = Instant::now() + Duration::from_secs(timeout);
-    let watchdog = helpers::Watchdog::start(&tmp.0).map_err(|e| {
+    let watchdog = helpers::Watchdog::start(&tmp.0, None).map_err(|e| {
         Failure::new(
             "write",
             [b"cannot start the watchdog: ", e.to_string().as_bytes()].concat(),
@@ -266,7 +266,7 @@ pub fn read(
                 b"pass",
                 &[b"show", &name],
                 &vars,
-                Some(stderr),
+                (None, Some(stderr)),
                 Some(&status),
             )
             .map_err(|e| decrypt(&name, key, e.to_string().as_bytes()))?;

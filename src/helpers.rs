@@ -65,20 +65,21 @@ pub fn helper_env(env: &Env, shims: &[u8], extra: &[(&[u8], Vec<u8>)]) -> Vec<(V
 /// The watchdog: a fork of lendk in a process group of its own, so a signal to lendk's group
 /// misses it. Each helper writes its PID to the watchdog before it leaves lendk's group. When
 /// lendk ends without saying it is done, a KILL included, the watchdog sees its pipe close, ends
-/// the last helper's group and removes the call's temporary directory (ADR 0005).
+/// the last helper's group and removes the call's temporary directory and `staged`, upgrade's
+/// file beside lendk (ADR 0005).
 pub struct Watchdog {
     pid: i32,
     ctl: Option<OwnedFd>,
 }
 
 impl Watchdog {
-    pub fn start(tmp: &[u8]) -> io::Result<Self> {
+    pub fn start(tmp: &[u8], staged: Option<&[u8]>) -> io::Result<Self> {
         let (read, write) = sys::pipe()?;
         let pid = sys::fork()?;
         if pid == 0 {
             drop(write);
             sys::detach();
-            watch(read.as_raw_fd(), tmp);
+            watch(read.as_raw_fd(), tmp, staged);
         }
         drop(read);
         sys::setpgid(pid, pid);
@@ -89,14 +90,14 @@ impl Watchdog {
     }
 
     /// Starts `program` with `args` under `vars` alone, in a process group of its own known to
-    /// the watchdog: stdin /dev/null, stdout a pipe, stderr into `stderr` or /dev/null, and
-    /// `status`, when given, as descriptor 9.
+    /// the watchdog: stdin /dev/null, stdout into `stdout` or a pipe, stderr into `stderr` or
+    /// /dev/null, and `status`, when given, as descriptor 9.
     pub fn spawn(
         &self,
         program: &[u8],
         args: &[&[u8]],
         vars: &[(Vec<u8>, Vec<u8>)],
-        stderr: Option<File>,
+        (stdout, stderr): (Option<File>, Option<File>),
         status: Option<&File>,
     ) -> io::Result<Job> {
         let mut command = Command::new(OsStr::from_bytes(program));
@@ -108,18 +109,18 @@ impl Watchdog {
                     .map(|(n, v)| (OsStr::from_bytes(n), OsStr::from_bytes(v))),
             )
             .stdin(Stdio::null())
-            .stdout(Stdio::piped())
+            .stdout(stdout.map_or_else(Stdio::piped, Stdio::from))
             .stderr(stderr.map_or_else(Stdio::null, Stdio::from));
         let report = self.ctl.as_ref().map_or(-1, AsRawFd::as_raw_fd);
         sys::helper_child(&mut command, report, status.map(AsRawFd::as_raw_fd));
         let mut child = command.spawn()?;
-        let stdout = child.stdout.take().expect("stdout is a pipe");
+        let stdout = child.stdout.take();
         let pid = i32::try_from(child.id()).unwrap_or(-1);
         // The child is reaped through its PID from here on.
         std::mem::forget(child);
         Ok(Job {
             pid,
-            stdout: Some(stdout),
+            stdout,
             reaped: None,
         })
     }
@@ -136,7 +137,7 @@ impl Drop for Watchdog {
 }
 
 /// The watchdog's loop, in the forked child.
-fn watch(ctl: i32, tmp: &[u8]) -> ! {
+fn watch(ctl: i32, tmp: &[u8], staged: Option<&[u8]>) -> ! {
     let mut pid = 0;
     let mut buf = [0u8; 4];
     while let Ok(4) = sys::read(ctl, &mut buf) {
@@ -149,6 +150,9 @@ fn watch(ctl: i32, tmp: &[u8]) -> ! {
         end_group(pid, || {});
     }
     let _ = std::fs::remove_dir_all(crate::map::path(tmp));
+    if let Some(staged) = staged {
+        let _ = std::fs::remove_file(crate::map::path(staged));
+    }
     sys::exit_now(0)
 }
 

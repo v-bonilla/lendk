@@ -7,6 +7,7 @@ use crate::run;
 use crate::sys;
 use crate::tables;
 use crate::unlock;
+use crate::upgrade;
 use std::ffi::CStr;
 use std::io::Write;
 
@@ -75,6 +76,21 @@ pub fn main(args: &[&'static CStr], env: &[&'static CStr]) -> i32 {
         return ending.last.report(interactive, &paths.prefix);
     }
     let words: Vec<&[u8]> = words.iter().map(|w| w.to_bytes()).collect();
+    if verb == Some(b"upgrade") {
+        if let Err(failure) = check_env(&env) {
+            return failure.report(interactive, b"env");
+        }
+        let paths = Paths::new(&env);
+        let argv0 = args.first().map_or(&b""[..], |a| a.to_bytes());
+        return match upgrade::upgrade(&env, &paths, timeout(&env, interactive), argv0, &words[1..])
+        {
+            Ok(out) => {
+                let _ = std::io::stdout().write_all(&out);
+                0
+            }
+            Err(failure) => failure.report(interactive, &paths.prefix),
+        };
+    }
     let verb: Option<edit::Verb> = match words.first().copied() {
         Some(b"sync") => Some(edit::sync),
         Some(b"add") => Some(edit::add),

@@ -80,6 +80,29 @@ pub fn mkdtemp(template: &[u8]) -> io::Result<Vec<u8>> {
     Ok(buf)
 }
 
+/// Creates a private file from `template`, which ends in `XXXXXX`, and returns its path and
+/// the file, open for writing.
+pub fn mkstemp(template: &[u8]) -> io::Result<(Vec<u8>, std::fs::File)> {
+    let mut buf = CString::new(template)?.into_bytes_with_nul();
+    // SAFETY: buf is a writable NUL-terminated template that mkostemp fills in place.
+    let fd = unsafe { libc::mkostemp(buf.as_mut_ptr().cast(), libc::O_CLOEXEC) };
+    if fd == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    buf.pop();
+    // SAFETY: mkostemp succeeded, so fd is an open descriptor owned by nothing else.
+    Ok((buf, unsafe { std::fs::File::from_raw_fd(fd) }))
+}
+
+/// Whether the effective user may write to `path`, as bash's `-w` tests it.
+pub fn writable(path: &[u8]) -> bool {
+    let Ok(path) = CString::new(path) else {
+        return false;
+    };
+    // SAFETY: path is NUL-terminated and outlives the call.
+    unsafe { libc::faccessat(libc::AT_FDCWD, path.as_ptr(), libc::W_OK, libc::AT_EACCESS) == 0 }
+}
+
 /// Reads from `fd` into `buf` with read(2), retrying on EINTR.
 pub fn read(fd: c_int, buf: &mut [u8]) -> io::Result<usize> {
     loop {
