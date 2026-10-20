@@ -55,15 +55,27 @@ pub fn text(lendk: &[u8], cmd: &[u8]) -> Vec<u8> {
     .concat()
 }
 
-/// Whether `file` is a regular file, not a symlink, whose second line carries the shim marker.
-pub fn is_shim(file: &[u8]) -> bool {
-    if !std::fs::symlink_metadata(path(file)).is_ok_and(|m| m.is_file()) {
-        return false;
-    }
-    let text = std::fs::read(path(file)).unwrap_or_default();
+/// Whether a file's `text` carries the shim marker on its second line.
+pub fn marked(text: &[u8]) -> bool {
     text.split(|&c| c == b'\n')
         .nth(1)
         .is_some_and(|l| l.starts_with(MARKER))
+}
+
+/// Whether `file` is a regular file, not a symlink, whose second line carries the shim marker.
+pub fn is_shim(file: &[u8]) -> bool {
+    std::fs::symlink_metadata(path(file)).is_ok_and(|m| m.is_file())
+        && marked(&std::fs::read(path(file)).unwrap_or_default())
+}
+
+/// The lendk path a shim's `text` runs: its third line's quoted `lendk='...'`, unquoted.
+pub fn runs(text: &[u8]) -> Vec<u8> {
+    let third = text.split(|&c| c == b'\n').nth(2).unwrap_or_default();
+    let quoted = third.strip_prefix(b"lendk='").unwrap_or(third);
+    let quoted = quoted.strip_suffix(b"'").unwrap_or(quoted);
+    String::from_utf8_lossy(quoted)
+        .replace("'\\''", "'")
+        .into_bytes()
 }
 
 /// Whether `file` has the shim mode 0755.

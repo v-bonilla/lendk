@@ -4,6 +4,7 @@ use crate::cli::Env;
 use crate::failure::Failure;
 use crate::map::{dirname, path, resolve_links};
 use crate::plaintext::Plaintext;
+use crate::shims;
 use crate::sys;
 use std::ffi::{CStr, CString, c_char};
 use std::io::Read;
@@ -66,13 +67,7 @@ pub fn resolve(env: &Env, shims: &[u8], cmd: &[u8]) -> Result<Vec<u8>, Failure> 
                     return None;
                 }
             }
-            let text = head(&file, 513);
-            let mut lines = text.split(|&c| c == b'\n');
-            let second = lines.nth(1).unwrap_or_default();
-            if second.starts_with(b"# lendk shim ") {
-                return None;
-            }
-            Some(file)
+            (!shims::marked(&head(&file, 513))).then_some(file)
         });
         found.ok_or_else(|| {
             Failure::new(

@@ -161,12 +161,7 @@ pub fn rows<'a>(
         } else if shims::is_shim(&f) {
             let content = std::fs::read(path(&f)).unwrap_or_default();
             if content != shims::text(lendk, name) || !shims::mode_ok(&f) {
-                let third = content.split(|&c| c == b'\n').nth(2).unwrap_or_default();
-                let quoted = third.strip_prefix(b"lendk='").unwrap_or(third);
-                let quoted = quoted.strip_suffix(b"'").unwrap_or(quoted);
-                let runs = String::from_utf8_lossy(quoted)
-                    .replace("'\\''", "'")
-                    .into_bytes();
+                let runs = shims::runs(&content);
                 let runnable = std::fs::metadata(path(&runs)).is_ok_and(|m| m.is_file())
                     && sys::executable(&runs);
                 if runnable {
