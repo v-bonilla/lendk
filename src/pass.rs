@@ -2,6 +2,7 @@
 //! and a failure through gpg's status code (ADR 0004), all within LENDK_TIMEOUT.
 
 use crate::cli::Env;
+use crate::exec;
 use crate::failure::Failure;
 use crate::helpers;
 use crate::map::{Paths, path};
@@ -95,16 +96,6 @@ fn gpg_tty(env: &Env, interactive: bool) -> Option<Vec<u8>> {
     caller.map(<[u8]>::to_vec)
 }
 
-/// The first executable `name` on `path_var`.
-pub fn find(path_var: &[u8], name: &[u8]) -> Option<Vec<u8>> {
-    path_var.split(|&c| c == b':').find_map(|dir| {
-        let dir = if dir.is_empty() { &b"."[..] } else { dir };
-        let file = [dir, b"/", name].concat();
-        (std::fs::metadata(path(&file)).is_ok_and(|m| m.is_file()) && sys::executable(&file))
-            .then_some(file)
-    })
-}
-
 /// The version in gpg's first `--version` line, after `gpg (GnuPG...) `.
 fn gnupg_version(first: &[u8]) -> &[u8] {
     first
@@ -154,7 +145,7 @@ fn check_gnupg(
         .find(|(n, _)| n == b"PATH")
         .map(|(_, v)| v.as_slice())
         .unwrap_or_default();
-    let Some(gpg) = find(path_var, b"gpg2").or_else(|| find(path_var, b"gpg")) else {
+    let Some(gpg) = exec::find(path_var, b"gpg2").or_else(|| exec::find(path_var, b"gpg")) else {
         return Ok(());
     };
     let mut out = Plaintext::with_capacity(256)

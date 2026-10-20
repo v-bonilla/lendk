@@ -2,10 +2,11 @@
 //! four checks of #28, then run `sync` through the new file.
 
 use crate::cli::Env;
+use crate::exec;
 use crate::failure::Failure;
 use crate::helpers::{self, Watchdog};
-use crate::map::{Paths, path};
-use crate::pass::{self, TempDir};
+use crate::map::{self, Paths, path};
+use crate::pass::TempDir;
 use crate::shims;
 use crate::sys;
 use crate::tables::VERSION;
@@ -227,8 +228,8 @@ impl Fetch<'_> {
 // lint: network begin
 /// The download tool on `upath`: curl, else wget, else the name of the one missing.
 fn download_tool(upath: &[u8]) -> Result<Vec<u8>, &'static [u8]> {
-    pass::find(upath, b"curl")
-        .or_else(|| pass::find(upath, b"wget"))
+    exec::find(upath, b"curl")
+        .or_else(|| exec::find(upath, b"wget"))
         .ok_or(b"curl")
 }
 
@@ -298,10 +299,7 @@ pub fn upgrade(
         }
     };
     let me = shims::self_path(env, argv0);
-    let dir = match me.iter().rposition(|&c| c == b'/') {
-        Some(0) | None => b"/".to_vec(),
-        Some(i) => me[..i].to_vec(),
-    };
+    let dir = map::dirname(&me).to_vec();
     let install = |text: &[u8]| Failure::new("upgrade:install", [&me[..], text].concat());
     if std::fs::symlink_metadata(path(&me)).is_ok_and(|m| m.is_symlink()) {
         return Err(install(
@@ -338,10 +336,10 @@ pub fn upgrade(
             [name, b" is not on PATH outside ", &paths.shims].concat(),
         )
     };
-    let tar = pass::find(&upath, b"tar").ok_or_else(|| missing(b"tar"))?;
-    let gzip = pass::find(&upath, b"gzip").ok_or_else(|| missing(b"gzip"))?;
-    let sha = pass::find(&upath, b"sha256sum")
-        .or_else(|| pass::find(&upath, b"shasum"))
+    let tar = exec::find(&upath, b"tar").ok_or_else(|| missing(b"tar"))?;
+    let gzip = exec::find(&upath, b"gzip").ok_or_else(|| missing(b"gzip"))?;
+    let sha = exec::find(&upath, b"sha256sum")
+        .or_else(|| exec::find(&upath, b"shasum"))
         .ok_or_else(|| missing(b"sha256sum"))?;
     let dl = if base.starts_with(b"https://") {
         Some(download_tool(&upath).map_err(missing)?)

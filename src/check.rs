@@ -186,13 +186,11 @@ pub fn rows<'a>(
         if !onpath {
             continue;
         }
-        for dir in path_var.split(|&c| c == b':') {
+        for (dir, f) in exec::path_files(path_var, name) {
             if on_path_dir(dir, shims) {
                 break;
             }
-            let dir = if dir.is_empty() { &b"."[..] } else { dir };
-            let f = [dir, b"/", name].concat();
-            if std::fs::metadata(path(&f)).is_ok_and(|m| m.is_file()) && sys::executable(&f) {
+            if exec::is_executable(&f) {
                 let run = [b"lendk run -- ", &name[..]].concat();
                 let fix = [b"put ", shims, b" first on PATH, or call: ", &run[..]].concat();
                 rows.add(

@@ -129,10 +129,8 @@ fn edit_begin(
 ) -> Result<(Scan, Lock), Ending> {
     map::check_paths(&call.paths.map)?;
     let resolved = map::resolve_links(&call.paths.map);
-    if std::fs::symlink_metadata(map::path(&resolved)).is_err()
-        && let Some(i) = resolved.iter().rposition(|&c| c == b'/')
-    {
-        shims::check_dir(&resolved[..i])?;
+    if std::fs::symlink_metadata(map::path(&resolved)).is_err() {
+        shims::check_dir(map::dirname(&resolved))?;
     }
     shims::check_dir(&call.paths.shims)?;
     scan_valid(call, verb_check)?;

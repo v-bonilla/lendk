@@ -31,17 +31,10 @@ fn usage(text: impl Into<Vec<u8>>) -> Ending {
 
 /// Whether `word` names an executable regular file, as bash's `type -P` finds it.
 fn is_command(env: &Env, word: &[u8]) -> bool {
-    let ok = |p: &[u8]| {
-        std::fs::metadata(map::path(p)).is_ok_and(|m| m.is_file()) && crate::sys::executable(p)
-    };
     if word.contains(&b'/') {
-        return ok(word);
+        return exec::is_executable(word);
     }
-    let path = env.get("PATH").unwrap_or_default();
-    path.split(|&c| c == b':').any(|dir| {
-        let dir = if dir.is_empty() { &b"."[..] } else { dir };
-        ok(&[dir, b"/", word].concat())
-    })
+    exec::find(env.get("PATH").unwrap_or_default(), word).is_some()
 }
 
 /// Checks that every key is in the store, listing each missing one, then reads them all

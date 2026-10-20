@@ -87,6 +87,15 @@ pub fn bad_word(word: &[u8], group: Option<&[u8]>) -> Option<Vec<u8>> {
     denied.then(|| [b"key ", &quoted(word)[..], b" is denied"].concat())
 }
 
+/// The directory part of `file`: `/` for a file at the root, `.` for a bare name.
+pub fn dirname(file: &[u8]) -> &[u8] {
+    match file.iter().rposition(|&c| c == b'/') {
+        Some(0) => b"/",
+        Some(i) => &file[..i],
+        None => b".",
+    }
+}
+
 /// `path` with its symlinks followed, at most 40.
 pub fn resolve_links(path: &[u8]) -> Vec<u8> {
     let mut resolved = path.to_vec();
@@ -109,11 +118,7 @@ pub fn check_paths(map: &[u8]) -> Result<(), Failure> {
     if std::fs::metadata(path(&file)).is_err() {
         return Ok(());
     }
-    let dir = match file.iter().rposition(|&c| c == b'/') {
-        Some(0) => b"/".to_vec(),
-        Some(i) => file[..i].to_vec(),
-        None => b".".to_vec(),
-    };
+    let dir = dirname(&file).to_vec();
     let unsafe_path =
         |p: &[u8], what: &[u8]| Failure::new("unsafe", [p, what].concat()).with("PATH", p.to_vec());
     let mut metas = Vec::new();
@@ -458,11 +463,7 @@ pub fn write(
     use std::io::Write;
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     let file = resolve_links(map);
-    let dir = match file.iter().rposition(|&c| c == b'/') {
-        Some(0) => b"/".to_vec(),
-        Some(i) => file[..i].to_vec(),
-        None => b".".to_vec(),
-    };
+    let dir = dirname(&file).to_vec();
     std::fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
