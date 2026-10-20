@@ -196,7 +196,7 @@ sha256() {
 # fetches it before SHA256SUMS; the binary reads its platform's lendk-PLATFORM.tar.gz and fetches
 # SHA256SUMS first. MARK is the marker each looks for in a new file, MARK_LINE the line carrying it
 # in a fixture script, and RUNNING the version the lendk under test prints.
-if [[ $(head -c 2 "$LENDK") == '#!' ]]; then
+if [[ $(head -c 2 "$LENDK" 2>/dev/null) == '#!' ]]; then
 	PLATFORM='' ASSET=lendk.tar.gz FETCHES=(lendk.tar.gz SHA256SUMS)
 	MARK_LINE=$(sed -n 2p "$ROOT/bin/lendk")
 else
@@ -206,7 +206,7 @@ else
 	MARK_LINE='# lendk binary v1: give API keys to the commands mapped to them.'
 fi
 MARK=${MARK_LINE#\# }
-RUNNING=$("$LENDK" --version)
+RUNNING=$("$LENDK" --version 2>/dev/null)
 RUNNING=${RUNNING#lendk }
 # pack SRC DIR: a release in its archive shape under DIR, from the lendk-X.Y.Z tree in SRC.
 pack() {
