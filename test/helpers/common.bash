@@ -12,6 +12,8 @@ export -n LENDK
 # - port:retire: the test pins bash or bin/lendk's source text, and the port drops it.
 # - port:rework: the test pins a property the port keeps through another mechanism, and the
 #   port rewrites it.
+# - port:unit: the test calls lendk-fn, since no verb reaches its behavior, and the port turns it
+#   into a unit test.
 FIXTURES=$ROOT/test/fixtures
 CLASSES='usage|guarded|unsupported|locked|canceled|timeout|map|unmapped|missing-key|decrypt|unsafe|write|upgrade|exec|not-found|lendk-missing'
 FORBIDDEN='lendk add|lendk rm|lendk run [A-Z@]|lendk upgrade|pass |printenv|env -0|export -p|npm|cargo|pip install|brew'
