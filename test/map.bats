@@ -76,7 +76,7 @@ injected() {
 	map 'stub K2 @g K1 # @late' '@g K1 K2 K3'
 	unset K1 K2
 	local k
-	for k in K1 K2 K3; do printf 'value-%s\n' "$k" >"$SB/store/env/$k.gpg"; done
+	for k in K1 K2 K3; do store_entry "$k" "value-$k"; done
 	run_lendk run -- stub
 	assert_eq "$status" 0
 	assert_eq "$(injected)" "K2 K1 K3"

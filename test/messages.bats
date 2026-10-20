@@ -48,7 +48,7 @@ map() {
 	LENDK_PROMPT=never run_lendk run -- stub
 	assert_eq "$stderr" "lendk: locked: env/K needs the gpg passphrase and this call cannot prompt. Ask the user to run 'lendk unlock K' in a terminal, then retry."
 	rm "$SB/store/env/K.mode"
-	echo value >"$SB/store/env/K.gpg"
+	store_entry K value
 	LENDK_PROMPT=never LENDK_SHIMS=$SB/s run_lendk run -- nothere
 	assert_eq "$stderr" "lendk: not-found: nothere is not on PATH outside $SB/s. Install nothere, or ask the user."
 	LENDK_PROMPT=never run_lendk run -- other
@@ -65,7 +65,7 @@ map() {
 	LENDK_PROMPT=allow LENDK_PREFIX=api run_lendk run -- stub
 	assert_eq "$stderr" "lendk: missing-key: api/K is not in the store. Add it: pass insert api/K"
 	assert_class missing-key 125
-	: >"$SB/store/env/K.gpg"
+	store_entry K
 	LENDK_PROMPT=allow run_lendk run -- stub
 	assert_eq "$stderr" "lendk: missing-key: env/K has an empty first line. Set it: pass edit env/K"
 	chmod o+w "$HOME/.config/lendk"

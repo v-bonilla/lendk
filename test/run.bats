@@ -21,7 +21,7 @@ map() {
 run_fake() {
 	local k
 	for k in $(sed 's/#.*//' "$HOME/.config/lendk/map") "$@"; do
-		[[ $k =~ ^[A-Z][A-Z0-9_]*$ ]] && printf 'value-%s\n' "$k" >"$SB/store/env/$k.gpg"
+		[[ $k =~ ^[A-Z][A-Z0-9_]*$ ]] && store_entry "$k" "value-$k"
 	done
 	run_lendk run "$@"
 }
