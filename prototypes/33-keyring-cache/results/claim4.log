@@ -1,0 +1,39 @@
+
+## claim 4 (01:10:39)
+Docker version 29.1.3, build 29.1.3-0ubuntu3~24.04.2
+podman version 4.9.3
+golang-github-containers-common	0.57.4+ds1-2ubuntu0.2
+/usr/share/containers/seccomp.json
+-- docker run 
+keyctl_get_thread_keyring=EPERM
+add_key=EPERM
+keyctl_join_session=EPERM
+seccomp=2
+get=EPERM step=search how=plain
+put=EPERM mode=staged
+-- docker run --security-opt seccomp=unconfined
+keyctl_get_thread_keyring=ok:425940160
+add_key=ok:710613558
+keyctl_join_session=ok:258552530
+seccomp=0
+get=ENOKEY step=search how=plain
+put=ok serial=971142950 mode=staged tag=c4 proc_keys="-"
+-- podman run, rootful
+keyctl_get_thread_keyring=ok:161397351
+add_key=ENOSYS
+keyctl_join_session=ok:566825179
+seccomp=2
+get=EKEYEXPIRED step=search how=plain
+put=ENOSYS mode=staged
+-- podman run, rootless
+keyctl_get_thread_keyring=ok:858860434
+add_key=ENOSYS
+keyctl_join_session=ok:572340859
+seccomp=2
+uid=0 userns=user:[4026532292] seccomp=2
+session=ok:597214671 session_desc=keyring;0;0;3f1b0000;_ses.5b8ebbc04c5060faf0d136c036a4e9891f6f59298414a75c92fce4a770f55507
+user_session=ok:126273345 user=ok:603274019
+session_links_user=no session_is_user_session=false
+user_keyring_members=0
+get=ENOKEY step=search how=plain
+put=ENOSYS mode=staged

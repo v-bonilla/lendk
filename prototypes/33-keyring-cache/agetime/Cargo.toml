@@ -1,0 +1,12 @@
+[package]
+name = "agetime"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "PROTOTYPE for #33, throwaway: times opening an age scrypt identity file"
+
+[dependencies]
+age = { version = "=0.12.1", default-features = false }
+
+[profile.release]
+panic = "abort"

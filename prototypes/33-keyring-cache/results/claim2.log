@@ -1,0 +1,89 @@
+
+## claim 2: put from login A (00:48:52)
+put=ok serial=888354379 mode=staged tag=c2 proc_keys="34f3364b I--Q--- 2 1h 3f000000 1001 1001 user lendk:claim2: 39"
+
+## 2a: a second ssh login, while login C runs alongside
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:202020961 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=yes session_is_user_session=false
+user_keyring_members=2
+get=hit serial=888354379 len=39 tag=c2 how=plain proc_keys="34f3364b I--Q--- 1 59m 3f000000 1001 1001 user lendk:claim2: 39"
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 59m 3f000000 1001 1001 user lendk:claim2: 39"
+
+## 2b: tmux pane, before and after the login that started tmux ends
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:31618387 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=yes session_is_user_session=false
+user_keyring_members=2
+get=hit serial=888354379 len=39 tag=c2 how=plain proc_keys="34f3364b I--Q--- 1 58m 3f000000 1001 1001 user lendk:claim2: 39"
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 58m 3f000000 1001 1001 user lendk:claim2: 39"
+uid=1001 userns=user:[4026531837] seccomp=0
+session=EKEYREVOKED session_desc=EKEYREVOKED
+user_session=ok:305256909 user=ok:777949509
+user_keyring_members=2
+get=EACCES step=read serial=888354379 how=plain
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 57m 3f000000 1001 1001 user lendk:claim2: 39"
+
+## 2c: systemd user service, alice logged in
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:193615767 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=yes session_is_user_session=false
+user_keyring_members=2
+get=hit serial=888354379 len=39 tag=c2 how=plain proc_keys="34f3364b I--Q--- 1 57m 3f000000 1001 1001 user lendk:claim2: 39"
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 57m 3f000000 1001 1001 user lendk:claim2: 39"
+
+## 2d: background job started with setsid from a login that then ends (stand-in for Claude Code's daemon)
+uid=1001 userns=user:[4026531837] seccomp=0
+session=EKEYREVOKED session_desc=EKEYREVOKED
+user_session=ok:305256909 user=ok:777949509
+user_keyring_members=2
+get=EACCES step=read serial=888354379 how=plain
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 56m 3f000000 1001 1001 user lendk:claim2: 39"
+
+## 2e: cron job
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:97209739 session_desc=keyring;0;0;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=no session_is_user_session=false
+user_keyring_members=2
+get=EACCES step=read serial=888354379 how=plain
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 52m 3f000000 1001 1001 user lendk:claim2: 39"
+
+## 2f: sudo -u alice from ops's login
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:571602541 session_desc=keyring;1000;1000;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=no session_is_user_session=false
+user_keyring_members=2
+get=EACCES step=read serial=888354379 how=plain
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 52m 3f000000 1001 1001 user lendk:claim2: 39"
+-- sudo -iu alice:
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:571602541 session_desc=keyring;1000;1000;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=no session_is_user_session=false
+user_keyring_members=2
+get=EACCES step=read serial=888354379 how=plain
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 52m 3f000000 1001 1001 user lendk:claim2: 39"
+
+## 2g: bubblewrap with a user namespace, as Claude Code's Linux sandbox runs commands
+bwrap: setting up uid map: Permission denied
+
+## 2h: Claude Code's sandbox runtime (srt), if installed
+0.0.80
+bwrap: loopback: Failed RTM_NEWADDR: Operation not permitted
+
+## 2i: systemd user service after logout, with lingering on
+Running timer as unit: proto33-late.timer
+Will run service as unit: proto33-late.service
+01:02:34 alice sessions: 0; processes: 15140 systemd 15141 (sd-pam) 
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:840311000 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=yes session_is_user_session=false
+user_keyring_members=2
+get=hit serial=888354379 len=39 tag=c2 how=plain proc_keys="34f3364b I--Q--- 1 46m 3f000000 1001 1001 user lendk:claim2: 39"
+get=hit serial=888354379 len=39 tag=c2 how=possess proc_keys="34f3364b I--Q--- 1 46m 3f000000 1001 1001 user lendk:claim2: 39"

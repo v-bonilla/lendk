@@ -1,0 +1,37 @@
+
+## claim 3 (01:50:43): gc_delay=300
+put=ok serial=863677946 mode=staged tag=c3 proc_keys="337aadfa I--Q--- 1 2m 3f000000 1001 1001 user lendk:claim3: 39"
+put=ok serial=207586819 mode=direct tag=d proc_keys="0c5f8603 I--Q--- 1 15m 3f000000 1001 1001 user lendk:claim3d: 38"
+
+## a fresh login reads both
+get=hit serial=863677946 len=39 tag=c3 how=plain proc_keys="337aadfa I--Q--- 1 1m 3f000000 1001 1001 user lendk:claim3: 39"
+get=hit serial=207586819 len=38 tag=d how=plain proc_keys="0c5f8603 I--Q--- 1 14m 3f000000 1001 1001 user lendk:claim3d: 38"
+
+## a fresh process outside the login's session keyring (an anonymous one, as a container or service has)
+join-session=ok serial=982725009 desc=keyring;1001;1001;3f030000;_ses
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:982725009 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=no session_is_user_session=false
+user_keyring_members=3
+join-session=ok serial=759399010 desc=keyring;1001;1001;3f030000;_ses
+get=EACCES step=read serial=863677946 how=plain
+join-session=ok serial=541184316 desc=keyring;1001;1001;3f030000;_ses
+get=hit serial=863677946 len=39 tag=c3 how=possess proc_keys="337aadfa I--Q--- 1 1m 3f000000 1001 1001 user lendk:claim3: 39"
+
+## replacing the key displaces it in one step
+put=ok serial=55052247 mode=staged tag=d2 proc_keys="034807d7 I--Q--- 1 15m 3f000000 1001 1001 user lendk:claim3d: 39"
+get=hit serial=55052247 len=39 tag=d2 how=plain proc_keys="034807d7 I--Q--- 1 14m 3f000000 1001 1001 user lendk:claim3d: 39"
+
+## lock, from inside and outside the login's session keyring
+join-session=ok serial=289786314 desc=keyring;1001;1001;3f030000;_ses
+lock=ok removed=0 undescribable=3 how=plain
+join-session=ok serial=825588296 desc=keyring;1001;1001;3f030000;_ses
+lock=ok removed=1 undescribable=1 how=possess
+get=ENOKEY step=search how=plain
+
+## expiry and garbage collection: a fresh keyprobe process every 2 s, inside one login
+put=ok serial=665153242 mode=staged tag=e
+t+0s get=hit
+t+29s get=EKEYEXPIRED step=search
+t+352s get=ENOKEY step=search

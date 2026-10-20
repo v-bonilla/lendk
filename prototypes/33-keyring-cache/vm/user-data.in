@@ -1,0 +1,18 @@
+#cloud-config
+# PROTOTYPE for #33, throwaway: a VM whose kernel keyrings belong to nobody.
+hostname: kr33
+users:
+  - name: ops
+    shell: /bin/bash
+    sudo: "ALL=(ALL) NOPASSWD:ALL"
+    lock_passwd: true
+    ssh_authorized_keys: [@PUBKEY@]
+  - name: alice
+    shell: /bin/bash
+    lock_passwd: true
+    ssh_authorized_keys: [@PUBKEY@]
+package_update: true
+packages: [keyutils, tmux, strace, cron, bubblewrap, age, docker.io, podman, uidmap, nodejs, npm]
+runcmd:
+  - [usermod, -aG, docker, alice]
+  - [touch, /var/lib/cloud/instance/proto33-ready]

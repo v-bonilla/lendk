@@ -1,0 +1,73 @@
+
+## claim 5 (02:00:10)
+
+## 5a: in a plain login, the guard refuses
+guard=refuse: the session keyring links @u, as a login's does
+
+## 5b: perl-join (no keyutils binary used) around the simulated suite, in the VM
+user_keyring_members=0
+-- run start
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:352380986 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=no session_is_user_session=false
+user_keyring_members=0
+guard=ok
+-- test 1: unlock, then a second call
+put=ok serial=466180887 mode=staged tag=t1 proc_keys="1bc95b17 I--Q--- 1 1m 3f000000 1001 1001 user lendk:suite: 39"
+get=hit serial=466180887 len=39 tag=t1 how=plain proc_keys="1bc95b17 I--Q--- 1 1m 3f000000 1001 1001 user lendk:suite: 39"
+-- test 2: starts cold, unlocks, locks
+get=ENOKEY step=search how=plain
+put=ok serial=943131266 mode=staged tag=t2 proc_keys="38370a82 I--Q--- 1 1m 3f000000 1001 1001 user lendk:suite: 39"
+get=hit serial=943131266 len=39 tag=t2 how=plain proc_keys="38370a82 I--Q--- 1 1m 3f000000 1001 1001 user lendk:suite: 39"
+lock=ok removed=1 undescribable=0 how=plain
+get=ENOKEY step=search how=plain
+-- test 1's keyring after test 2's lock
+get=hit serial=466180887 len=39 tag=t1 how=plain proc_keys="1bc95b17 I--Q--- 1 59s 3f000000 1001 1001 user lendk:suite: 39"
+-- run end
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:352380986 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=no session_is_user_session=false
+user_keyring_members=0
+user_keyring_members=0
+
+## 5c: the lendk-test:ubuntu image, as make check-docker runs it (-u 1000:1000)
+no keyctl
+/usr/bin/perl
+-- docker run 
+uid=1000 userns=user:[4026531837] seccomp=2
+session=EPERM session_desc=EPERM
+user_session=EPERM user=EPERM
+user_keyring_members=EPERM
+perl-join: Operation not permitted
+-- docker run --security-opt seccomp=/tmp/proto33/profile.json
+uid=1000 userns=user:[4026531837] seccomp=2
+session=ok:188470278 session_desc=keyring;0;0;3f1b0000;_ses.0f608bc0c845f61807bf9548ae5eafc642d2d2978dd0c8906e383745957a24a4
+user_session=ok:357593510 user=ok:933239082
+session_links_user=no session_is_user_session=false
+user_keyring_members=0
+-- run start
+uid=1000 userns=user:[4026531837] seccomp=2
+session=ok:96626105 session_desc=keyring;1000;1000;3f030000;_ses
+user_session=ok:357593510 user=ok:933239082
+session_links_user=no session_is_user_session=false
+user_keyring_members=0
+guard=ok
+-- test 1: unlock, then a second call
+put=ok serial=790846575 mode=staged tag=t1 proc_keys="-"
+get=hit serial=790846575 len=39 tag=t1 how=plain proc_keys="-"
+-- test 2: starts cold, unlocks, locks
+get=ENOKEY step=search how=plain
+put=ok serial=511688325 mode=staged tag=t2 proc_keys="-"
+get=hit serial=511688325 len=39 tag=t2 how=plain proc_keys="-"
+lock=ok removed=1 undescribable=0 how=plain
+get=ENOKEY step=search how=plain
+-- test 1's keyring after test 2's lock
+get=hit serial=790846575 len=39 tag=t1 how=plain proc_keys="-"
+-- run end
+uid=1000 userns=user:[4026531837] seccomp=2
+session=ok:96626105 session_desc=keyring;1000;1000;3f030000;_ses
+user_session=ok:357593510 user=ok:933239082
+session_links_user=no session_is_user_session=false
+user_keyring_members=0

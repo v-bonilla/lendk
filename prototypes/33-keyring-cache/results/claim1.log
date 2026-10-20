@@ -1,0 +1,35 @@
+
+## claim 1: @u outlives alice's last process (00:36:54)
+kernel 6.8.0-147-generic
+Failed to get user: User ID 1001 is not logged in or lingering
+/etc/pam.d/login:session    optional   pam_keyinit.so force revoke
+/etc/pam.d/runuser:session		optional	pam_keyinit.so revoke
+/etc/pam.d/runuser-l:session		optional	pam_keyinit.so force revoke
+/etc/pam.d/sshd:session    optional     pam_keyinit.so force revoke
+/etc/pam.d/su-l:session		optional	pam_keyinit.so force revoke
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:524741908 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=yes session_is_user_session=false
+user_keyring_members=0
+put=ok serial=929551362 mode=staged tag=c1 proc_keys="3767d402 I--Q--- 2 1h 3f000000 1001 1001 user lendk:claim1: 39"
+00:38:13 alice processes: 0
+key-users (uid: usage nkeys/nikeys ...):
+    0:    67 66/66 39/1000000 800/25000000
+  989:     1 1/1 1/200 9/20000
+  991:     1 1/1 1/200 9/20000
+  996:     1 1/1 1/200 9/20000
+  998:     1 1/1 1/200 9/20000
+ 1000:     5 5/5 5/200 55/20000
+ 1001:     3 3/3 3/200 84/20000
+00:39:50 alice processes: 0
+key-users (uid: usage nkeys/nikeys ...):
+    0:    67 66/66 39/1000000 800/25000000
+  989:     1 1/1 1/200 9/20000
+  991:     1 1/1 1/200 9/20000
+  996:     1 1/1 1/200 9/20000
+  998:     1 1/1 1/200 9/20000
+ 1000:     5 5/5 5/200 55/20000
+ 1001:     3 3/3 3/200 84/20000
+00:40:19 new login:
+get=hit serial=929551362 len=39 tag=c1 how=plain proc_keys="3767d402 I--Q--- 1 57m 3f000000 1001 1001 user lendk:claim1: 39"

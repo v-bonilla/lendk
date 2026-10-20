@@ -1,0 +1,17 @@
+## 2j: 2g and 2h again, with kernel.apparmor_restrict_unprivileged_userns=0 (Ubuntu's default is 1)
+-- bwrap --unshare-user
+uid=1001 userns=user:[4026532292] seccomp=0
+session=ok:849210723 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:1064440108 user=ok:346975487
+session_links_user=no session_is_user_session=false
+user_keyring_members=0
+get=ENOKEY step=search how=plain
+get=ENOKEY step=search how=possess
+-- srt 0.0.80
+uid=1001 userns=user:[4026532354] seccomp=2
+session=ok:849210723 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:40078057 user=ok:17267497
+session_links_user=no session_is_user_session=false
+user_keyring_members=0
+get=ENOKEY step=search how=plain
+get=ENOKEY step=search how=possess

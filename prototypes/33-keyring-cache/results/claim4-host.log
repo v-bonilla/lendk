@@ -1,0 +1,6 @@
+## claim 4 on the development host: Docker 29.9.1's default profile, as an unused UID
+## docker run --rm --network none --user 4242 -v keyprobe:/kp:ro ubuntu:24.04 /kp syscalls
+keyctl_get_thread_keyring=EPERM
+add_key=EPERM
+keyctl_join_session=EPERM
+seccomp=2

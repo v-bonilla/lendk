@@ -1,0 +1,25 @@
+## claim 6 on the development host (AMD EPYC-Genoa, a QEMU guest; 2026-10-19), claims/claim6-host.sh
+write=ok log_n=18 ms=776
+write=ok log_n=22 ms=12468
+write=ok log_n=23 ms=25628
+open=ok identity=yes file_log_n=18 max=22 ms=803 calibrate_ms=3
+open=ok identity=yes file_log_n=18 max=22 ms=802 calibrate_ms=3
+open=ok identity=yes file_log_n=18 max=22 ms=782 calibrate_ms=3
+open=ok identity=yes file_log_n=18 max=default ms=773 calibrate_ms=3
+open=ok identity=yes file_log_n=22 max=22 ms=12613 calibrate_ms=4
+open=err file_log_n=23 max=22 ms=3 error="Excessive work parameter for passphrase.
+Decryption would take around ⁨16⁩ seconds."
+cpus=0.5
+open=ok identity=yes file_log_n=18 max=22 ms=1585 calibrate_ms=4
+open=ok identity=yes file_log_n=18 max=default ms=1711 calibrate_ms=3
+cpus=0.25
+open=ok identity=yes file_log_n=18 max=22 ms=3526 calibrate_ms=4
+open=ok identity=yes file_log_n=18 max=default ms=3401 calibrate_ms=3
+cpus=0.1
+open=ok identity=yes file_log_n=18 max=22 ms=8709 calibrate_ms=3
+open=ok identity=yes file_log_n=18 max=default ms=8393 calibrate_ms=88
+memory 512 MiB, the 2^18 file
+open=ok identity=yes file_log_n=18 max=22 ms=791 calibrate_ms=6
+memory 2 GiB, the 2^22 file
+Killed
+exit=137

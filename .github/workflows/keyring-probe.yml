@@ -1,0 +1,38 @@
+name: keyring-probe
+
+# PROTOTYPE for #33, throwaway: whether the hosted runner allows the keyring calls the 2.0 suite's
+# LENDK_TEST_CACHE hook needs, on the runner itself and in a container. Runs only on this branch.
+on:
+  push:
+    branches: [prototype/keyring-cache]
+
+permissions:
+  contents: read
+
+jobs:
+  keyring:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: build keyprobe
+        working-directory: prototypes/33-keyring-cache/keyprobe
+        run: |
+          RUSTFLAGS='-C target-feature=+crt-static' cargo build --release --target x86_64-unknown-linux-gnu
+          sudo install target/x86_64-unknown-linux-gnu/release/keyprobe /usr/local/bin/keyprobe
+      - name: the runner's own keyrings
+        run: |
+          uname -r
+          command -v keyctl || echo "no keyctl"
+          keyprobe ctx
+          keyprobe guard
+          keyprobe syscalls
+      - name: the simulated suite under perl-join
+        run: sh prototypes/33-keyring-cache/claims/perl-join.sh sh prototypes/33-keyring-cache/claims/suite-sim.sh
+      - name: a container, with the default seccomp profile and with the keyring profile
+        run: |
+          docker --version
+          docker run --rm -u 1000:1000 -v /usr/local/bin/keyprobe:/kp:ro ubuntu:24.04 /kp syscalls
+          sh prototypes/33-keyring-cache/claims/seccomp-profile.sh >"$RUNNER_TEMP/profile.json"
+          docker run --rm -u 1000:1000 -e KP=/kp --security-opt "seccomp=$RUNNER_TEMP/profile.json" \
+            -v /usr/local/bin/keyprobe:/kp:ro -v "$PWD/prototypes/33-keyring-cache/claims:/p:ro" ubuntu:24.04 \
+            sh -c '/kp ctx; /kp guard; sh /p/perl-join.sh sh /p/suite-sim.sh'

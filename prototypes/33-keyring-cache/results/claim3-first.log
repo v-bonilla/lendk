@@ -1,0 +1,35 @@
+
+## claim 3 (01:07:52): gc_delay=300
+put=ok serial=1007986847 mode=staged tag=c3 proc_keys="3c14a89f I--Q--- 2 30s 3f000000 1001 1001 user lendk:claim3: 39"
+put=ok serial=671167826 mode=direct tag=d proc_keys="28013552 I--Q--- 1 10m 3f000000 1001 1001 user lendk:claim3d: 38"
+
+## a fresh login reads both
+get=hit serial=1007986847 len=39 tag=c3 how=plain proc_keys="3c14a89f I--Q--- 1 2s 3f000000 1001 1001 user lendk:claim3: 39"
+get=hit serial=671167826 len=38 tag=d how=plain proc_keys="28013552 I--Q--- 1 9m 3f000000 1001 1001 user lendk:claim3d: 38"
+
+## a fresh process outside the login's session keyring (an anonymous one, as a container or service has)
+join-session=ok serial=119146595 desc=keyring;1001;1001;3f030000;_ses
+uid=1001 userns=user:[4026531837] seccomp=0
+session=ok:119146595 session_desc=keyring;1001;1001;3f030000;_ses
+user_session=ok:305256909 user=ok:777949509
+session_links_user=no session_is_user_session=false
+user_keyring_members=4
+join-session=ok serial=735614929 desc=keyring;1001;1001;3f030000;_ses
+get=EKEYEXPIRED step=search how=plain
+join-session=ok serial=941869869 desc=keyring;1001;1001;3f030000;_ses
+get=EKEYEXPIRED step=search how=possess
+
+## replacing the key displaces it in one step
+put=ok serial=246940901 mode=staged tag=d2 proc_keys="0eb804e5 I--Q--- 1 10m 3f000000 1001 1001 user lendk:claim3d: 39"
+get=hit serial=246940901 len=39 tag=d2 how=plain proc_keys="0eb804e5 I--Q--- 1 10m 3f000000 1001 1001 user lendk:claim3d: 39"
+
+## lock, from inside and outside the login's session keyring
+join-session=ok serial=536063182 desc=keyring;1001;1001;3f030000;_ses
+lock=ok removed=0 undescribable=4 how=plain
+join-session=ok serial=973797957 desc=keyring;1001;1001;3f030000;_ses
+lock=ok removed=1 undescribable=1 how=possess
+get=ENOKEY step=search how=plain
+
+## expiry and garbage collection, polled from fresh logins
+01:11:26 get=EKEYEXPIRED step=search how=plain get=EKEYEXPIRED step=search how=possess 
+01:15:47 get=ENOKEY step=search how=plain get=ENOKEY step=search how=possess 

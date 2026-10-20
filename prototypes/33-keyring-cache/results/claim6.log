@@ -1,0 +1,13 @@
+
+## claim 6 (02:07:11)
+age 1.1.1
+write=ok log_n=18 ms=18719
+open=ok identity=yes file_log_n=18 max=22 ms=18985 calibrate_ms=111
+open=ok identity=yes file_log_n=18 max=22 ms=19563 calibrate_ms=96
+open=err file_log_n=18 max=default ms=159 error="Excessive work parameter for passphrase.
+Decryption would take around ⁨32⁩ seconds."
+-- Go age opens the crate file:
+go-age-decrypt=ok
+-- Go age writes with age -p:
+-> scrypt 18
+open=ok identity=no file_log_n=18 max=22 ms=18066 calibrate_ms=80

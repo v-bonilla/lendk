@@ -1,0 +1,12 @@
+[package]
+name = "keyprobe"
+version = "0.0.0"
+edition = "2021"
+publish = false
+description = "PROTOTYPE for #33, throwaway: probes the kernel keyring as lendk 2.0's identity cache would use it"
+
+[dependencies]
+libc = "0.2"
+
+[profile.release]
+panic = "abort"
