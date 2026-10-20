@@ -1,5 +1,6 @@
 //! The command line: `--help`, `--version`, and usage for anything else until a verb is ported.
 
+use crate::edit;
 use crate::failure::Failure;
 use crate::map::Paths;
 use crate::run;
@@ -74,6 +75,36 @@ pub fn main(args: &[&'static CStr], env: &[&'static CStr]) -> i32 {
         return ending.last.report(interactive, &paths.prefix);
     }
     let words: Vec<&[u8]> = words.iter().map(|w| w.to_bytes()).collect();
+    let verb: Option<edit::Verb> = match words.first().copied() {
+        Some(b"sync") => Some(edit::sync),
+        Some(b"add") => Some(edit::add),
+        Some(b"rm") => Some(edit::rm),
+        _ => None,
+    };
+    if let Some(verb) = verb {
+        if let Err(failure) = check_env(&env) {
+            return failure.report(interactive, b"env");
+        }
+        let paths = Paths::new(&env);
+        let call = edit::Call {
+            env: &env,
+            paths: &paths,
+            interactive,
+            argv0: args.first().map_or(&b""[..], |a| a.to_bytes()),
+        };
+        return match verb(&call, &words[1..]) {
+            Ok((out, code)) => {
+                let _ = std::io::stdout().write_all(&out);
+                code
+            }
+            Err(ending) => {
+                for line in &ending.before {
+                    line.report(interactive, &paths.prefix);
+                }
+                ending.last.report(interactive, &paths.prefix)
+            }
+        };
+    }
     match dispatch(&words, &env) {
         Ok(out) => {
             let mut stdout = std::io::stdout().lock();

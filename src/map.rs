@@ -286,6 +286,230 @@ pub fn expand_keys(map: &[u8], cmd: &[u8], words: &[&[u8]]) -> Result<Vec<Vec<u8
     Ok(keys)
 }
 
+/// The whole map, read without failing: the valid commands and groups in line order, each one's
+/// line, words and expanded keys, and every violation.
+#[derive(Default)]
+pub struct Scan {
+    pub cmds: Vec<Vec<u8>>,
+    pub groups: Vec<Vec<u8>>,
+    /// Each valid name's 1-based line, words and keys.
+    pub entries: Vec<Entry>,
+    /// Each violation as its line (0 for the whole file), the row it belongs to, and its text,
+    /// in line order.
+    pub bad: Vec<(usize, Vec<u8>, Vec<u8>)>,
+    /// The lines as read, without their newlines.
+    pub raw: Vec<Vec<u8>>,
+}
+
+pub struct Entry {
+    pub name: Vec<u8>,
+    pub line: usize,
+    pub words: Vec<Vec<u8>>,
+    pub keys: Vec<Vec<u8>>,
+}
+
+impl Scan {
+    pub fn get(&self, name: &[u8]) -> Option<&Entry> {
+        self.entries.iter().find(|e| e.name == name)
+    }
+
+    /// One `map` failure per violation.
+    pub fn failures(&self, map: &[u8]) -> Vec<Failure> {
+        self.bad
+            .iter()
+            .map(|(n, _, text)| at(map, *n, text))
+            .collect()
+    }
+}
+
+/// Whether `name` is a valid command name.
+pub fn valid_cmd(name: &[u8]) -> bool {
+    name.first()
+        .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'+')
+        && name
+            .iter()
+            .all(|c| c.is_ascii_alphanumeric() || b"._+-".contains(c))
+}
+
+/// Reads the whole map at `map`; a missing map is empty.
+pub fn scan(map: &[u8]) -> Scan {
+    let mut s = Scan::default();
+    if std::fs::metadata(path(map)).is_ok() {
+        let Ok(text) = std::fs::read(path(map)) else {
+            s.bad.push((0, Vec::new(), b"cannot be read".to_vec()));
+            return s;
+        };
+        s.raw = text.split(|&c| c == b'\n').map(<[u8]>::to_vec).collect();
+        if text.is_empty() || text.ends_with(b"\n") {
+            s.raw.pop();
+        }
+    }
+    for (i, raw) in s.raw.iter().enumerate() {
+        let n = i + 1;
+        let f = fields(raw);
+        let Some((&name, words)) = f.split_first() else {
+            continue;
+        };
+        let mut bad = |row: &[u8], text: Vec<u8>| s.bad.push((n, row.to_vec(), text));
+        if let Some(group) = name.strip_prefix(b"@") {
+            if let Some(problem) = bad_word(name, None) {
+                bad(b"", problem);
+                continue;
+            }
+            if s.groups.iter().any(|g| g == name) {
+                bad(name, [b"group ", name, b" is defined twice"].concat());
+                continue;
+            }
+            s.groups.push(name.to_vec());
+            if words.is_empty() {
+                bad(name, [b"group ", name, b" holds no keys"].concat());
+            }
+            for w in words {
+                if let Some(problem) = bad_word(w, Some(group)) {
+                    bad(name, problem);
+                }
+            }
+        } else {
+            if !valid_cmd(name) {
+                bad(b"", [b"'", name, b"' is not a valid command name"].concat());
+                continue;
+            }
+            if RESERVED_CMDS.iter().any(|r| r.as_bytes() == name) {
+                let text = [name, b" is lendk's own runtime and cannot be mapped"].concat();
+                bad(b"", text);
+                continue;
+            }
+            if s.cmds.iter().any(|c| c == name) {
+                bad(name, [name, b" is mapped twice"].concat());
+                continue;
+            }
+            s.cmds.push(name.to_vec());
+            if words.is_empty() {
+                bad(name, [name, b" maps no keys"].concat());
+            }
+            for w in words {
+                if let Some(problem) = bad_word(w, None) {
+                    bad(name, problem);
+                }
+            }
+        }
+        s.entries.push(Entry {
+            name: name.to_vec(),
+            line: n,
+            words: words.iter().map(|w| w.to_vec()).collect(),
+            keys: Vec::new(),
+        });
+    }
+    let mut keys_of = Vec::new();
+    for e in &s.entries {
+        let is_group = e.name.starts_with(b"@");
+        let mut keys: Vec<Vec<u8>> = Vec::new();
+        let mut seen: Vec<&[u8]> = Vec::new();
+        for w in &e.words {
+            let group_keys: Vec<&[u8]> = if w.starts_with(b"@") {
+                if is_group {
+                    continue;
+                }
+                let Some(g) = s.entries.iter().find(|g| g.name == *w) else {
+                    s.bad.push((
+                        e.line,
+                        e.name.clone(),
+                        [b"group ", &w[..], b" is not defined"].concat(),
+                    ));
+                    continue;
+                };
+                g.words
+                    .iter()
+                    .filter(|k| bad_word(k, Some(b"x")).is_none())
+                    .map(Vec::as_slice)
+                    .collect()
+            } else {
+                if bad_word(w, None).is_some() {
+                    continue;
+                }
+                vec![w.as_slice()]
+            };
+            for k in group_keys {
+                if !seen.contains(&k) {
+                    seen.push(k);
+                    keys.push(k.to_vec());
+                }
+            }
+        }
+        keys_of.push(keys);
+    }
+    for (e, keys) in s.entries.iter_mut().zip(keys_of) {
+        e.keys = keys;
+    }
+    s.bad.sort_by_key(|b| b.0);
+    s
+}
+
+/// Writes the map with line `n` replaced by `text`, deleted without `text`, or `text` appended
+/// when `n` is 0. The new map is a private file beside the map, after following a symlink,
+/// renamed over it; `temp` names it while it exists.
+pub fn write(
+    map: &[u8],
+    raw: &[Vec<u8>],
+    n: usize,
+    text: Option<&[u8]>,
+    temp: &mut Option<Vec<u8>>,
+) -> Result<(), Failure> {
+    use std::io::Write;
+    use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
+    let file = resolve_links(map);
+    let dir = match file.iter().rposition(|&c| c == b'/') {
+        Some(0) => b"/".to_vec(),
+        Some(i) => file[..i].to_vec(),
+        None => b".".to_vec(),
+    };
+    std::fs::DirBuilder::new()
+        .recursive(true)
+        .mode(0o700)
+        .create(path(&dir))
+        .map_err(|_| {
+            Failure::new("write", [&dir[..], b": cannot be created"].concat())
+                .with("PATH", &dir[..])
+        })?;
+    let mut out = Vec::new();
+    for (i, line) in raw.iter().enumerate() {
+        if i + 1 != n {
+            out.extend_from_slice(line);
+            out.push(b'\n');
+        } else if let Some(text) = text {
+            out.extend_from_slice(text);
+            out.push(b'\n');
+        }
+    }
+    if n == 0 {
+        out.extend_from_slice(text.unwrap_or_default());
+        out.push(b'\n');
+    }
+    let tmp = [
+        &dir[..],
+        format!("/.lendk-map.{}", std::process::id()).as_bytes(),
+    ]
+    .concat();
+    *temp = Some(tmp.clone());
+    let written = std::fs::OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .mode(0o600)
+        .open(path(&tmp))
+        .and_then(|mut f| f.write_all(&out))
+        .and_then(|()| std::fs::rename(path(&tmp), path(&file)));
+    if written.is_err() {
+        let _ = std::fs::remove_file(path(&tmp));
+        *temp = None;
+        return Err(
+            Failure::new("write", [&file[..], b": cannot be written"].concat()).with("PATH", file),
+        );
+    }
+    *temp = None;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -341,6 +565,49 @@ mod tests {
                 String::from_utf8_lossy(&map)
             )
         );
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn scan_reports_every_violation_in_line_then_word_order_and_keeps_valid_entries() {
+        let (dir, map) = map_file("stub PATH 9x @nope HOME\n'x\nbad! K\n@g K1\n@g K2\nok K1 @g\n");
+        let scan = scan(&map);
+        let texts: Vec<(usize, String)> = scan
+            .bad
+            .iter()
+            .map(|(n, _, t)| (*n, String::from_utf8(t.clone()).unwrap()))
+            .collect();
+        let want = [
+            (1, "key 'PATH' is denied"),
+            (1, "'9x' is not a valid key name"),
+            (1, "key 'HOME' is denied"),
+            (1, "group @nope is not defined"),
+            (2, "''x' is not a valid command name"),
+            (3, "'bad!' is not a valid command name"),
+            (5, "group @g is defined twice"),
+        ];
+        let want: Vec<(usize, String)> = want.iter().map(|(n, t)| (*n, t.to_string())).collect();
+        assert_eq!(texts, want);
+        assert_eq!(scan.cmds, [b"stub".to_vec(), b"ok".to_vec()]);
+        assert_eq!(scan.get(b"ok").unwrap().keys, [b"K1".to_vec()]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn a_write_changes_only_its_line_and_leaves_a_private_map() {
+        let (dir, map) = map_file("a K\r\n# c\nb K # n\n");
+        let raw = scan(&map).raw;
+        let mut temp = None;
+        write(&map, &raw, 3, Some(b"b K J # n"), &mut temp).unwrap();
+        assert_eq!(
+            std::fs::read(path(&map)).unwrap(),
+            b"a K\r\n# c\nb K J # n\n"
+        );
+        assert_eq!(std::fs::metadata(path(&map)).unwrap().mode() & 0o777, 0o600);
+        write(&map, &raw, 1, None, &mut temp).unwrap();
+        assert_eq!(std::fs::read(path(&map)).unwrap(), b"# c\nb K # n\n");
+        assert_eq!(temp, None);
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
         std::fs::remove_dir_all(dir).unwrap();
     }
 }

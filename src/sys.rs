@@ -338,3 +338,49 @@ pub fn same_file(a: &[u8], b: &[u8]) -> bool {
         _ => false,
     }
 }
+
+/// The path lendk was started by, as exec was handed it: symlinks unresolved, relative when
+/// the caller gave a relative path. None when the kernel does not say.
+pub fn exec_path() -> Option<Vec<u8>> {
+    // SAFETY: getauxval only reads the auxiliary vector the kernel handed the process.
+    let at = unsafe { libc::getauxval(libc::AT_EXECFN) };
+    if at == 0 {
+        return None;
+    }
+    // SAFETY: AT_EXECFN points to the NUL-terminated file name exec was given, which lives on
+    // the process's initial stack for its whole life and is never written.
+    let name = unsafe { CStr::from_ptr(at as *const c_char) };
+    Some(name.to_bytes().to_vec())
+}
+
+/// Whether process `pid` exists and may be signaled, as bash's `kill -0` finds it.
+pub fn alive(pid: &[u8]) -> bool {
+    let Some(pid) = std::str::from_utf8(pid)
+        .ok()
+        .and_then(|p| p.parse::<i32>().ok())
+    else {
+        return false;
+    };
+    // SAFETY: kill with signal 0 sends nothing; it only checks the process.
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
+/// Blocks HUP, INT and TERM, or unblocks them, so a write under the lock finishes and releases
+/// it before such a signal ends the call.
+pub fn hold_signals(block: bool) {
+    // SAFETY: set is a local signal set that sigemptyset initializes before use, and
+    // sigprocmask only reads it.
+    unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        for sig in [libc::SIGHUP, libc::SIGINT, libc::SIGTERM] {
+            libc::sigaddset(&mut set, sig);
+        }
+        let how = if block {
+            libc::SIG_BLOCK
+        } else {
+            libc::SIG_UNBLOCK
+        };
+        libc::sigprocmask(how, &set, std::ptr::null_mut());
+    }
+}
