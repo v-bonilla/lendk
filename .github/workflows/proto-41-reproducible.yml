@@ -1,0 +1,36 @@
+name: proto-41-reproducible
+
+# Ticket #41's native-architecture leg: build each musl target on a runner of
+# its own architecture with prototypes/41-reproducible-musl/build.sh, print
+# the SHA-256 to compare with the local cross builds, and run the realloc
+# probe natively. Runs only on a push of this prototype branch.
+on:
+  push:
+    branches: [prototype/reproducible-musl]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            target: x86_64-unknown-linux-musl
+          - runner: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-musl
+    runs-on: ${{ matrix.runner }}
+    defaults:
+      run:
+        working-directory: prototypes/41-reproducible-musl
+    env:
+      SOURCE_DATE_EPOCH: "1792429677"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - run: rustc -Vv
+      - run: ./build.sh ${{ matrix.target }} out
+      - run: sha256sum out/${{ matrix.target }}/*
+      - run: out/${{ matrix.target }}/probe | tail -1

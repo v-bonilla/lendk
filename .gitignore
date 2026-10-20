@@ -1,3 +1,5 @@
 test/bench/out/
 dist/
 .claude/worktrees/
+prototypes/41-reproducible-musl/target/
+prototypes/41-reproducible-musl/out/

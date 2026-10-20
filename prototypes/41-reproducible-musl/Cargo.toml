@@ -1,0 +1,16 @@
+[package]
+name = "lendk-proto"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[dependencies]
+age = { version = "=0.12.1", default-features = false }
+libc = "0.2"
+zeroize = "1"
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+strip = "debuginfo"
