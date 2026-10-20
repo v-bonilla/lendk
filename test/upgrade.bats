@@ -18,12 +18,13 @@ setup() {
 	load helpers/common
 	sandbox
 	REL=$BATS_LENDK_REL
-	VERSION=$(sed -n 's/^LENDK_VERSION=//p' "$ROOT/bin/lendk")
+	VERSION=$("$LENDK" --version)
+	VERSION=${VERSION#lendk }
 	BIN=$HOME/.local/bin
 	MAP=$HOME/.config/lendk/map
 	SHIMS=$HOME/.local/share/lendk/shims
 	mkdir -p "$BIN" "$HOME/.config/lendk" && chmod 700 "$HOME/.config/lendk"
-	cp "$ROOT/bin/lendk" "$BIN/lendk"
+	cp "$LENDK" "$BIN/lendk"
 	chmod 755 "$BIN/lendk"
 	LENDK=$BIN/lendk
 	NOTICE=
@@ -240,7 +241,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	rm "$SB/bin/curl"
 	export LENDK_INSTALL_BASE_URL=https://releases.test/new
 	for mode in https bighelp plain; do
-		cp "$ROOT/bin/lendk" "$LENDK"
+		cp "$UNDER_TEST" "$LENDK"
 		rm -rf "$SB/log"/*
 		tool wget "$mode"
 		opt=
@@ -354,6 +355,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	done
 }
 
+# bats test_tags=port:retire
 @test "a lendk that does not run under this bash changes nothing" {
 	mkdir -p "$SB/a/lendk-99.0.0/bin"
 	printf '#!/usr/bin/env bash\n%s\nexit 125\n' "$(sed -n 2p "$LENDK")" >"$SB/a/lendk-99.0.0/bin/lendk"
@@ -363,6 +365,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	nothing "the downloaded lendk does not run under bash $(bash -c 'printf %s "${BASH_VERSION%%[!0-9.]*}"')"
 }
 
+# bats test_tags=port:retire
 @test "a candidate that exits non-zero, or prints anything but lendk X.Y.Z, changes nothing" {
 	local body n=0 v
 	v=$(bash -c 'printf %s "${BASH_VERSION%%[!0-9.]*}"')
@@ -458,7 +461,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	local how lines
 	toolbox
 	for how in unset empty; do
-		cp "$ROOT/bin/lendk" "$LENDK"
+		cp "$UNDER_TEST" "$LENDK"
 		rm -rf "$SB/log"/*
 		tool curl
 		unset LENDK_INSTALL_BASE_URL
@@ -528,6 +531,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	assert_eq "$(calls curl)" ""
 }
 
+# bats test_tags=port:retire
 @test "an install whose version is not X.Y.Z is refused before any fetch" {
 	local v
 	web new
@@ -587,7 +591,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 	run_lendk upgrade
 	assert_eq "$status" 0
 	grep -qxF "lendk='$LENDK'" "$SHIMS/stub"
-	cp "$ROOT/bin/lendk" "$LENDK"
+	cp "$UNDER_TEST" "$LENDK"
 	printf 'stub K1\ngh 1BAD\n' >"$MAP"
 	run_lendk upgrade
 	assert_eq "$output" "upgraded lendk $VERSION to 99.0.0 at $LENDK"
@@ -795,6 +799,7 @@ stopped() {
 	done
 }
 
+# bats test_tags=port:retire
 @test "when the watchdog dies, its rescue removes the staged file of a killed lendk" {
 	local i p staged='' inner=''
 	base "$REL/new"

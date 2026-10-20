@@ -18,7 +18,7 @@ fail_line() {
 	run_lendk fail "$@"
 }
 
-# bats test_tags=unit
+# bats test_tags=port:unit
 @test "every class gives one contract line and its exit hint, in both modes" {
 	local row id hint mode
 	while IFS= read -r row; do

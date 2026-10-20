@@ -1,7 +1,19 @@
 # Shared test helpers; every test file loads this and calls sandbox from setup.
 # shellcheck disable=SC2034,SC2016
 ROOT=$(cd "$BATS_TEST_DIRNAME/.." && pwd)
-LENDK=$ROOT/bin/lendk
+# LENDK: the lendk under test, which the environment may name by its absolute path; bin/lendk
+# when unset. UNDER_TEST keeps it for tests that point LENDK at a copy. Neither reaches lendk.
+LENDK=${LENDK:-$ROOT/bin/lendk}
+[[ $LENDK == /* ]] || { echo "LENDK must be an absolute path, not $LENDK"; exit 1; }
+UNDER_TEST=$LENDK
+export -n LENDK
+# Tags for the tests a port of lendk to another language retires or reworks, selected with
+# --filter-tags:
+# - port:retire: the test pins bash or bin/lendk's source text, and the port drops it.
+# - port:rework: the test pins a property the port keeps through another mechanism, and the
+#   port rewrites it.
+# - port:unit: the test calls lendk-fn, since no verb reaches its behavior, and the port turns it
+#   into a unit test.
 FIXTURES=$ROOT/test/fixtures
 CLASSES='usage|guarded|unsupported|locked|canceled|timeout|map|unmapped|missing-key|decrypt|unsafe|write|upgrade|exec|not-found|lendk-missing'
 FORBIDDEN='lendk add|lendk rm|lendk run [A-Z@]|lendk upgrade|pass |printenv|env -0|export -p|npm|cargo|pip install|brew'
@@ -31,8 +43,14 @@ sandbox() {
 run_lendk() {
 	local line
 	# upgrade replaces the file it runs from, so it only ever runs on a copy.
-	[[ ${1-} != upgrade || ! $LENDK -ef $ROOT/bin/lendk ]] ||
-		{ echo "run_lendk refuses upgrade on the working tree's bin/lendk" >&2; return 1; }
+	if [[ ${1-} == upgrade ]]; then
+		[[ ! $LENDK -ef $ROOT/bin/lendk ]] ||
+			{ echo "run_lendk refuses upgrade on the working tree's bin/lendk" >&2; return 1; }
+		[[ ! $LENDK -ef $UNDER_TEST ]] ||
+			{ echo "run_lendk refuses upgrade on the lendk under test: $LENDK" >&2; return 1; }
+		[[ $(cd -P "${LENDK%/*}" 2>/dev/null && pwd)/ != "$(cd -P "$ROOT" && pwd)"/* ]] ||
+			{ echo "run_lendk refuses upgrade on a file in the working tree: $LENDK" >&2; return 1; }
+	fi
 	status=0
 	output=$("$LENDK" "$@" </dev/null 2>"$SB/stderr") || status=$?
 	stderr=$(<"$SB/stderr")

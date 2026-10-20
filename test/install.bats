@@ -17,7 +17,7 @@ inode() { ls -i "$1" | awk '{ print $1 }'; }
 @test "install: copies bin/lendk to PREFIX/bin with mode 0755 and nothing else" {
 	mk install PREFIX="$SB/p"
 	assert_eq "$status" 0
-	cmp "$LENDK" "$SB/p/bin/lendk"
+	cmp "$ROOT/bin/lendk" "$SB/p/bin/lendk"
 	assert_eq "$(ls -ln "$SB/p/bin/lendk" | cut -c1-10)" -rwxr-xr-x
 	assert_eq "$(ls -A "$SB/p/bin")" lendk
 }
@@ -30,7 +30,7 @@ inode() { ls -i "$1" | awk '{ print $1 }'; }
 	mk install PREFIX="$SB/p"
 	assert_eq "$status" 0
 	[[ $(inode "$SB/p/bin/lendk") != "$before" ]]
-	cmp - "$LENDK" <&"$fd"
+	cmp - "$ROOT/bin/lendk" <&"$fd"
 	exec {fd}<&-
 	assert_eq "$(ls -A "$SB/p/bin")" lendk
 }
@@ -38,7 +38,7 @@ inode() { ls -i "$1" | awk '{ print $1 }'; }
 @test "install: DESTDIR prefixes the target" {
 	mk install DESTDIR="$SB/d" PREFIX=/usr/local
 	assert_eq "$status" 0
-	cmp "$LENDK" "$SB/d/usr/local/bin/lendk"
+	cmp "$ROOT/bin/lendk" "$SB/d/usr/local/bin/lendk"
 }
 
 @test "install: a relative PREFIX is rejected before anything is written" {

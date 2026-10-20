@@ -80,6 +80,7 @@ traced() {
 	assert_eq "${#targets[@]}" 1
 }
 
+# bats test_tags=port:retire
 @test "the source names curl and wget only in the network region, and no nc or /dev/tcp" {
 	assert_eq "$(grep -c '^# lint: network begin$' "$LENDK")" 1
 	assert_eq "$(grep -c '^# lint: network end$' "$LENDK")" 1

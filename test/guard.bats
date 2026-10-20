@@ -14,7 +14,7 @@ old_bash() {
 	stderr=$(docker run --rm --pull never "$@" -v "$LENDK:/lendk:ro" "$image" bash /lendk --version 2>&1 </dev/null) || status=$?
 }
 
-# bats test_tags=docker
+# bats test_tags=docker,port:retire
 @test "bash 3.2 gives unsupported with exit 125" {
 	require docker
 	old_bash bash:3.2.57
@@ -22,7 +22,7 @@ old_bash() {
 	assert_class unsupported 125
 }
 
-# bats test_tags=docker
+# bats test_tags=docker,port:retire
 @test "bash 4.3 gives unsupported with exit 125, and the interactive FIX when prompting is allowed" {
 	require docker
 	old_bash bash:4.3.48
@@ -33,6 +33,7 @@ old_bash() {
 	assert_class unsupported 125
 }
 
+# bats test_tags=port:retire
 @test "the current bash passes the guard" {
 	run_lendk --version
 	assert_eq "$status" 0

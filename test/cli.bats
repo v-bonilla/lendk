@@ -60,6 +60,7 @@ lends_at() {
 	assert_class usage 2
 }
 
+# bats test_tags=port:retire
 @test "exported functions named like commands and builtins leave --help and --version byte-identical" {
 	local clean hijacked
 	clean=$("$LENDK" --help; "$LENDK" --version)
@@ -74,7 +75,7 @@ lends_at() {
 	assert_eq "$hijacked" "$clean"
 }
 
-# bats test_tags=unit
+# bats test_tags=port:unit
 @test "inherited functions are gone before any command runs" {
 	lendk_probe() { echo inherited; }
 	export -f lendk_probe
@@ -122,7 +123,7 @@ timeout_line() {
 	done
 }
 
-# bats test_tags=unit
+# bats test_tags=port:unit
 @test "the default LENDK_TIMEOUT is 60 s with LENDK_PROMPT=allow and 10 s otherwise" {
 	local value
 	for value in auto never; do

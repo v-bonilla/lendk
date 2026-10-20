@@ -49,6 +49,7 @@ before_tenths() {
 	assert_eq "$status" 0
 }
 
+# bats test_tags=port:retire
 @test "a caller's EPOCHREALTIME, garbage or frozen, cannot stretch the bound under bash 4.4" {
 	local v
 	echo hang >"$SB/store/env/K1.mode"

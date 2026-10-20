@@ -156,7 +156,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
 
-# bats test_tags=unit
+# bats test_tags=port:unit
 @test "a 200 kB first line reads in under 1 s" {
 	map 'stub K1'
 	: >"$SB/store/env/K1.gpg"
@@ -168,7 +168,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	[[ ${lines[0]%%.*} == 0 ]] || { echo "took ${lines[0]} s" >&2; return 1; }
 }
 
-@test "the sentinel reaches no output, file or helper, also under bash -x and an exported SHELLOPTS=xtrace" {
+@test "the sentinel reaches no output, file or helper, also through a nested call" {
 	map 'stub K1' 'nest K2'
 	entry K1 "$SENTINEL"
 	entry K2 "$SENTINEL-2"
@@ -177,6 +177,21 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	refute_contains "$output$stderr" "$SENTINEL"
 	no_sentinel
 	rm -rf "$SB/log" && mkdir "$SB/log"
+	# A nested call: the outer target's key is preset for the inner lendk.
+	printf '#!/bin/sh\nexec %q run -- stub\n' "$LENDK" >"$SB/bin/nest"
+	chmod 755 "$SB/bin/nest"
+	run_lendk run K2 -- nest
+	assert_eq "$status" 0
+	refute_contains "$output$stderr" "$SENTINEL"
+	no_sentinel
+	assert_eq "$(target_var K2)" "$SENTINEL-2"
+}
+
+# bats test_tags=port:retire
+@test "the sentinel reaches no output, file or helper under bash -x and an exported SHELLOPTS=xtrace" {
+	map 'stub K1' 'nest K2'
+	entry K1 "$SENTINEL"
+	entry K2 "$SENTINEL-2"
 	bash -x "$LENDK" run -- stub </dev/null >"$SB/out" 2>"$SB/stderr"
 	refute_contains "$(<"$SB/out")$(<"$SB/stderr")" "$SENTINEL"
 	[[ -s $SB/stderr ]]

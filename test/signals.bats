@@ -81,6 +81,7 @@ stop_lendk() {
 	none_within 1
 }
 
+# bats test_tags=port:retire
 @test "a loopback prompt gets the terminal once and its typed line; the target gets the line" {
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub; echo rc=\$?" @2 typed-secret @1 exit
@@ -92,6 +93,7 @@ stop_lendk() {
 	assert_eq "$(<"${conts[0]}")" cont
 }
 
+# bats test_tags=port:retire
 @test "Ctrl-C at a loopback prompt gives canceled" {
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub; echo rc=\$?" @2 ^C @1 exit
@@ -116,6 +118,7 @@ stop_lendk() {
 	[[ $output == *"lendk: timeout: env/K1: gpg did not finish within 1 s."* ]]
 }
 
+# bats test_tags=port:retire
 @test "with stderr redirected to a file, a loopback prompt still gets the terminal" {
 	echo tty >"$SB/store/env/K1.mode"
 	in_shell "$LENDK run -- stub 2>$SB/err; echo rc=\$?" @2 typed-secret @1 exit
@@ -151,6 +154,7 @@ stop_lendk() {
 	grep -qx -- '--status-fd 9' < <(tr '\0' '\n' <"$(compgen -G "$SB/log/pass.*")/env" | sed -n 's/^PASSWORD_STORE_GPG_OPTS=//p')
 }
 
+# bats test_tags=port:retire
 @test "a pipeline neighbor that reads the terminal during a loopback prompt resumes afterwards" {
 	# On macOS lendk hands the terminal back and resumes the neighbor, which then reads, but the
 	# interactive bash above still counts the neighbor as stopped and reclaims the terminal.
@@ -161,6 +165,7 @@ stop_lendk() {
 	refute_contains "$output" Stopped
 }
 
+# bats test_tags=port:rework
 @test "under umask 000, lendk's files for the backend phase are private" {
 	local listing
 	echo tty >"$SB/store/env/K1.mode"
