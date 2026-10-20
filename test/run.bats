@@ -64,6 +64,7 @@ env_diff() {
 	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
 }
 
+# bats test_tags=port:retire
 @test "an exported SHELLOPTS reaches the target with the caller's options" {
 	map 'stub K1'
 	export K1=one
@@ -202,6 +203,7 @@ env_diff() {
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 }
 
+# bats test_tags=port:retire
 @test "the preset path forks as often for a 50-line map and a long PATH as for one line and a short PATH" {
 	require strace
 	local i lines=() long=$PATH count1 count2
@@ -253,6 +255,7 @@ junk() {
 	assert_eq "$status" 126
 }
 
+# bats test_tags=port:retire
 @test "caller functions named like lendk's own leave the exec error path intact" {
 	map 'junk K1'
 	export K1=one
@@ -266,6 +269,7 @@ junk() {
 	assert_eq "$status" 126
 }
 
+# bats test_tags=port:retire
 @test "an exported POSIXLY_CORRECT reaches the target unchanged, and lendk runs" {
 	map 'stub K1'
 	export K1=one
@@ -275,6 +279,7 @@ junk() {
 	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
 }
 
+# bats test_tags=port:retire
 @test "caller variables named like lendk's internals change nothing" {
 	map 'stub K1'
 	export K1=one lendk_target=/bin/false lendk_env=x lendk_k=y lendk_late=z lendk_listing=w
@@ -303,6 +308,7 @@ junk() {
 	done
 }
 
+# bats test_tags=port:retire
 @test "a caller BASHOPTS with nocasematch does not make STUB match stub" {
 	map 'stub K1'
 	export K1=one
@@ -310,6 +316,7 @@ junk() {
 	assert_eq "$(<"$SB/stderr")" "lendk: unmapped: STUB is not mapped. Stop and ask the user."
 }
 
+# bats test_tags=port:retire
 @test "lendk's own helpers come from the system path, never from PATH or the shims" {
 	map 'ls K1'
 	export K1=one

@@ -42,6 +42,20 @@ setup() {
 	assert_eq "$(tr '\0' '|' <"${log[0]}/argv")" "a|b c|"
 }
 
+@test "LENDK names the lendk under test by its absolute path, bin/lendk when unset, and stays out of the environment" {
+	# shellcheck disable=SC2016
+	local probe='load() { source "$BATS_TEST_DIRNAME/$1.bash"; }; load helpers/common; sandbox; printf "%s\n" "$LENDK"; compgen -e | grep -x LENDK || true'
+	run env -u LENDK BATS_TEST_DIRNAME="$ROOT/test" BATS_TEST_TMPDIR="$SB/p1" bash -c "$probe"
+	assert_eq "$status" 0
+	assert_eq "$output" "$ROOT/bin/lendk"
+	run env LENDK="$SB/other/lendk" BATS_TEST_DIRNAME="$ROOT/test" BATS_TEST_TMPDIR="$SB/p2" bash -c "$probe"
+	assert_eq "$status" 0
+	assert_eq "$output" "$SB/other/lendk"
+	run env LENDK=other/lendk BATS_TEST_DIRNAME="$ROOT/test" BATS_TEST_TMPDIR="$SB/p3" bash -c "$probe"
+	assert_eq "$status" 1
+	assert_eq "$output" "LENDK must be an absolute path, not other/lendk"
+}
+
 @test "run_lendk: rejects a stderr line outside the contract" {
 	printf '#!/bin/sh\necho "raw error" >&2\n' >"$SB/bin/fake-lendk"
 	chmod +x "$SB/bin/fake-lendk"
@@ -64,7 +78,7 @@ setup() {
 }
 
 @test "run_lendk: refuses upgrade on the working tree's lendk, and the sandbox's download tools fail" {
-	run run_lendk upgrade
+	LENDK=$ROOT/bin/lendk run run_lendk upgrade
 	assert_eq "$status" 1
 	assert_eq "$output" "run_lendk refuses upgrade on the working tree's bin/lendk"
 	ln -s "$ROOT/bin/lendk" "$SB/link"
@@ -72,6 +86,14 @@ setup() {
 	LENDK=$SB/link run run_lendk upgrade
 	assert_eq "$status" 1
 	assert_eq "$output" "run_lendk refuses upgrade on the working tree's bin/lendk"
+	# Any file in the working tree, such as a build output, and the lendk the environment named.
+	LENDK=$ROOT/test/fixtures/stub-target run run_lendk upgrade
+	assert_eq "$status" 1
+	assert_eq "$output" "run_lendk refuses upgrade on a file in the working tree: $ROOT/test/fixtures/stub-target"
+	cp "$ROOT/bin/lendk" "$SB/named"
+	LENDK=$SB/named UNDER_TEST=$SB/named run run_lendk upgrade
+	assert_eq "$status" 1
+	assert_eq "$output" "run_lendk refuses upgrade on the lendk under test: $SB/named"
 	local tool
 	for tool in curl wget; do
 		assert_eq "$(command -v "$tool")" "$SB/bin/$tool"

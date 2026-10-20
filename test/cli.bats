@@ -41,6 +41,7 @@ settings() {
 	assert_class usage 2
 }
 
+# bats test_tags=port:retire
 @test "exported functions named like commands and builtins leave --help and --version byte-identical" {
 	local clean hijacked
 	clean=$("$LENDK" --help; "$LENDK" --version)

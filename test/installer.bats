@@ -41,7 +41,7 @@ setup() {
 	stub gpg 'echo "gpg (GnuPG) 2.4.5"'
 	stub pass 'exit 0'
 	stub curl 'echo "curl: no network in tests" >&2; exit 7'
-	VERSION=$(sed -n 's/^LENDK_VERSION=//p' "$LENDK")
+	VERSION=$(sed -n 's/^LENDK_VERSION=//p' "$ROOT/bin/lendk")
 	SHIMS=$HOME/.local/share/lendk/shims
 	# PM installs pass: HINT is what the installer prints, RUNS what it runs without a terminal.
 	if [[ $(uname -s) == Darwin ]]; then
@@ -77,7 +77,7 @@ login() {
 	inst
 	assert_eq "$status" 0
 	assert_eq "$final" "lendk-install: ok: lendk $VERSION installed to $HOME/.local/bin/lendk"
-	cmp "$LENDK" "$HOME/.local/bin/lendk"
+	cmp "$ROOT/bin/lendk" "$HOME/.local/bin/lendk"
 	[[ -x $HOME/.local/bin/lendk ]]
 	assert_line "$output" "updated: $HOME/.profile (lendk-install block)"
 	assert_eq "$(grep -c '^# >>> lendk-install >>>$' "$HOME/.profile")" 1
@@ -335,10 +335,10 @@ login() {
 
 @test "installer: its markers match the ones bin/lendk and the Makefile use" {
 	local m
-	m=$(sed -n 2p "$LENDK")
+	m=$(sed -n 2p "$ROOT/bin/lendk")
 	grep -qxF "lendk_mark='$m'" "$ROOT/install.sh"
 	m=$(grep -o "'# lendk shim v1:[^']*'" "$ROOT/install.sh")
-	grep -qF "${m//\'/}" "$LENDK"
+	grep -qF "${m//\'/}" "$ROOT/bin/lendk"
 }
 
 @test "installer: runs to the end under dash, busybox sh and the system bash" {

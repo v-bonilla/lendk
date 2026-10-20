@@ -147,7 +147,7 @@ recorder_pids() { cat "$GNUPGHOME/pinentry.pids" 2>/dev/null || :; }
 	done
 }
 
-# bats test_tags=gpg
+# bats test_tags=gpg,port:retire
 @test "with loopback in gpg.conf the passphrase typed into the terminal reaches gpg, and the target gets the value" {
 	branch plain
 	echo 'pinentry-mode loopback' >"$GNUPGHOME/gpg.conf"
