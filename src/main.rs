@@ -5,7 +5,9 @@
 #![deny(unsafe_code)]
 #![deny(clippy::undocumented_unsafe_blocks)]
 
+mod check;
 mod cli;
+mod edit;
 mod exec;
 mod failure;
 mod helpers;
@@ -13,5 +15,6 @@ mod map;
 mod pass;
 mod plaintext;
 mod run;
+mod shims;
 mod sys;
 mod tables;
