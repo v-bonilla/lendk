@@ -95,6 +95,7 @@ parse() {
 	[ -t 0 ] || yes=1
 }
 
+# unsupported: ends the install with unsupported-os for this $os and $machine.
 unsupported() {
 	finish unsupported-os "$os $machine is not supported; lendk ships binaries for Linux and macOS on x86_64 and arm64, and builds from source elsewhere: https://github.com/v-bonilla/lendk#from-source"
 }
@@ -238,6 +239,7 @@ pm_cmd() {
 	esac
 }
 
+# found: says which bash 4.4 or later the checks found, when they found one.
 found() { [ -z "$good_bash" ] || say "found bash 4.4 or later at $good_bash"; }
 
 deps() {
@@ -303,7 +305,7 @@ sum_of() {
 	sed -n "s/^\([0-9a-f]\{64\}\)  *\*\{0,1\}$(printf '%s' "$1" | sed 's/\./\\./g')\$/\1/p" "$tmp/SHA256SUMS"
 }
 
-# sums: fetches SHA256SUMS and picks the asset: this platform's binary, else 1.x's script.
+# sums: fetches SHA256SUMS and picks the asset: this platform's binary, else 1.x's script; sets url, rel, asset and want.
 sums() {
 	if [ -n "$version" ]; then url=$base/download/v$version rel="release $version"; else url=$base/latest/download rel='latest release'; fi
 	case $url in https://*)
