@@ -3,6 +3,7 @@
 
 use std::ffi::{CStr, CString, c_char, c_int};
 use std::io;
+use std::os::fd::{FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 
@@ -94,19 +95,156 @@ pub fn read(fd: c_int, buf: &mut [u8]) -> io::Result<usize> {
     }
 }
 
-/// Makes the `std::process::Command` dup `fd` onto descriptor 9 in the child, for gpg's status.
-pub fn status_fd_9(command: &mut std::process::Command, fd: c_int) {
+/// Prepares a helper's child between fork and exec: it writes its PID to `report`, for the
+/// watchdog, then leads a process group of its own, then dups `status` onto descriptor 9. A
+/// signal that ends lendk's group before the child leaves it ends the child too.
+pub fn helper_child(command: &mut std::process::Command, report: c_int, status: Option<c_int>) {
     use std::os::unix::process::CommandExt;
-    // SAFETY: the closure runs between fork and exec and only calls dup2, which is
-    // async-signal-safe; fd stays open in the parent until the child has been spawned.
+    // SAFETY: the closure runs between fork and exec and only calls getpid, write, setpgid and
+    // dup2, which are async-signal-safe; report and status stay open in the parent until the
+    // child has been spawned.
     unsafe {
         command.pre_exec(move || {
-            if libc::dup2(fd, 9) == -1 {
+            let pid = libc::getpid().to_ne_bytes();
+            libc::write(report, pid.as_ptr().cast(), pid.len());
+            if libc::setpgid(0, 0) == -1 {
+                return Err(io::Error::last_os_error());
+            }
+            if let Some(fd) = status
+                && libc::dup2(fd, 9) == -1
+            {
                 return Err(io::Error::last_os_error());
             }
             Ok(())
         });
     }
+}
+
+/// A pipe whose ends close on exec, as (read, write).
+pub fn pipe() -> io::Result<(OwnedFd, OwnedFd)> {
+    let mut fds = [0 as c_int; 2];
+    // SAFETY: fds is a writable array of two descriptors, as pipe2 requires.
+    if unsafe { libc::pipe2(fds.as_mut_ptr(), libc::O_CLOEXEC) } == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    // SAFETY: pipe2 succeeded, so both descriptors are open and owned by nothing else.
+    Ok(unsafe { (OwnedFd::from_raw_fd(fds[0]), OwnedFd::from_raw_fd(fds[1])) })
+}
+
+/// Forks. lendk runs one thread, so the child may run any code. Returns the child's PID in
+/// the parent and 0 in the child.
+pub fn fork() -> io::Result<i32> {
+    // SAFETY: lendk is single-threaded, so the child holds no lock another thread took.
+    let pid = unsafe { libc::fork() };
+    if pid == -1 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(pid)
+}
+
+/// Puts process `pid` in process group `pgid`; 0 means the caller or a group of its own.
+pub fn setpgid(pid: i32, pgid: i32) {
+    // SAFETY: setpgid takes plain integers.
+    unsafe { libc::setpgid(pid, pgid) };
+}
+
+/// Sends `sig` to `pid` (a group when negative); whether a process received it.
+pub fn kill(pid: i32, sig: c_int) -> bool {
+    // SAFETY: kill takes plain integers.
+    unsafe { libc::kill(pid, sig) == 0 }
+}
+
+/// Reaps `pid` when it has exited: its wait status, or None while it runs.
+pub fn try_wait(pid: i32) -> Option<c_int> {
+    let mut status = 0;
+    // SAFETY: status is a writable int for the call.
+    (unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } == pid).then_some(status)
+}
+
+/// Waits for `pid` to exit and reaps it.
+pub fn wait(pid: i32) {
+    let mut status = 0;
+    // SAFETY: status is a writable int for the call.
+    while unsafe { libc::waitpid(pid, &raw mut status, 0) } == -1
+        && io::Error::last_os_error().kind() == io::ErrorKind::Interrupted
+    {}
+}
+
+/// Whether `fd` is readable, or at its end, within `ms` milliseconds.
+pub fn readable_within(fd: c_int, ms: c_int) -> io::Result<bool> {
+    let mut pfd = libc::pollfd {
+        fd,
+        events: libc::POLLIN,
+        revents: 0,
+    };
+    // SAFETY: pfd is one valid pollfd for the call.
+    match unsafe { libc::poll(&raw mut pfd, 1, ms) } {
+        -1 => {
+            let err = io::Error::last_os_error();
+            if err.kind() == io::ErrorKind::Interrupted {
+                Ok(false)
+            } else {
+                Err(err)
+            }
+        }
+        n => Ok(n > 0),
+    }
+}
+
+/// Writes all of `buf` to `fd`.
+pub fn write(fd: c_int, buf: &[u8]) -> bool {
+    // SAFETY: buf is valid for reads of buf.len() bytes for the whole call.
+    unsafe {
+        libc::write(fd, buf.as_ptr().cast(), buf.len()) == isize::try_from(buf.len()).unwrap_or(-1)
+    }
+}
+
+/// The watchdog's start in the forked child: a process group of its own, the job-control and
+/// terminating signals but KILL ignored, and /dev/null as stdin, stdout and stderr, so it never
+/// holds the caller's pipes.
+pub fn detach() {
+    // SAFETY: setpgid, signal with SIG_IGN, open and dup2 take plain values and a literal path.
+    unsafe {
+        libc::setpgid(0, 0);
+        for sig in [
+            libc::SIGTERM,
+            libc::SIGINT,
+            libc::SIGHUP,
+            libc::SIGQUIT,
+            libc::SIGTSTP,
+            libc::SIGTTIN,
+            libc::SIGTTOU,
+            libc::SIGPIPE,
+        ] {
+            libc::signal(sig, libc::SIG_IGN);
+        }
+        let null = libc::open(c"/dev/null".as_ptr(), libc::O_RDWR);
+        if null >= 0 {
+            for fd in 0..3 {
+                libc::dup2(null, fd);
+            }
+            if null > 2 {
+                libc::close(null);
+            }
+        }
+    }
+}
+
+/// Ends the process at once, running no destructor.
+pub fn exit_now(code: c_int) -> ! {
+    // SAFETY: _exit takes a plain integer and never returns.
+    unsafe { libc::_exit(code) }
+}
+
+/// The name of the terminal on `fd`, when it is one.
+pub fn ttyname(fd: c_int) -> Option<Vec<u8>> {
+    let mut buf = [0u8; 256];
+    // SAFETY: buf is writable for its length, which ttyname_r is told.
+    if unsafe { libc::ttyname_r(fd, buf.as_mut_ptr().cast(), buf.len()) } != 0 {
+        return None;
+    }
+    let len = buf.iter().position(|&c| c == 0)?;
+    Some(buf[..len].to_vec())
 }
 
 /// Replaces the process with `path`. It returns only on failure, with the error.

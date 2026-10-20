@@ -157,6 +157,22 @@ fn at(map: &[u8], line: usize, text: &[u8]) -> Failure {
     Failure::new("map", out)
 }
 
+/// The first valid key word of the map, groups skipped, for which `present` holds; None when
+/// the map does not exist or holds none.
+pub fn first_key(map: &[u8], present: impl Fn(&[u8]) -> bool) -> Result<Option<Vec<u8>>, Failure> {
+    if std::fs::metadata(path(map)).is_err() {
+        return Ok(None);
+    }
+    let text = std::fs::read(path(map)).map_err(|_| at(map, 0, b"cannot be read"))?;
+    let found = text.split(|&c| c == b'\n').find_map(|line| {
+        fields(line)
+            .into_iter()
+            .skip(1)
+            .find(|w| !w.starts_with(b"@") && bad_word(w, None).is_none() && present(w))
+    });
+    Ok(found.map(<[u8]>::to_vec))
+}
+
 /// The keys for `cmd`: `words` when given, else `cmd`'s entry, with groups inlined in word order
 /// and duplicates dropped, keeping the first. Only the lines that `cmd` and its groups need are
 /// checked.
