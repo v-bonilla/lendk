@@ -46,7 +46,7 @@ How lendk's code, tests, docs and commits are written, and the process failures 
 - Files that GitHub or the skills look up by name sit uppercase at the root: `README.md`, `CHANGELOG.md`, `SECURITY.md`, `LICENSE`, `GLOSSARY.md`, `CODING_STANDARDS.md`. Every other doc is lowercase kebab-case under `docs/`. An ADR is `docs/adr/NNNN-kebab-slug.md`, numbered from 0001 and never renumbered.
 - The README is the user manual. The skill's `SKILL.md` teaches the mental model, every verb, the class table with what to do for each class, the agent rules, answers to common questions and troubleshooting with `lendk check`; its `references/setup.md` covers setup, PATH, upgrade and uninstall.
 - Every doc reads as written once, in its final state. State the current fact: no "now", no "previously", no changelog aside outside `CHANGELOG.md`.
-- No em-dashes and no label openers such as "Note:". No email address, key-shaped string or home path other than `/home/alice`. The lint scans every file outside the directories `.gitignore` lists, this one included.
+- No em-dashes and no label openers such as "Note:". No email address, key-shaped string or home path other than `/home/alice`; `supply-chain/imports.lock` alone may hold email addresses, as cargo-vet's copy of third-party audit records. The lint scans every file outside the directories `.gitignore` lists, this one included.
 - Short, definite sentences; bullets where they fit; the glossary's terms in any text you write or edit. Point to the test, ADR or `--help` line that holds a fact instead of restating it.
 
 ## Git

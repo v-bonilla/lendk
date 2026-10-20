@@ -81,6 +81,19 @@ lint_copy() {
 	lint_copy "test/helpers/common.bash:"*": email address"
 }
 
+@test "lint-repo.bash skips the email rule in supply-chain/imports.lock only, and every other rule covers it" {
+	scratch
+	local at=@
+	printf 'who = "Alice <alice%sexample.org>"\n' "$at" >>"$COPY/supply-chain/imports.lock"
+	run bash "$ROOT/test/lint-repo.bash" "$COPY"
+	assert_eq "$output" ""
+	assert_eq "$status" 0
+	printf 'notes = "see %sme/bob/x"\n' /ho >>"$COPY/supply-chain/imports.lock"
+	lint_copy "supply-chain/imports.lock:"*": home path other than /home/alice"
+	printf 'who = "Alice <alice%sexample.org>"\n' "$at" >>"$COPY/supply-chain/audits.toml"
+	lint_copy "supply-chain/audits.toml:"*": email address"
+}
+
 @test "lint-repo.bash flags a home path other than /home/alice and accepts /home/alice" {
 	scratch
 	local home=/ho
