@@ -14,3 +14,4 @@ A shim works only when PATH lists the shim directory before any other copy of it
 - The environment.d file sorts after `99-environment.conf`, which Ubuntu links to `/etc/environment` and which sets PATH. A file that sorted earlier would see its PATH replaced.
 - Desktop apps see the shims after the next desktop login, since they inherit the environment of the session that started them.
 - On macOS, `path_helper` reorders PATH after `~/.zshenv`, so zsh logins also need the block in `~/.zprofile`.
+- The installer's block holds no bash directory: the lendk binary needs no bash, so the installer rewrites a 1.x block, which put a bash 4.4 directory first on PATH, without that line, and runs the binary itself for `init sh` and `init systemd`.

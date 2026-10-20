@@ -762,7 +762,7 @@ stopped() {
 }
 
 @test "install.sh, then upgrade, against make dist releases" {
-	skip "needs install.sh to install the binary (#58) and make dist to build its platform's archive (#60)"
+	skip "needs make dist to build its platform's archive (#60)"
 	require git
 	require make
 	local d src=$SB/src sys=$SB/sys before

@@ -142,6 +142,8 @@ The installer options go after `bash -s --`, for example `curl -fsSL .../install
 
 With `--install-deps` and no terminal, sudo runs as `sudo -n` and fails when it needs a password; run `sudo -v` first, or run the printed command yourself.
 
+The installer reads the release's `SHA256SUMS` first. A release with a binary for this machine, Linux or macOS on x86_64 or arm64, needs curl or wget, gzip, tar, and `sha256sum` or `shasum`, and no bash, GnuPG, pass or Homebrew. A 1.x release, such as 1.1.0, installs one bash file and also needs bash 4.4, GnuPG 2.4 and pass. Other platforms build lendk from source.
+
 #### From source
 
 ```
@@ -485,7 +487,7 @@ Fix it one of two ways:
 
 - GnuPG 2.4 or later
 - pass 1.7 or later, with a store initialized by `pass init`
-- tar, gzip, `sha256sum` or `shasum`, and curl or wget, for `lendk upgrade` only
+- tar, gzip, `sha256sum` or `shasum`, and curl or wget, for the installer and `lendk upgrade`
 - `git`, `make` and [rustup](https://rustup.rs) to install from source; `make install` builds with the toolchain `rust-toolchain.toml` pins
 - bash 4.4 or later and POSIX utilities for the release the installer fetches, lendk 1.1.0, which is one bash file
 
