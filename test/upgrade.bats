@@ -31,6 +31,8 @@ setup() {
 	chmod 755 "$BIN/lendk"
 	LENDK=$BIN/lendk
 	NOTICE=
+	mkdir -p "$HOME/.claude/skills/lendk"
+	cp "$ROOT/skills/lendk/SKILL.md" "$HOME/.claude/skills/lendk/"
 	mark
 }
 
@@ -44,12 +46,34 @@ inode() { ls -i "$1" | awk '{ print $1 }'; }
 mark() {
 	SUM=$(cksum <"$LENDK")
 	INODE=$(inode "$LENDK")
+	HOME_STATE=$(home_state)
 }
 
-# unchanged: lendk's file is the one mark saw, alone in its directory, and TMPDIR is empty.
+# home_state: every path under HOME but lendk's directory, such as the map, the shims and a skill
+# copy, with its listing and checksum.
+home_state() {
+	local p
+	find "$HOME" -path "$BIN" -prune -o -print | LC_ALL=C sort | while IFS= read -r p; do
+		printf '%s %s %s\n' "$p" "$(command ls -ldn "$p" | awk '{ print $1, $5 }')" "$([[ -f $p && ! -L $p ]] && cksum <"$p")"
+	done
+}
+
+# mapped: a map and its shim in place, then mark.
+mapped() {
+	ln -s "$FIXTURES/stub-target" "$SB/bin/stub"
+	printf 'stub K1\n' >"$MAP" && chmod 600 "$MAP"
+	run_lendk sync
+	assert_eq "$status" 0
+	[[ -x $SHIMS/stub ]]
+	mark
+}
+
+# unchanged: lendk's file is the one mark saw, alone in its directory, nothing else under HOME
+# changed, and TMPDIR is empty.
 unchanged() {
 	assert_eq "$(cksum <"$LENDK")" "$SUM"
 	assert_eq "$(inode "$LENDK")" "$INODE"
+	assert_eq "$(home_state)" "$HOME_STATE"
 	assert_eq "$(ls -A "$BIN")" lendk
 	assert_eq "$(ls -A "$TMPDIR")" ""
 }
@@ -314,6 +338,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 }
 
 @test "a failed download and one cut short change nothing" {
+	mapped
 	local half
 	web new fail
 	run_lendk upgrade
@@ -328,6 +353,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 }
 
 @test "another checksum changes nothing" {
+	mapped
 	local got
 	cp -R "$REL/new" "$SB/rel"
 	got=$(sum "$SB/rel/latest/download/$ASSET")
@@ -350,6 +376,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 
 # bats test_tags=port:only
 @test "a release with no archive for this platform fails before the archive download, naming the platform" {
+	mapped
 	local other got
 	[[ $PLATFORM == x86_64-* ]] && other=aarch64-${PLATFORM#*-} || other=x86_64-${PLATFORM#*-}
 	cp -R "$REL/new" "$SB/rel"
@@ -364,6 +391,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 }
 
 @test "an archive without lendk, or holding a file that is not lendk, changes nothing" {
+	mapped
 	mkdir -p "$SB/a/lendk-99.0.0" "$SB/b/lendk-99.0.0/bin" "$SB/c/lendk-99.0.0/bin" "$SB/c/lendk-98.0.0/bin"
 	cp "$ROOT/LICENSE" "$SB/a/lendk-99.0.0/"
 	sed '2s/.*/# another tool/' "$REL/new.src/lendk-99.0.0/bin/lendk" >"$SB/b/lendk-99.0.0/bin/lendk"
@@ -407,6 +435,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 
 # bats test_tags=port:only
 @test "a new file without the marker, or whose staged run fails or prints anything but lendk X.Y.Z, changes nothing" {
+	mapped
 	local body n=0
 	mkdir -p "$SB/a/lendk-99.0.0/bin"
 	printf '#!/bin/sh\necho "lendk 99.0.0"\n' >"$SB/a/lendk-99.0.0/bin/lendk"
@@ -444,6 +473,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 }
 
 @test "the member's directory and --version name one version, written without leading zeros or overflow" {
+	mapped
 	candidate a 99.0.0 'echo "lendk 98.0.0"'
 	run_lendk upgrade
 	nothing "$ASSET holds no lendk-98.0.0/bin/lendk"
@@ -456,6 +486,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 }
 
 @test "an archive that does not unpack is a local failure" {
+	mapped
 	mkdir -p "$SB/rel/latest/download"
 	printf 'not an archive\n' >"$SB/rel/latest/download/$ASSET"
 	(cd "$SB/rel/latest/download" && sha256 "$ASSET" >SHA256SUMS)
@@ -615,6 +646,7 @@ sum() { sha256 "$1" | cut -d ' ' -f 1; }
 
 # bats test_tags=port:only
 @test "a path that is not the running lendk's file is refused before any fetch" {
+	mapped
 	local rc=0
 	web new
 	NOTICE=
