@@ -24,6 +24,9 @@ _Avoid_: secret, token, API key
 The secret text of a key: the first line of its store entry.
 _Avoid_: secret, password
 
+**Plaintext**:
+A value, the identity, or the passphrase or PIN that protects the identity, held in memory in a form that needs no further decryption.
+
 **GnuPG key**:
 The encryption key that protects the store.
 _Avoid_: key, on its own

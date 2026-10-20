@@ -39,7 +39,7 @@ build:
 test: build
 	@test -x $(BATS) || { echo 'bats-core is missing; run: make deps' >&2; exit 1; }
 	$(CARGO) test --locked --offline --release --target $(RUST_TARGET)
-	$(BATS) --filter-tags '!docker' test/*.bats
+	$(BATS) --filter-tags '!docker,!port:only' test/*.bats
 
 # The port's selection against the release binary; it fails for each verb not yet ported.
 test-port: build
@@ -61,9 +61,9 @@ check-docker: images
 	@test -x $(BATS) || { echo 'bats-core is missing; run: make deps' >&2; exit 1; }
 	$(BATS) --filter-tags docker test/*.bats
 	$(DOCKER_RUN) --cap-add SYS_PTRACE \
-		-e TEST_REQUIRE="gpg pass zsh strace script python3 git make environment-d" \
-		lendk-test:ubuntu $(BATS) --filter-tags '!docker' test/*.bats
-	$(DOCKER_RUN) -e TEST_REQUIRE=script lendk-test:bash44 $(BATS) --filter-tags '!docker' test/*.bats
+		-e TEST_REQUIRE="gpg pass zsh strace script python3 perl git make environment-d" \
+		lendk-test:ubuntu $(BATS) --filter-tags '!docker,!port:only' test/*.bats
+	$(DOCKER_RUN) -e TEST_REQUIRE=script lendk-test:bash44 $(BATS) --filter-tags '!docker,!port:only' test/*.bats
 
 bench:
 	bash test/bench/bench.bash

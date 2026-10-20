@@ -39,28 +39,28 @@ target_env() {
 	printf '%s\n' "${logs[0]}/env"
 }
 
-# env_diff A B: names whose entries differ between two env -0 files, less _, PWD and SHLVL, sorted.
+# env_diff A B [NAME...]: names whose entries differ between two env -0 files, less _ and NAME..., sorted.
 env_diff() {
 	local -A a=() b=()
-	local e n
+	local e n skip=" _ ${*:3} "
 	while IFS= read -r -d '' e; do a[${e%%=*}]=${e#*=}; done <"$1"
 	while IFS= read -r -d '' e; do b[${e%%=*}]=${e#*=}; done <"$2"
 	for n in "${!a[@]}" "${!b[@]}"; do
-		[[ $n == _ || $n == PWD || $n == SHLVL ]] && continue
+		[[ $skip == *" $n "* ]] && continue
 		[[ ${a[$n]+x} == "${b[$n]+x}" && ${a[$n]-} == "${b[$n]-}" ]] || printf '%s\n' "$n"
 	done | sort -u | tr '\n' ' '
 }
 
-@test "the target's environment is the caller's plus the injected keys and LENDK_INJECTED" {
-	map 'stub K1 @g' '@g K2 K3'
-	export K3=preset
-	env -0 >"$SB/caller"
-	run_fake -- stub
-	assert_eq "$status" 0
-	assert_eq "$stderr" ""
-	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "K1 K2 LENDK_INJECTED "
+# direct_env: the environment file of a direct call of the stub target, which the caller's
+# environment reaches as it reaches lendk's target.
+direct_env() {
+	"$SB/bin/stub" </dev/null
+	local logs=("$SB"/log/target.*)
+	mv "${logs[0]}/env" "$SB/caller"
+	rm -r "${logs[0]}"
 }
 
+# bats test_tags=port:rework
 @test "with every key preset, only LENDK_INJECTED is added; exported functions and variables named like lendk's own stay" {
 	map 'stub K1 K2'
 	export K1=one K2=two map=m verbs=v timeout=t keys=k target=x
@@ -70,7 +70,46 @@ env_diff() {
 	run_lendk run -- stub
 	assert_eq "$status" 0
 	assert_eq "$stderr" ""
+	assert_eq "$(env_diff "$SB/caller" "$(target_env)" PWD SHLVL)" "LENDK_INJECTED "
+}
+
+@test "the target's environment is a direct call's plus the injected keys and LENDK_INJECTED, SHLVL and PWD included" {
+	map 'stub K1 @g' '@g K2 K3'
+	export K3=preset SHLVL=7
+	direct_env
+	run_fake -- stub
+	assert_eq "$status" 0
+	assert_eq "$stderr" ""
+	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "K1 K2 LENDK_INJECTED "
+}
+
+# bats test_tags=port:only
+@test "with every key preset, the target's environment is a direct call's plus LENDK_INJECTED; SHELLOPTS, BASHOPTS and exported functions stay" {
+	map 'stub K1 K2'
+	export K1=one K2=two map=m verbs=v timeout=t keys=k target=x
+	export SHELLOPTS BASHOPTS
+	fail() { echo caller-fail; }
+	export -f fail
+	direct_env
+	# Not through run_lendk: a command substitution changes the SHELLOPTS bash exports.
+	"$LENDK" run -- stub </dev/null 2>"$SB/stderr"
+	assert_eq "$(<"$SB/stderr")" ""
 	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
+}
+
+# bats test_tags=port:only
+@test "the target's environment is the caller's entries in order, less those named like an injected key, then the keys and LENDK_INJECTED" {
+	map 'env K1 @g' '@g K2 K3'
+	store_entry K1 "$SENTINEL-1"
+	store_entry K2 "$SENTINEL-2"
+	export K3=preset K1='' LENDK_INJECTED='X K1'
+	env -0 | tr '\0' '\n' | grep -v '^_=' >"$SB/caller"
+	"$LENDK" run -- env -0 </dev/null 2>"$SB/stderr" | tr '\0' '\n' | grep -v '^_=' >"$SB/target"
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$(<"$SB/target")" "$(grep -v -e '^K1=' -e '^LENDK_INJECTED=' "$SB/caller")
+K1=$SENTINEL-1
+K2=$SENTINEL-2
+LENDK_INJECTED=X K1 K2"
 }
 
 # bats test_tags=port:retire
@@ -79,7 +118,7 @@ env_diff() {
 	export K1=one
 	run bash -c 'set -o noclobber; export SHELLOPTS; env -0 >"$1/caller"; exec "$2" run -- stub </dev/null' _ "$SB" "$LENDK"
 	assert_eq "$status" 0
-	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
+	assert_eq "$(env_diff "$SB/caller" "$(target_env)" PWD SHLVL)" "LENDK_INJECTED "
 }
 
 @test "a key set non-empty by the caller is not read and keeps its value; an empty one is read" {
@@ -285,7 +324,7 @@ junk() {
 	env POSIXLY_CORRECT=1 env -0 >"$SB/caller"
 	env POSIXLY_CORRECT=1 "$LENDK" run -- stub </dev/null 2>"$SB/stderr"
 	assert_eq "$(<"$SB/stderr")" ""
-	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
+	assert_eq "$(env_diff "$SB/caller" "$(target_env)" PWD SHLVL)" "LENDK_INJECTED "
 }
 
 # bats test_tags=port:retire
@@ -295,7 +334,7 @@ junk() {
 	env -0 >"$SB/caller"
 	run_lendk run -- stub
 	assert_eq "$status" 0
-	assert_eq "$(env_diff "$SB/caller" "$(target_env)")" "LENDK_INJECTED "
+	assert_eq "$(env_diff "$SB/caller" "$(target_env)" PWD SHLVL)" "LENDK_INJECTED "
 }
 
 @test "keys named lendk_ in any case are denied" {
@@ -344,4 +383,34 @@ junk() {
 	PATH=$LENDK_SHIMS:$PATH run timeout 10 "$LENDK" run -- ls -d / </dev/null
 	assert_eq "$status" 0
 	assert_eq "$output" /
+}
+
+@test "the target inherits the caller's limits, ignored and blocked signals, descriptors and closed stdio" {
+	[[ -d /proc/self ]] || skip "no /proc"
+	require perl
+	local f
+	map 'probe K1'
+	store_entry K1 "$SENTINEL"
+	printf '#!%s\ngrep -E "^Sig(Ign|Blk):" /proc/$$/status >"$STUB_LOG/$1.sig"\nulimit -a >"$STUB_LOG/$1.lim"\ncd /proc/$$/fd && echo * >"$STUB_LOG/$1.fds"\n' "$BASH" >"$SB/bin/probe"
+	chmod 755 "$SB/bin/probe"
+	# call CMD...: CMD with SIGPIPE and SIGUSR2 ignored, SIGUSR1 blocked, fewer open files, fd 7
+	# open, and stdin and stdout closed.
+	call() {
+		(
+			ulimit -n 200
+			trap '' PIPE USR2
+			exec 7>"$SB/fd7" <&- >&-
+			# perl puts /dev/null on closed stdio, so it closes them again before exec.
+			perl -MPOSIX -e 'sigprocmask(SIG_BLOCK, POSIX::SigSet->new(SIGUSR1)); POSIX::close(0); POSIX::close(1); exec @ARGV or exit 127' "$@"
+		) 2>"$SB/stderr"
+	}
+	call probe direct
+	call "$LENDK" run -- probe lendk
+	assert_eq "$(<"$SB/stderr")" ""
+	for f in sig lim fds; do
+		assert_eq "$(<"$SB/log/lendk.$f")" "$(<"$SB/log/direct.$f")"
+	done
+	grep -q '^SigIgn:.*[1-9a-f]' "$SB/log/direct.sig"
+	grep -q '^SigBlk:.*[1-9a-f]' "$SB/log/direct.sig"
+	refute_contains " $(<"$SB/log/direct.fds") " " 1 "
 }

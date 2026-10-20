@@ -88,6 +88,7 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(target_var K2)" "$SENTINEL-2"
 }
 
+# bats test_tags=port:rework
 @test "under strace the sentinel appears only in the target's execve, and there only in its environment" {
 	require strace
 	map 'tgt K1 K2'
@@ -102,6 +103,27 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(grep -c . <<<"$hits")" 1
 	[[ $hits == *"execve(\"$SB/bin/tgt\", [\"tgt\"], ["* ]]
 	[[ ${hits%%], [*} != *"$SENTINEL"* ]]
+}
+
+# A lendk that is not dumpable keeps its own memory, and so the target's environment at execve,
+# and its helpers' until they exec, from a tracer of the same user; the calls of the helpers'
+# own children, which carry the helper environment, stay readable.
+# bats test_tags=port:only
+@test "under strace the sentinel appears in no execve but lendk's own start, and the target receives it" {
+	require strace
+	map 'tgt K1 K2'
+	entry K1 "$SENTINEL-1"
+	entry K2 "$SENTINEL-2"
+	printf '#!/bin/sh\n[ "$K1" = "$E1" ] && [ "$K2" = "$E2" ]\n' >"$SB/bin/tgt"
+	chmod 755 "$SB/bin/tgt"
+	local status=0 hits
+	E1=$SENTINEL-1 E2=$SENTINEL-2 strace -f --seccomp-bpf -v -s 4096 -e trace=execve -o "$SB/trace" "$LENDK" run -- tgt </dev/null 2>"$SB/stderr" || status=$?
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$status" 0
+	hits=$(grep -F -- "$SENTINEL" "$SB/trace")
+	assert_eq "$(grep -c . <<<"$hits")" 1
+	[[ $hits == *"execve(\"$LENDK\", [\"$LENDK\", \"run\", \"--\", \"tgt\"], ["* ]]
+	grep -qF '"PASSWORD_STORE_GPG_OPTS=--status-fd 9 --pinentry-mode error"' "$SB/trace"
 }
 
 @test "the target gets the caller's umask and descriptors, and lendk's files are private, under umask 000 and 022" {
@@ -231,4 +253,36 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 		assert_eq "$(target_var K1)" "12$SENTINEL"
 		assert_eq "$(target_var K2)" "7 $SENTINEL"
 	done
+}
+
+# bats test_tags=port:only
+@test "at LENDK_TEST_PAUSE, lendk's environment is not its user's to read and its locked memory covers the values" {
+	[[ -d /proc/self ]] || skip "no /proc"
+	map 'stub K1'
+	entry K1 "$SENTINEL"
+	LENDK_TEST_PAUSE=3 "$LENDK" run -- stub </dev/null 2>"$SB/stderr" &
+	local pid=$! i log='' lck owner
+	for ((i = 0; i < 50; i++)); do
+		log=$(compgen -G "$SB/log/pass.*") && [[ -s $log/pid ]] && gone "$(<"$log/pid")" && break
+		sleep 0.1
+	done
+	[[ -n $log ]]
+	[[ -e /proc/$pid/environ ]]
+	owner=mine
+	[[ -O /proc/$pid/environ ]] || owner=other
+	assert_line "$(family)" "$pid"
+	lck=$(sed -n 's/^VmLck:[[:space:]]*\([0-9]*\) kB$/\1/p' "/proc/$pid/status")
+	wait "$pid"
+	assert_eq "$owner" other
+	((lck * 1024 >= ${#SENTINEL} + 3)) || { echo "VmLck: $lck kB" >&2; return 1; }
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$(target_var K1)" "$SENTINEL"
+}
+
+@test "a call whose memory cannot be locked still runs" {
+	map 'stub K1'
+	entry K1 "$SENTINEL"
+	(ulimit -l 0 && "$LENDK" run -- stub </dev/null 2>"$SB/stderr")
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$(target_var K1)" "$SENTINEL"
 }
