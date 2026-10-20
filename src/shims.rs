@@ -5,6 +5,7 @@ use crate::cli::Env;
 use crate::failure::Failure;
 use crate::map::{Scan, path};
 use crate::sys;
+use crate::tables;
 use std::io::Write;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::time::{Duration, Instant};
@@ -55,15 +56,27 @@ pub fn text(lendk: &[u8], cmd: &[u8]) -> Vec<u8> {
     .concat()
 }
 
-/// Whether `file` is a regular file, not a symlink, whose second line carries the shim marker.
-pub fn is_shim(file: &[u8]) -> bool {
-    if !std::fs::symlink_metadata(path(file)).is_ok_and(|m| m.is_file()) {
-        return false;
-    }
-    let text = std::fs::read(path(file)).unwrap_or_default();
+/// Whether a file's `text` carries the shim marker on its second line.
+pub fn marked(text: &[u8]) -> bool {
     text.split(|&c| c == b'\n')
         .nth(1)
         .is_some_and(|l| l.starts_with(MARKER))
+}
+
+/// Whether `file` is a regular file, not a symlink, whose second line carries the shim marker.
+pub fn is_shim(file: &[u8]) -> bool {
+    std::fs::symlink_metadata(path(file)).is_ok_and(|m| m.is_file())
+        && marked(&std::fs::read(path(file)).unwrap_or_default())
+}
+
+/// The lendk path a shim's `text` runs: its third line's quoted `lendk='...'`, unquoted.
+pub fn runs(text: &[u8]) -> Vec<u8> {
+    let third = text.split(|&c| c == b'\n').nth(2).unwrap_or_default();
+    let quoted = third.strip_prefix(b"lendk='").unwrap_or(third);
+    let quoted = quoted.strip_suffix(b"'").unwrap_or(quoted);
+    String::from_utf8_lossy(quoted)
+        .replace("'\\''", "'")
+        .into_bytes()
 }
 
 /// Whether `file` has the shim mode 0755.
@@ -76,17 +89,19 @@ pub fn check_dir(dir: &[u8]) -> Result<(), Failure> {
     if std::fs::symlink_metadata(path(dir)).is_err() {
         return Ok(());
     }
-    let fail = |class, text: &[u8]| Failure::new(class, [dir, text].concat()).with("PATH", dir);
+    let fail = |class: &'static tables::Class, text: &[u8]| {
+        Failure::new(class, [dir, text].concat()).with("PATH", dir)
+    };
     let meta = std::fs::metadata(path(dir));
     if !meta.as_ref().is_ok_and(std::fs::Metadata::is_dir) {
-        return Err(fail("write", b": not a directory"));
+        return Err(fail(&tables::WRITE, b": not a directory"));
     }
-    let meta = meta.map_err(|_| fail("write", b": not a directory"))?;
+    let meta = meta.map_err(|_| fail(&tables::WRITE, b": not a directory"))?;
     if meta.uid() != sys::euid() {
-        return Err(fail("unsafe", b" is owned by another user"));
+        return Err(fail(&tables::UNSAFE, b" is owned by another user"));
     }
     if meta.mode() & 0o022 != 0 {
-        return Err(fail("unsafe", b" is writable by others"));
+        return Err(fail(&tables::UNSAFE, b" is writable by others"));
     }
     Ok(())
 }
@@ -131,7 +146,8 @@ impl Lock {
             .mode(0o700)
             .create(path(shims))
             .map_err(|_| {
-                Failure::new("write", [shims, b": cannot be created"].concat()).with("PATH", shims)
+                Failure::new(&tables::WRITE, [shims, b": cannot be created"].concat())
+                    .with("PATH", shims)
             })?;
         let mut lock = Lock {
             dir: [shims, b".lock"].concat(),
@@ -160,8 +176,11 @@ impl Lock {
             {
                 let written = std::fs::write(path(&pid_file), format!("{}\n", std::process::id()));
                 return written.map_err(|_| {
-                    Failure::new("write", [&self.dir[..], b": cannot be written"].concat())
-                        .with("PATH", self.dir.clone())
+                    Failure::new(
+                        &tables::WRITE,
+                        [&self.dir[..], b": cannot be written"].concat(),
+                    )
+                    .with("PATH", self.dir.clone())
                 });
             }
             sys::hold_signals(false);
@@ -182,7 +201,7 @@ impl Lock {
             owner
         };
         Err(Failure::new(
-            "write",
+            &tables::WRITE,
             [&self.dir[..], b": held by PID ", &owner[..], b" for 10 s"].concat(),
         )
         .with("PATH", self.dir.clone()))
@@ -261,7 +280,7 @@ impl Drop for Lock {
     }
 }
 
-/// What a write of the shims reports: notices, printed at once, and failures, printed by the
+/// What a write of the shims reports: notice texts, printed at once, and failures, printed by the
 /// caller after the map's violations.
 #[derive(Default)]
 pub struct Report {
@@ -315,7 +334,8 @@ pub fn write(shims: &[u8], lendk: &[u8], scan: &Scan, lock: &mut Lock) -> Report
         if written.is_err() {
             let _ = std::fs::remove_file(path(&tmp));
             report.failures.push(
-                Failure::new("write", [&f[..], b": cannot be written"].concat()).with("PATH", f),
+                Failure::new(&tables::WRITE, [&f[..], b": cannot be written"].concat())
+                    .with("PATH", f),
             );
         }
     }
@@ -326,24 +346,22 @@ pub fn write(shims: &[u8], lendk: &[u8], scan: &Scan, lock: &mut Lock) -> Report
         }
         if is_shim(&f) {
             if std::fs::remove_file(path(&f)).is_err() {
-                let failure = Failure::new("write", [&f[..], b": cannot be removed"].concat())
-                    .with("PATH", f);
+                let failure =
+                    Failure::new(&tables::WRITE, [&f[..], b": cannot be removed"].concat())
+                        .with("PATH", f);
                 report.failures.push(failure);
             }
         } else {
-            let notice = [
-                b"lendk: notice: ",
-                &f[..],
-                b" is not a lendk shim, so sync leaves it.\n",
-            ];
-            report.notices.push(notice.concat());
+            report
+                .notices
+                .push([&f[..], b" is not a lendk shim, so sync leaves it"].concat());
         }
     }
     for f in foreign {
         let text = [&f[..], b": is not a lendk shim, so sync leaves it"].concat();
         report
             .failures
-            .push(Failure::new("write", text).with("PATH", f));
+            .push(Failure::new(&tables::WRITE, text).with("PATH", f));
     }
     report
 }

@@ -39,12 +39,11 @@ sandbox() {
 }
 
 # cargo_env: export what make install's cargo build needs, with no network: the pinned toolchain
-# and the fetched crates, used read-only, a CARGO_HOME of the test's own, and one build directory
-# for the test file.
+# and the fetched crates, used read-only, a CARGO_HOME and a build directory of the test's own, under $SB.
 cargo_env() {
 	mkdir -p "$SB/cargo"
 	ln -s "$CARGO_DIR/registry" "$SB/cargo/registry"
-	export RUSTUP_HOME=$RUSTUP_DIR CARGO_HOME=$SB/cargo CARGO_TARGET_DIR=$BATS_FILE_TMPDIR/target CARGO_NET_OFFLINE=true
+	export RUSTUP_HOME=$RUSTUP_DIR CARGO_HOME=$SB/cargo CARGO_TARGET_DIR=$SB/target CARGO_NET_OFFLINE=true
 	PATH=$PATH:$CARGO_BIN
 }
 

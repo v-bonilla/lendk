@@ -3,15 +3,15 @@
 
 use crate::check;
 use crate::cli::Env;
-use crate::failure::Failure;
+use crate::failure::{Failure, notice};
 use crate::map::{self, Paths, Scan};
 use crate::run::Ending;
 use crate::shims::{self, Lock};
+use crate::tables;
 use crate::tables::{
     GUARDED_AGENT_CLIS, GUARDED_INTERPRETERS, GUARDED_LAUNCHERS, GUARDED_PACKAGE_TOOLS,
     GUARDED_SHELLS, RESERVED_CMDS,
 };
-use std::io::Write;
 
 /// What a verb hands back: its stdout and exit status, or the lines to report.
 pub type Outcome = Result<(Vec<u8>, i32), Ending>;
@@ -24,12 +24,8 @@ pub struct Call<'a> {
     pub argv0: &'a [u8],
 }
 
-fn notice(text: &[u8]) {
-    let _ = std::io::stderr().write_all(text);
-}
-
 fn usage(text: impl Into<Vec<u8>>) -> Ending {
-    Failure::new("usage", text).into()
+    Failure::new(&tables::USAGE, text).into()
 }
 
 /// The given failures as one ending: every one but the last is printed before it.
@@ -39,13 +35,6 @@ fn ending(mut failures: Vec<Failure>) -> Option<Ending> {
         before: failures,
         last,
     })
-}
-
-fn pause(env: &Env) -> Option<u64> {
-    match env.get("LENDK_TEST_PAUSE") {
-        Some(&[n @ b'0'..=b'9']) => Some(u64::from(n - b'0')),
-        _ => None,
-    }
 }
 
 /// Writes the shims for the map under `lock`, then releases it; the map's violations, then
@@ -70,7 +59,7 @@ pub fn sync(call: &Call, words: &[&[u8]]) -> Outcome {
     }
     map::check_paths(&call.paths.map)?;
     shims::check_dir(&call.paths.shims)?;
-    let lock = Lock::take(&call.paths.shims, pause(call.env))?;
+    let lock = Lock::take(&call.paths.shims, call.env.test_pause_secs())?;
     let (_, lines) = write_shims(call, lock);
     ending(lines).map_or(Ok((Vec::new(), 0)), Err)
 }
@@ -81,13 +70,9 @@ fn check_name(name: &[u8]) -> Result<(), Ending> {
             return Err(usage(problem));
         }
     } else if !map::valid_cmd(name) {
-        return Err(usage(
-            [b"'", name, b"' is not a valid command name"].concat(),
-        ));
+        return Err(usage(map::invalid_cmd(name)));
     } else if RESERVED_CMDS.iter().any(|r| r.as_bytes() == name) {
-        return Err(usage(
-            [name, b" is lendk's own runtime and cannot be mapped"].concat(),
-        ));
+        return Err(usage(map::runtime(name)));
     }
     Ok(())
 }
@@ -129,14 +114,12 @@ fn edit_begin(
 ) -> Result<(Scan, Lock), Ending> {
     map::check_paths(&call.paths.map)?;
     let resolved = map::resolve_links(&call.paths.map);
-    if std::fs::symlink_metadata(map::path(&resolved)).is_err()
-        && let Some(i) = resolved.iter().rposition(|&c| c == b'/')
-    {
-        shims::check_dir(&resolved[..i])?;
+    if std::fs::symlink_metadata(map::path(&resolved)).is_err() {
+        shims::check_dir(map::dirname(&resolved))?;
     }
     shims::check_dir(&call.paths.shims)?;
     scan_valid(call, verb_check)?;
-    let lock = Lock::take(&call.paths.shims, pause(call.env))?;
+    let lock = Lock::take(&call.paths.shims, call.env.test_pause_secs())?;
     let scan = scan_valid(call, verb_check)?;
     Ok((scan, lock))
 }
@@ -167,19 +150,7 @@ fn edit_end(call: &Call, lock: Lock, name: &[u8]) -> Outcome {
     if std::fs::metadata(map::path(&call.paths.map)).is_err()
         || scan.cmds.len() + scan.groups.len() + scan.bad.len() == 0
     {
-        let fix: &[u8] = if call.interactive {
-            b"map one with lendk add CMD KEY"
-        } else {
-            b"ask the user which commands to map"
-        };
-        notice(
-            &[
-                b"lendk: notice: no command is mapped yet, so lendk gives no keys; ",
-                fix,
-                b".\n",
-            ]
-            .concat(),
-        );
+        check::empty_map_notice(call.interactive);
     }
     let out = check::rows(call.env, call.paths, &scan, &lendk, call.interactive).print(&[name]);
     Ok((out, if failed { 125 } else { 0 }))
@@ -209,7 +180,9 @@ pub fn add(call: &Call, words: &[&[u8]]) -> Outcome {
     let guarded = !name.starts_with(b"@") && is_guarded(name);
     if guarded && !force {
         let text = [name, b" runs other programs, so its keys reach all of them"].concat();
-        return Err(Failure::new("guarded", text).with("CMD", name).into());
+        return Err(Failure::new(&tables::GUARDED, text)
+            .with("CMD", name)
+            .into());
     }
     let map_path = &call.paths.map;
     let add_check = |scan: &Scan| {
@@ -217,8 +190,8 @@ pub fn add(call: &Call, words: &[&[u8]]) -> Outcome {
             if let Some(g) = w.strip_prefix(b"@")
                 && scan.get(w).is_none()
             {
-                let text = [&map_path[..], b": group ", w, b" is not defined"].concat();
-                return Err(Failure::new("map:group", text).with("GROUP", g));
+                let text = [&map_path[..], b": ", &map::not_defined(w)].concat();
+                return Err(Failure::new(&tables::MAP_GROUP, text).with("GROUP", g));
             }
         }
         Ok(())
@@ -256,14 +229,7 @@ pub fn add(call: &Call, words: &[&[u8]]) -> Outcome {
         Some(_) => {}
     }
     if guarded {
-        notice(
-            &[
-                b"lendk: notice: ",
-                name,
-                b" runs other programs, so its keys reach all of them.\n",
-            ]
-            .concat(),
-        );
+        notice(&[name, b" runs other programs, so its keys reach all of them"].concat());
     }
     edit_end(call, lock, name)
 }
@@ -295,37 +261,19 @@ pub fn rm(call: &Call, words: &[&[u8]]) -> Outcome {
                     b", so it cannot be removed",
                 ]
                 .concat();
-                return Err(Failure::new("map", text));
+                return Err(Failure::new(&tables::MAP, text));
             }
         }
         Ok(())
     };
     let (scan, mut lock) = edit_begin(call, &rm_check)?;
     let Some(e) = scan.get(name) else {
-        notice(
-            &[
-                b"lendk: notice: ",
-                name,
-                b" is not in ",
-                map_path,
-                b", so nothing changed.\n",
-            ]
-            .concat(),
-        );
+        notice(&[name, b" is not in ", map_path, b", so nothing changed"].concat());
         return edit_end(call, lock, name);
     };
     for w in words {
         if !e.words.iter().any(|x| x == w) {
-            notice(
-                &[
-                    b"lendk: notice: ",
-                    name,
-                    b" does not hold ",
-                    w,
-                    b", so nothing changed for it.\n",
-                ]
-                .concat(),
-            );
+            notice(&[name, b" does not hold ", w, b", so nothing changed for it"].concat());
         }
     }
     let kept: Vec<&[u8]> = if words.is_empty() {

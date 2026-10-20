@@ -313,7 +313,7 @@ A call waits at most `LENDK_TIMEOUT` plus 2 s for pass and gpg, or in `lendk upg
 The lendk binary built from source holds values in memory this way:
 
 - It marks itself non-dumpable before it reads anything, so no core dump holds its memory, and other processes running as you cannot read its memory or its `/proc/PID/environ`.
-- It keeps the values in one buffer, kept out of swap with `mlock` as a best effort: where the memory-lock limit is too low, the call still runs. The buffer is excluded from core dumps and zeroed before lendk execs the target or exits.
+- It keeps the values in one buffer, kept out of swap with `mlock` as a best effort: where the memory-lock limit is too low, the call still runs. The buffer is excluded from core dumps and zeroed whenever lendk exits; when lendk execs the target, the kernel replaces lendk's memory, buffer included, with the target's.
 - The target gets the values in its environment, which other processes running as you can read, as below.
 
 It does not protect against:

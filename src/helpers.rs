@@ -1,6 +1,7 @@
 //! Helpers: the only module that starts processes or sets their environment. A helper gets an
 //! environment built from scratch (ADR 0006): PATH without the shim directory and the
-//! allowlisted caller variables, and stdin from /dev/null.
+//! allowlisted caller variables, upgrade's download variables for its tools alone, and stdin
+//! from /dev/null.
 #![allow(clippy::disallowed_methods)]
 
 use crate::cli::Env;
@@ -60,6 +61,29 @@ pub fn helper_env(env: &Env, shims: &[u8], extra: &[(&[u8], Vec<u8>)]) -> Vec<(V
         out.push((name.to_vec(), value.clone()));
     }
     out
+}
+
+/// The environment of `upgrade`'s download and unpack tools: a helper's, plus the caller's proxy
+/// and certificate variables a download needs (ADR 0006).
+pub fn download_env(env: &Env, shims: &[u8]) -> Vec<(Vec<u8>, Vec<u8>)> {
+    const NET: [&str; 11] = [
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY",
+        "ALL_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
+        "all_proxy",
+        "CURL_CA_BUNDLE",
+        "SSL_CERT_FILE",
+        "SSL_CERT_DIR",
+    ];
+    let net: Vec<(&[u8], Vec<u8>)> = NET
+        .iter()
+        .filter_map(|n| Some((n.as_bytes(), env.get(n)?.to_vec())))
+        .collect();
+    helper_env(env, shims, &net)
 }
 
 /// The watchdog: a fork of lendk in a process group of its own, so a signal to lendk's group
@@ -256,7 +280,9 @@ pub fn read_first_line(fd: i32, plaintext: &mut Plaintext, deadline: Instant) ->
         }
     };
     loop {
-        plaintext.reserve(64 * 1024)?;
+        if plaintext.spare().is_empty() {
+            plaintext.reserve(1)?;
+        }
         ready(fd)?;
         let before = plaintext.len();
         let n = sys::read(fd, plaintext.spare())?;

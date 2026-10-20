@@ -112,6 +112,7 @@ pub const LISTS: &[(&str, &[&str])] = &[
 ];
 
 /// A class row. A class with two TEXT forms has two rows, keyed `CLASS` and `CLASS:FORM`.
+#[derive(Debug)]
 pub struct Class {
     pub id: &'static str,
     pub hint: u8,
@@ -138,100 +139,125 @@ const fn class(
     }
 }
 
+pub const USAGE: Class = class("usage", 2, "See: lendk --help", "See: lendk --help");
+pub const GUARDED: Class = class(
+    "guarded",
+    2,
+    "To map it anyway: lendk add --force CMD WORD...",
+    STOP_FIX,
+);
+pub const UNSUPPORTED: Class = class(
+    "unsupported",
+    125,
+    "Put a newer bash first on PATH.",
+    STOP_FIX,
+);
+pub const UNSUPPORTED_GNUPG: Class = class("unsupported:gnupg", 125, "Upgrade GnuPG.", STOP_FIX);
+pub const LOCKED: Class = class("locked", 120, UNLOCK_FIX, UNLOCK_FIX);
+pub const CANCELED: Class = class("canceled", 120, "Run the command again to retry.", STOP_FIX);
+pub const TIMEOUT: Class = class(
+    "timeout",
+    120,
+    "Retry; a hardware token may need a touch, or raise LENDK_TIMEOUT.",
+    UNLOCK_FIX,
+);
+pub const MAP: Class = class("map", 125, "Fix the line, then run: lendk check", STOP_FIX);
+pub const MAP_GROUP: Class = class(
+    "map:group",
+    125,
+    "Define it first: lendk add @GROUP KEY...",
+    STOP_FIX,
+);
+pub const UNMAPPED: Class = class(
+    "unmapped",
+    125,
+    "Map it: lendk add CMD KEY..., or name keys: lendk run KEY... -- CMD",
+    STOP_FIX,
+);
+pub const MISSING_KEY: Class = class("missing-key", 125, "Add it: pass insert env/KEY", STOP_FIX);
+pub const MISSING_KEY_NOMAP: Class = class(
+    "missing-key:nomap",
+    125,
+    "Create it with lendk add, or name the keys to unlock.",
+    STOP_FIX,
+);
+pub const MISSING_KEY_NONE: Class = class(
+    "missing-key:none",
+    125,
+    "Add a mapped key with pass insert, then retry.",
+    STOP_FIX,
+);
+pub const MISSING_KEY_EMPTY: Class = class(
+    "missing-key:empty",
+    125,
+    "Set it: pass edit env/KEY",
+    STOP_FIX,
+);
+pub const DECRYPT: Class = class(
+    "decrypt",
+    125,
+    "See gpg's error: lendk unlock KEY",
+    UNLOCK_FIX,
+);
+pub const UNSAFE: Class = class(
+    "unsafe",
+    125,
+    "Fix it: chmod go-w PATH, or recreate it as your own",
+    STOP_FIX,
+);
+pub const WRITE: Class = class("write", 125, "Fix it, then run: lendk sync", STOP_FIX);
+pub const UPGRADE: Class = class(
+    "upgrade",
+    125,
+    "Retry; on a slow connection raise LENDK_TIMEOUT.",
+    STOP_FIX,
+);
+pub const UPGRADE_INSTALL: Class = class(
+    "upgrade:install",
+    125,
+    "Upgrade lendk the way it was installed.",
+    STOP_FIX,
+);
+pub const UPGRADE_LOCAL: Class = class(
+    "upgrade:local",
+    125,
+    "Fix it, then run: lendk upgrade",
+    STOP_FIX,
+);
+pub const EXEC: Class = class("exec", 126, "Fix it, or unmap it: lendk rm CMD", STOP_FIX);
+pub const NOT_FOUND: Class = class(
+    "not-found",
+    127,
+    "Install it, or unmap it: lendk rm CMD",
+    "Install CMD, or ask the user.",
+);
+pub const LENDK_MISSING: Class = class("lendk-missing", 127, REINSTALL_FIX, REINSTALL_FIX);
+
+/// Every class row, in `--help` order.
 pub const CLASSES: &[Class] = &[
-    class("usage", 2, "See: lendk --help", "See: lendk --help"),
-    class(
-        "guarded",
-        2,
-        "To map it anyway: lendk add --force CMD WORD...",
-        STOP_FIX,
-    ),
-    class(
-        "unsupported",
-        125,
-        "Put a newer bash first on PATH.",
-        STOP_FIX,
-    ),
-    class("unsupported:gnupg", 125, "Upgrade GnuPG.", STOP_FIX),
-    class("locked", 120, UNLOCK_FIX, UNLOCK_FIX),
-    class("canceled", 120, "Run the command again to retry.", STOP_FIX),
-    class(
-        "timeout",
-        120,
-        "Retry; a hardware token may need a touch, or raise LENDK_TIMEOUT.",
-        UNLOCK_FIX,
-    ),
-    class("map", 125, "Fix the line, then run: lendk check", STOP_FIX),
-    class(
-        "map:group",
-        125,
-        "Define it first: lendk add @GROUP KEY...",
-        STOP_FIX,
-    ),
-    class(
-        "unmapped",
-        125,
-        "Map it: lendk add CMD KEY..., or name keys: lendk run KEY... -- CMD",
-        STOP_FIX,
-    ),
-    class("missing-key", 125, "Add it: pass insert env/KEY", STOP_FIX),
-    class(
-        "missing-key:nomap",
-        125,
-        "Create it with lendk add, or name the keys to unlock.",
-        STOP_FIX,
-    ),
-    class(
-        "missing-key:none",
-        125,
-        "Add a mapped key with pass insert, then retry.",
-        STOP_FIX,
-    ),
-    class(
-        "missing-key:empty",
-        125,
-        "Set it: pass edit env/KEY",
-        STOP_FIX,
-    ),
-    class(
-        "decrypt",
-        125,
-        "See gpg's error: lendk unlock KEY",
-        UNLOCK_FIX,
-    ),
-    class(
-        "unsafe",
-        125,
-        "Fix it: chmod go-w PATH, or recreate it as your own",
-        STOP_FIX,
-    ),
-    class("write", 125, "Fix it, then run: lendk sync", STOP_FIX),
-    class(
-        "upgrade",
-        125,
-        "Retry; on a slow connection raise LENDK_TIMEOUT.",
-        STOP_FIX,
-    ),
-    class(
-        "upgrade:install",
-        125,
-        "Upgrade lendk the way it was installed.",
-        STOP_FIX,
-    ),
-    class(
-        "upgrade:local",
-        125,
-        "Fix it, then run: lendk upgrade",
-        STOP_FIX,
-    ),
-    class("exec", 126, "Fix it, or unmap it: lendk rm CMD", STOP_FIX),
-    class(
-        "not-found",
-        127,
-        "Install it, or unmap it: lendk rm CMD",
-        "Install CMD, or ask the user.",
-    ),
-    class("lendk-missing", 127, REINSTALL_FIX, REINSTALL_FIX),
+    USAGE,
+    GUARDED,
+    UNSUPPORTED,
+    UNSUPPORTED_GNUPG,
+    LOCKED,
+    CANCELED,
+    TIMEOUT,
+    MAP,
+    MAP_GROUP,
+    UNMAPPED,
+    MISSING_KEY,
+    MISSING_KEY_NOMAP,
+    MISSING_KEY_NONE,
+    MISSING_KEY_EMPTY,
+    DECRYPT,
+    UNSAFE,
+    WRITE,
+    UPGRADE,
+    UPGRADE_INSTALL,
+    UPGRADE_LOCAL,
+    EXEC,
+    NOT_FOUND,
+    LENDK_MISSING,
 ];
 
 pub const VARIABLES: &[(&str, &str)] = &[

@@ -108,6 +108,26 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	grep -qF '"PASSWORD_STORE_GPG_OPTS=--status-fd 9 --pinentry-mode error"' "$SB/trace"
 }
 
+# A tracer with CAP_SYS_PTRACE reads a lendk that is not dumpable: the Ubuntu image gives a copy
+# of strace that capability, and make check-docker adds it to the container's bounding set.
+@test "under a tracer with CAP_SYS_PTRACE the sentinel appears only in the target's execve, and there only in its environment" {
+	require strace-ptrace
+	map 'tgt K1 K2'
+	entry K1 "$SENTINEL-1"
+	entry K2 "$SENTINEL-2"
+	printf '#!/bin/sh\nexit 0\n' >"$SB/bin/tgt"
+	chmod 755 "$SB/bin/tgt"
+	local status=0 hits
+	strace-ptrace -f --seccomp-bpf -v -s 4096 -e trace=execve -o "$SB/trace" "$LENDK" run -- tgt </dev/null 2>"$SB/stderr" || status=$?
+	assert_eq "$(<"$SB/stderr")" ""
+	assert_eq "$status" 0
+	grep -qF '"PASSWORD_STORE_GPG_OPTS=--status-fd 9 --pinentry-mode error"' "$SB/trace"
+	hits=$(grep -F -- "$SENTINEL" "$SB/trace")
+	assert_eq "$(grep -c . <<<"$hits")" 1
+	[[ $hits == *"execve(\"$SB/bin/tgt\", [\"tgt\"], ["* ]]
+	[[ ${hits%%], [*} != *"$SENTINEL"* ]]
+}
+
 @test "the target gets the caller's umask and descriptors, and lendk's files are private, under umask 000 and 022" {
 	map 'tgt K1'
 	entry K1 "$SENTINEL"
@@ -158,6 +178,18 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_class missing-key 125
 	assert_eq "$(compgen -G "$SB/log/target.*")" ""
 	assert_eq "$(ls -A "$TMPDIR")" ""
+}
+
+@test "a NUL byte in a value's first line is decrypt, and no part of the value reaches the target or the output" {
+	map 'stub K1 K2'
+	entry K1 "$SENTINEL-1"
+	printf '%s\0%s\nsecond\n' "$SENTINEL-a" "$SENTINEL-b" >"$SB/store/env/K2.gpg"
+	run_lendk run -- stub
+	assert_eq "$stderr" "lendk: decrypt: env/K2 has a NUL byte in its first line. Ask the user to run 'lendk unlock K2' in a terminal, then retry."
+	assert_class decrypt 125
+	refute_contains "$output$stderr" "$SENTINEL"
+	assert_eq "$(compgen -G "$SB/log/target.*")" ""
+	no_sentinel
 }
 
 @test "the sentinel reaches no output, file or helper, also through a nested call" {
@@ -226,6 +258,26 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	((lck * 1024 >= ${#SENTINEL} + 3)) || { echo "VmLck: $lck kB" >&2; return 1; }
 	assert_eq "$(<"$SB/stderr")" ""
 	assert_eq "$(target_var K1)" "$SENTINEL"
+}
+
+@test "under a 64 KiB memlock limit, a call with four keys of ordinary length locks the memory that holds the values" {
+	[[ -d /proc/self ]] || skip "no /proc"
+	map 'stub K1 K2 K3 K4'
+	local k i lck=0 long
+	long=$(printf '%0200d' 0)
+	for k in K1 K2 K3 K4; do entry "$k" "$SENTINEL-$k-$long"; done
+	(ulimit -l 64 && LENDK_TEST_PAUSE=3 exec "$LENDK" run -- stub </dev/null 2>"$SB/stderr") &
+	local pid=$!
+	for ((i = 0; i < 50; i++)); do
+		[[ $(compgen -G "$SB/log/pass.*" | wc -l) == 4 ]] && break
+		sleep 0.1
+	done
+	sleep 0.5
+	lck=$(sed -n 's/^VmLck:[[:space:]]*\([0-9]*\) kB$/\1/p' "/proc/$pid/status")
+	wait "$pid"
+	assert_eq "$(<"$SB/stderr")" ""
+	((lck * 1024 >= 4 * (${#SENTINEL} + ${#long} + 6))) || { echo "VmLck: $lck kB" >&2; return 1; }
+	assert_eq "$(target_var K4)" "$SENTINEL-K4-$long"
 }
 
 @test "a call whose memory cannot be locked still runs" {

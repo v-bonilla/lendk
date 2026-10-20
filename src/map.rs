@@ -4,6 +4,7 @@
 use crate::cli::Env;
 use crate::failure::Failure;
 use crate::sys;
+use crate::tables;
 use crate::tables::{DENIED_NAMES, DENIED_PREFIXES, RESERVED_CMDS};
 use std::ffi::OsStr;
 use std::os::unix::ffi::OsStrExt;
@@ -87,6 +88,15 @@ pub fn bad_word(word: &[u8], group: Option<&[u8]>) -> Option<Vec<u8>> {
     denied.then(|| [b"key ", &quoted(word)[..], b" is denied"].concat())
 }
 
+/// The directory part of `file`: `/` for a file at the root, `.` for a bare name.
+pub fn dirname(file: &[u8]) -> &[u8] {
+    match file.iter().rposition(|&c| c == b'/') {
+        Some(0) => b"/",
+        Some(i) => &file[..i],
+        None => b".",
+    }
+}
+
 /// `path` with its symlinks followed, at most 40.
 pub fn resolve_links(path: &[u8]) -> Vec<u8> {
     let mut resolved = path.to_vec();
@@ -109,13 +119,10 @@ pub fn check_paths(map: &[u8]) -> Result<(), Failure> {
     if std::fs::metadata(path(&file)).is_err() {
         return Ok(());
     }
-    let dir = match file.iter().rposition(|&c| c == b'/') {
-        Some(0) => b"/".to_vec(),
-        Some(i) => file[..i].to_vec(),
-        None => b".".to_vec(),
+    let dir = dirname(&file).to_vec();
+    let unsafe_path = |p: &[u8], what: &[u8]| {
+        Failure::new(&tables::UNSAFE, [p, what].concat()).with("PATH", p.to_vec())
     };
-    let unsafe_path =
-        |p: &[u8], what: &[u8]| Failure::new("unsafe", [p, what].concat()).with("PATH", p.to_vec());
     let mut metas = Vec::new();
     for p in [&dir, &file] {
         let meta = std::fs::metadata(path(p));
@@ -154,7 +161,7 @@ fn at(map: &[u8], line: usize, text: &[u8]) -> Failure {
     }
     out.extend_from_slice(b": ");
     out.extend_from_slice(text);
-    Failure::new("map", out)
+    Failure::new(&tables::MAP, out)
 }
 
 /// The first valid key word of the map, groups skipped, for which `present` holds; None when
@@ -222,15 +229,14 @@ pub fn expand_keys(map: &[u8], cmd: &[u8], words: &[&[u8]]) -> Result<Vec<Vec<u8
     if words.is_empty() {
         if cmd_line == 0 {
             return Err(
-                Failure::new("unmapped", [cmd, b" is not mapped"].concat()).with("CMD", cmd)
+                Failure::new(&tables::UNMAPPED, [cmd, b" is not mapped"].concat()).with("CMD", cmd),
             );
         }
         if cmd_dup != 0 {
-            return Err(at(map, cmd_dup, &[cmd, b" is mapped twice"].concat()));
+            return Err(at(map, cmd_dup, &mapped_twice(cmd)));
         }
         if RESERVED_CMDS.iter().any(|r| r.as_bytes() == cmd) {
-            let text = [cmd, b" is lendk's own runtime and cannot be mapped"].concat();
-            return Err(at(map, cmd_line, &text));
+            return Err(at(map, cmd_line, &runtime(cmd)));
         }
         words = fields(&lines[cmd_line - 1]).split_off(1);
         if words.is_empty() {
@@ -255,18 +261,10 @@ pub fn expand_keys(map: &[u8], cmd: &[u8], words: &[&[u8]]) -> Result<Vec<Vec<u8
             continue;
         };
         let Some(&(_, line, dup)) = groups.iter().find(|g| g.0 == name) else {
-            return Err(at(
-                map,
-                src,
-                &[b"group ", word, b" is not defined"].concat(),
-            ));
+            return Err(at(map, src, &not_defined(word)));
         };
         if dup != 0 {
-            return Err(at(
-                map,
-                dup,
-                &[b"group ", word, b" is defined twice"].concat(),
-            ));
+            return Err(at(map, dup, &defined_twice(word)));
         }
         let gwords = fields(&lines[line - 1]).split_off(1);
         if gwords.is_empty() {
@@ -322,6 +320,27 @@ impl Scan {
     }
 }
 
+/// The map's problem texts, shared by run's read, the scan and the editing verbs.
+pub fn runtime(cmd: &[u8]) -> Vec<u8> {
+    [cmd, b" is lendk's own runtime and cannot be mapped"].concat()
+}
+
+pub fn invalid_cmd(cmd: &[u8]) -> Vec<u8> {
+    [b"'", cmd, b"' is not a valid command name"].concat()
+}
+
+fn mapped_twice(cmd: &[u8]) -> Vec<u8> {
+    [cmd, b" is mapped twice"].concat()
+}
+
+pub fn not_defined(group: &[u8]) -> Vec<u8> {
+    [b"group ", group, b" is not defined"].concat()
+}
+
+fn defined_twice(group: &[u8]) -> Vec<u8> {
+    [b"group ", group, b" is defined twice"].concat()
+}
+
 /// Whether `name` is a valid command name.
 pub fn valid_cmd(name: &[u8]) -> bool {
     name.first()
@@ -357,7 +376,7 @@ pub fn scan(map: &[u8]) -> Scan {
                 continue;
             }
             if s.groups.iter().any(|g| g == name) {
-                bad(name, [b"group ", name, b" is defined twice"].concat());
+                bad(name, defined_twice(name));
                 continue;
             }
             s.groups.push(name.to_vec());
@@ -371,16 +390,15 @@ pub fn scan(map: &[u8]) -> Scan {
             }
         } else {
             if !valid_cmd(name) {
-                bad(b"", [b"'", name, b"' is not a valid command name"].concat());
+                bad(b"", invalid_cmd(name));
                 continue;
             }
             if RESERVED_CMDS.iter().any(|r| r.as_bytes() == name) {
-                let text = [name, b" is lendk's own runtime and cannot be mapped"].concat();
-                bad(b"", text);
+                bad(b"", runtime(name));
                 continue;
             }
             if s.cmds.iter().any(|c| c == name) {
-                bad(name, [name, b" is mapped twice"].concat());
+                bad(name, mapped_twice(name));
                 continue;
             }
             s.cmds.push(name.to_vec());
@@ -411,11 +429,7 @@ pub fn scan(map: &[u8]) -> Scan {
                     continue;
                 }
                 let Some(g) = s.entries.iter().find(|g| g.name == *w) else {
-                    s.bad.push((
-                        e.line,
-                        e.name.clone(),
-                        [b"group ", &w[..], b" is not defined"].concat(),
-                    ));
+                    s.bad.push((e.line, e.name.clone(), not_defined(w)));
                     continue;
                 };
                 g.words
@@ -458,17 +472,13 @@ pub fn write(
     use std::io::Write;
     use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt};
     let file = resolve_links(map);
-    let dir = match file.iter().rposition(|&c| c == b'/') {
-        Some(0) => b"/".to_vec(),
-        Some(i) => file[..i].to_vec(),
-        None => b".".to_vec(),
-    };
+    let dir = dirname(&file).to_vec();
     std::fs::DirBuilder::new()
         .recursive(true)
         .mode(0o700)
         .create(path(&dir))
         .map_err(|_| {
-            Failure::new("write", [&dir[..], b": cannot be created"].concat())
+            Failure::new(&tables::WRITE, [&dir[..], b": cannot be created"].concat())
                 .with("PATH", &dir[..])
         })?;
     let mut out = Vec::new();
@@ -503,7 +513,8 @@ pub fn write(
         let _ = std::fs::remove_file(path(&tmp));
         *temp = None;
         return Err(
-            Failure::new("write", [&file[..], b": cannot be written"].concat()).with("PATH", file),
+            Failure::new(&tables::WRITE, [&file[..], b": cannot be written"].concat())
+                .with("PATH", file),
         );
     }
     *temp = None;
@@ -556,7 +567,7 @@ mod tests {
         let keys = expand_keys(&map, b"x", &[b"K3", b"@g", b"K3"]).unwrap();
         assert_eq!(keys, [b"K3".to_vec(), b"K1".to_vec(), b"K2".to_vec()]);
         let err = expand_keys(&map, b"nope", &[]).unwrap_err();
-        assert_eq!(err.id, "unmapped");
+        assert_eq!(err.class.id, "unmapped");
         let err = expand_keys(&map, b"x", &[b"@none"]).unwrap_err();
         assert_eq!(
             text(err),

@@ -110,17 +110,31 @@ lint_copy() {
 	lint_copy "LICENSE: not MIT held by v-bonilla"
 }
 
-@test "lint-repo.bash allows curl and wget in the Rust source only between the network markers" {
+@test "lint-repo.bash allows curl and wget in the Rust source only in its one network region, and no nc or /dev/tcp" {
 	scratch
-	local tool
+	local tool line
 	for tool in curl wget; do
-		printf '// lint: network begin\nconst TOOL: &str = "%s";\n// lint: network end\n' "$tool" >>"$COPY/src/main.rs"
+		awk -v t="$tool" '{ print } /^\/\/ lint: network begin$/ { printf "const TOOL: &str = \"%s\";\n", t }' \
+			"$ROOT/src/upgrade.rs" >"$COPY/src/upgrade.rs"
 		run bash "$ROOT/test/lint-repo.bash" "$COPY"
 		assert_eq "$output" ""
+		assert_eq "$status" 0
 		printf 'const OTHER: &str = "%s";\n' "$tool" >>"$COPY/src/main.rs"
 		lint_copy "src/main.rs:"
 		assert_eq "$output" "lint-repo: src/main.rs:$(wc -l <"$COPY/src/main.rs"): curl or wget outside the network region"
 		cp "$ROOT/src/main.rs" "$COPY/src/main.rs"
+	done
+	# A second region exempts nothing.
+	printf '// lint: network begin\nconst TOOL: &str = "curl";\n// lint: network end\n' >>"$COPY/src/upgrade.rs"
+	lint_copy "lint-repo: src: not exactly one network region"
+	assert_line "$output" "lint-repo: src/upgrade.rs:$(($(wc -l <"$COPY/src/upgrade.rs") - 1)): curl or wget outside the network region"
+	assert_eq "$(wc -l <<<"$output")" 2
+	cp "$ROOT/src/upgrade.rs" "$COPY/src/upgrade.rs"
+	for line in 'let c = Command::new("nc");' 'let p = "/dev/tcp/host/80";' 'let p = "/dev/udp/host/53";'; do
+		cp "$ROOT/src/main.rs" "$COPY/src/main.rs"
+		printf '%s\n' "$line" >>"$COPY/src/main.rs"
+		lint_copy "src/main.rs:"
+		assert_eq "$output" "lint-repo: src/main.rs:$(wc -l <"$COPY/src/main.rs"): network tool"
 	done
 }
 

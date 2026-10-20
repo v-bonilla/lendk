@@ -38,13 +38,18 @@ while IFS= read -r hit; do problem "$hit: retired spec reference"; done < <(grep
 while IFS= read -r hit; do problem "$hit: retired spec ID"; done < <(grep -nHE -e '(^|[^A-Za-z0-9_])(N?FR|AC)[0-9]+([^A-Za-z0-9_]|$)' -- "${files[@]}")
 if ! grep -q '^MIT License' LICENSE 2>/dev/null || ! grep -q 'v-bonilla' LICENSE; then problem "LICENSE: not MIT held by v-bonilla"; fi
 
-# The Rust source names curl and wget only between the network markers (ADR 0013).
-for f in "${files[@]}"; do
-	[[ $f == src/*.rs ]] || continue
-	while IFS= read -r hit; do problem "$f:$hit: curl or wget outside the network region"; done < <(awk '
-		/^[[:space:]]*\/\/ lint: network begin$/ { n = 1 } /^[[:space:]]*\/\/ lint: network end$/ { n = 0; next }
-		!n && /(^|[^A-Za-z0-9_-])(curl|wget)([^A-Za-z0-9_-]|$)/ { print NR }' "$f")
-done
+# The Rust source names curl and wget only in its one network region, and never nc or /dev/tcp (ADR 0013).
+rs=()
+for f in "${files[@]}"; do [[ $f == src/*.rs ]] && rs+=("$f"); done
+if ((${#rs[@]})); then
+	[[ $(cat -- "${rs[@]}" | grep -c '^[[:space:]]*// lint: network begin$') == 1 &&
+		$(cat -- "${rs[@]}" | grep -c '^[[:space:]]*// lint: network end$') == 1 ]] ||
+		problem "src: not exactly one network region"
+	while IFS= read -r hit; do problem "$hit"; done < <(awk '
+		/^[[:space:]]*\/\/ lint: network begin$/ { n = (++regions == 1) } /^[[:space:]]*\/\/ lint: network end$/ { n = 0; next }
+		!n && /(^|[^A-Za-z0-9_-])(curl|wget)([^A-Za-z0-9_-]|$)/ { print FILENAME ":" FNR ": curl or wget outside the network region" }
+		/(^|[^A-Za-z0-9_-])nc([^A-Za-z0-9_-]|$)|\/dev\/(tcp|udp)/ { print FILENAME ":" FNR ": network tool" }' "${rs[@]}")
+fi
 # cmdpos WORD: WORD in command position.
 cmdpos() { printf '(^|[;&|(]|[$][(])[[:space:]]*%s([^A-Za-z0-9_=-]|$)' "$1"; }
 for f in "${files[@]}"; do

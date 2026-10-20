@@ -2,11 +2,13 @@
 //! and a failure through gpg's status code (ADR 0004), all within LENDK_TIMEOUT.
 
 use crate::cli::Env;
+use crate::exec;
 use crate::failure::Failure;
 use crate::helpers;
 use crate::map::{Paths, path};
 use crate::plaintext::Plaintext;
 use crate::sys;
+use crate::tables;
 use std::fs::{File, OpenOptions};
 use std::os::unix::fs::OpenOptionsExt;
 use std::time::{Duration, Instant};
@@ -95,16 +97,6 @@ fn gpg_tty(env: &Env, interactive: bool) -> Option<Vec<u8>> {
     caller.map(<[u8]>::to_vec)
 }
 
-/// The first executable `name` on `path_var`.
-pub fn find(path_var: &[u8], name: &[u8]) -> Option<Vec<u8>> {
-    path_var.split(|&c| c == b':').find_map(|dir| {
-        let dir = if dir.is_empty() { &b"."[..] } else { dir };
-        let file = [dir, b"/", name].concat();
-        (std::fs::metadata(path(&file)).is_ok_and(|m| m.is_file()) && sys::executable(&file))
-            .then_some(file)
-    })
-}
-
 /// The version in gpg's first `--version` line, after `gpg (GnuPG...) `.
 fn gnupg_version(first: &[u8]) -> &[u8] {
     first
@@ -154,11 +146,11 @@ fn check_gnupg(
         .find(|(n, _)| n == b"PATH")
         .map(|(_, v)| v.as_slice())
         .unwrap_or_default();
-    let Some(gpg) = find(path_var, b"gpg2").or_else(|| find(path_var, b"gpg")) else {
+    let Some(gpg) = exec::find(path_var, b"gpg2").or_else(|| exec::find(path_var, b"gpg")) else {
         return Ok(());
     };
     let mut out = Plaintext::with_capacity(256)
-        .map_err(|_| Failure::new("write", "memory for gpg's version cannot be mapped"))?;
+        .map_err(|_| Failure::new(&tables::WRITE, "memory for gpg's version cannot be mapped"))?;
     if let Ok(mut job) = watchdog.spawn(&gpg, &[b"--version"], vars, (None, None), None) {
         let _ = helpers::read_first_line(job.stdout(), &mut out, deadline);
         job.wait(deadline);
@@ -176,7 +168,7 @@ fn check_gnupg(
             .collect()
     };
     Err(Failure::new(
-        "unsupported:gnupg",
+        &tables::UNSUPPORTED_GNUPG,
         [
             b"GnuPG ",
             &shown[..],
@@ -192,7 +184,7 @@ pub fn gnupg(env: &Env, paths: &Paths, timeout: u64) -> Result<(), Failure> {
     let deadline = Instant::now() + Duration::from_secs(timeout);
     let watchdog = helpers::Watchdog::start(b"", None).map_err(|e| {
         Failure::new(
-            "write",
+            &tables::WRITE,
             [b"cannot start the watchdog: ", e.to_string().as_bytes()].concat(),
         )
     })?;
@@ -201,16 +193,6 @@ pub fn gnupg(env: &Env, paths: &Paths, timeout: u64) -> Result<(), Failure> {
         &helpers::helper_env(env, &paths.shims, &[]),
         deadline,
     )
-}
-
-/// A test hook: pauses for LENDK_TEST_PAUSE seconds when LENDK_TEST_AT, `exec` when unset,
-/// names `point`.
-pub fn test_pause(env: &Env, point: &[u8]) {
-    if env.get("LENDK_TEST_AT").unwrap_or(b"exec") == point
-        && let Some(&[n @ b'0'..=b'9']) = env.get("LENDK_TEST_PAUSE")
-    {
-        std::thread::sleep(Duration::from_secs(u64::from(n - b'0')));
-    }
 }
 
 /// Reads each key's value as a `KEY=value` entry ended by NUL, and returns each entry's offset.
@@ -230,7 +212,7 @@ pub fn read(
         .unwrap_or(b"/tmp");
     let tmp = sys::mkdtemp(&[tmp_base, b"/lendk.XXXXXX"].concat()).map_err(|_| {
         Failure::new(
-            "write",
+            &tables::WRITE,
             [tmp_base, b": cannot create a temporary directory"].concat(),
         )
         .with("PATH", tmp_base)
@@ -239,7 +221,7 @@ pub fn read(
     let deadline = Instant::now() + Duration::from_secs(timeout);
     let watchdog = helpers::Watchdog::start(&tmp.0, None).map_err(|e| {
         Failure::new(
-            "write",
+            &tables::WRITE,
             [b"cannot start the watchdog: ", e.to_string().as_bytes()].concat(),
         )
     })?;
@@ -270,7 +252,7 @@ pub fn read(
         let status_path = [&tmp.0[..], b"/status.", *key].concat();
         let io_fail = |_| {
             Failure::new(
-                "write",
+                &tables::WRITE,
                 [&tmp.0[..], b": cannot write the backend's files"].concat(),
             )
             .with("PATH", tmp.0.clone())
@@ -289,7 +271,7 @@ pub fn read(
             .map_err(|e| decrypt(&name, key, e.to_string().as_bytes()))?;
         drop(status);
         if offsets.is_empty() {
-            test_pause(env, b"job");
+            env.test_pause(b"job", b"exec");
         }
         let pushed = plaintext
             .push(key)
@@ -309,7 +291,8 @@ pub fn read(
             plaintext.truncate(offset);
             let within = format!(": gpg did not finish within {timeout} s");
             return Err(
-                Failure::new("timeout", [&name[..], within.as_bytes()].concat()).with("KEY", *key),
+                Failure::new(&tables::TIMEOUT, [&name[..], within.as_bytes()].concat())
+                    .with("KEY", *key),
             );
         };
         if !success || pushed.is_err() {
@@ -319,8 +302,16 @@ pub fn read(
         if plaintext.len() == value_start {
             plaintext.truncate(offset);
             return Err(Failure::new(
-                "missing-key:empty",
+                &tables::MISSING_KEY_EMPTY,
                 [&name[..], b" has an empty first line"].concat(),
+            )
+            .with("KEY", *key));
+        }
+        if plaintext.as_bytes()[value_start..].contains(&0) {
+            plaintext.truncate(offset);
+            return Err(Failure::new(
+                &tables::DECRYPT,
+                [&name[..], b" has a NUL byte in its first line"].concat(),
             )
             .with("KEY", *key));
         }
@@ -331,7 +322,7 @@ pub fn read(
 }
 
 fn decrypt(name: &[u8], key: &[u8], said: &[u8]) -> Failure {
-    Failure::new("decrypt", [name, b": gpg says: ", said].concat()).with("KEY", key)
+    Failure::new(&tables::DECRYPT, [name, b": gpg says: ", said].concat()).with("KEY", key)
 }
 
 /// The failure of a pass call: gpg's first ERROR status code, else gpg's last stderr line. A
@@ -361,7 +352,7 @@ fn classify_output(
     match code {
         Some(85 | 99) if no_prompt => {
             return Failure::new(
-                "locked",
+                &tables::LOCKED,
                 [
                     name,
                     b" needs the gpg passphrase and this call cannot prompt",
@@ -372,7 +363,7 @@ fn classify_output(
         }
         Some(99) => {
             return Failure::new(
-                "canceled",
+                &tables::CANCELED,
                 [b"passphrase entry for ", name, b" was canceled"].concat(),
             )
             .with("KEY", key);
@@ -435,7 +426,9 @@ mod tests {
     fn the_status_code_not_the_text_classifies_per_mode() {
         let line = |code: &str| format!("[GNUPG:] ERROR pkdecrypt_failed {code}\n").into_bytes();
         let class = |code: &str, no_prompt| {
-            classify_output(&line(code), b"gpg: x.\n", b"env/K", b"K", no_prompt).id
+            classify_output(&line(code), b"gpg: x.\n", b"env/K", b"K", no_prompt)
+                .class
+                .id
         };
         assert_eq!(class("67108949", true), "locked");
         assert_eq!(class("67108963", true), "locked");

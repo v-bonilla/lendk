@@ -7,6 +7,7 @@ use crate::failure::Failure;
 use crate::map::{self, Paths};
 use crate::pass;
 use crate::plaintext::Plaintext;
+use crate::tables;
 use std::convert::Infallible;
 use std::ffi::CStr;
 
@@ -26,22 +27,15 @@ impl From<Failure> for Ending {
 }
 
 fn usage(text: impl Into<Vec<u8>>) -> Ending {
-    Failure::new("usage", text).into()
+    Failure::new(&tables::USAGE, text).into()
 }
 
 /// Whether `word` names an executable regular file, as bash's `type -P` finds it.
 fn is_command(env: &Env, word: &[u8]) -> bool {
-    let ok = |p: &[u8]| {
-        std::fs::metadata(map::path(p)).is_ok_and(|m| m.is_file()) && crate::sys::executable(p)
-    };
     if word.contains(&b'/') {
-        return ok(word);
+        return exec::is_executable(word);
     }
-    let path = env.get("PATH").unwrap_or_default();
-    path.split(|&c| c == b':').any(|dir| {
-        let dir = if dir.is_empty() { &b"."[..] } else { dir };
-        ok(&[dir, b"/", word].concat())
-    })
+    exec::find(env.get("PATH").unwrap_or_default(), word).is_some()
 }
 
 /// Checks that every key is in the store, listing each missing one, then reads them all
@@ -58,7 +52,7 @@ pub fn read_keys(
         .filter(|k| !pass::has(paths, k))
         .map(|k| {
             Failure::new(
-                "missing-key",
+                &tables::MISSING_KEY,
                 [&paths.prefix[..], b"/", k, b" is not in the store"].concat(),
             )
             .with("KEY", *k)
@@ -70,9 +64,11 @@ pub fn read_keys(
             last,
         });
     }
+    // 4 KiB per value keeps a typical call in one mapping small enough to mlock under a 64 KiB
+    // RLIMIT_MEMLOCK; pass gives no length in advance, so a longer value grows it by copy.
     let capacity: usize = keys.iter().map(|k| k.len() + 2 + 4096).sum();
     let mut plaintext = Plaintext::with_capacity(capacity)
-        .map_err(|_| Failure::new("write", "memory for the values cannot be mapped"))?;
+        .map_err(|_| Failure::new(&tables::WRITE, "memory for the values cannot be mapped"))?;
     let offsets = if keys.is_empty() {
         Vec::new()
     } else {
@@ -111,16 +107,8 @@ pub fn run(
     }
     map::check_paths(&paths.map)?;
     let base = cmd.rsplit(|&c| c == b'/').next().unwrap_or(cmd);
-    if named.is_empty() {
-        let first_ok = base
-            .first()
-            .is_some_and(|c| c.is_ascii_alphanumeric() || *c == b'_' || *c == b'+');
-        let rest_ok = base
-            .iter()
-            .all(|c| c.is_ascii_alphanumeric() || b"._+-".contains(c));
-        if !first_ok || !rest_ok {
-            return Err(usage([b"'", cmd, b"' names no valid command"].concat()));
-        }
+    if named.is_empty() && !map::valid_cmd(base) {
+        return Err(usage([b"'", cmd, b"' names no valid command"].concat()));
     }
     let keys = map::expand_keys(&paths.map, base, &named)?;
     let target = exec::resolve(env, &paths.shims, cmd)?;
@@ -130,7 +118,7 @@ pub fn run(
         .filter(|k| env.get(k).is_none_or(<[u8]>::is_empty))
         .collect();
     let (plaintext, offsets) = read_keys(env, paths, interactive, timeout, &to_read)?;
-    pass::test_pause(env, b"exec");
+    env.test_pause(b"exec", b"exec");
     let injected: Vec<(&[u8], usize)> = to_read.iter().copied().zip(offsets).collect();
     let mut list: Vec<&[u8]> = Vec::new();
     let caller = env.get("LENDK_INJECTED").unwrap_or_default();

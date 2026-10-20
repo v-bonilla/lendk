@@ -53,7 +53,6 @@ check: lint test
 
 images:
 	docker pull -q bash:3.2.57 >/dev/null
-	docker pull -q bash:4.3.48 >/dev/null
 	docker build -q -t lendk-test:ubuntu -f test/docker/ubuntu.Dockerfile test/docker
 	docker build -q -t lendk-test:bash44 -f test/docker/bash44.Dockerfile test/docker
 
@@ -63,7 +62,7 @@ check-docker: images build
 	$(DOCKER_RUN) --cap-add SYS_PTRACE \
 		-v "$(RUSTUP_DIR):/rustup:ro" -v "$(CARGO_DIR):/cargo:ro" -e RUSTUP_HOME=/rustup -e CARGO_HOME=/cargo \
 		-e PATH=/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
-		-e TEST_REQUIRE="gpg pass zsh strace script python3 perl git make environment-d" \
+		-e TEST_REQUIRE="gpg pass zsh strace strace-ptrace script python3 perl git make environment-d" \
 		lendk-test:ubuntu $(BATS) --filter-tags '!docker' test/*.bats
 	$(DOCKER_RUN) -e TEST_REQUIRE=script lendk-test:bash44 $(BATS) --filter-tags '!docker' test/*.bats
 
@@ -100,7 +99,6 @@ uninstall: prefix
 	fi; \
 	exit 0
 
-# The per-platform release archives come with the release workflow (#60); no 1.x release is cut
-# from this branch.
+# The per-platform release archives come with the release workflow (#60); make dist builds none.
 dist:
-	@echo 'make dist builds no release yet: the per-platform archives come with the release workflow' >&2; exit 1
+	@echo 'make dist builds no release: the per-platform archives come with the release workflow' >&2; exit 1

@@ -1,4 +1,4 @@
-//! The command line: `--help`, `--version`, and usage for anything else until a verb is ported.
+//! The command line: `--help`, `--version`, the verbs, and usage for anything else.
 
 use crate::failure::Failure;
 use crate::map::Paths;
@@ -7,7 +7,7 @@ use crate::sys;
 use crate::tables;
 use crate::unlock;
 use crate::upgrade;
-use crate::{check, edit};
+use crate::{check, edit, init};
 use std::ffi::CStr;
 use std::io::Write;
 
@@ -42,6 +42,24 @@ impl Env<'_> {
 
     pub fn raw(&self) -> &[&'static CStr] {
         self.0
+    }
+
+    /// The test hook's seconds: LENDK_TEST_PAUSE when it is one digit.
+    pub fn test_pause_secs(&self) -> Option<u64> {
+        match self.get("LENDK_TEST_PAUSE") {
+            Some(&[n @ b'0'..=b'9']) => Some(u64::from(n - b'0')),
+            _ => None,
+        }
+    }
+
+    /// The test hook: sleeps LENDK_TEST_PAUSE seconds when LENDK_TEST_AT, or `default` when it is
+    /// unset, names `point`.
+    pub fn test_pause(&self, point: &[u8], default: &[u8]) {
+        if self.get("LENDK_TEST_AT").unwrap_or(default) == point
+            && let Some(secs) = self.test_pause_secs()
+        {
+            std::thread::sleep(std::time::Duration::from_secs(secs));
+        }
     }
 }
 
@@ -96,7 +114,7 @@ pub fn main(args: &[&'static CStr], env: &[&'static CStr]) -> i32 {
         Some(b"add") => Some(edit::add),
         Some(b"rm") => Some(edit::rm),
         Some(b"check") => Some(check::check),
-        Some(b"init") => Some(check::init),
+        Some(b"init") => Some(init::init),
         _ => None,
     };
     if let Some(verb) = verb {
@@ -138,18 +156,18 @@ pub fn main(args: &[&'static CStr], env: &[&'static CStr]) -> i32 {
 fn dispatch(words: &[&[u8]], env: &Env) -> Result<String, Failure> {
     match words.first().copied() {
         Some(b"--version") if words.len() == 1 => Ok(format!("lendk {}\n", tables::VERSION)),
-        Some(b"--version") => Err(Failure::new("usage", "--version takes no arguments")),
+        Some(b"--version") => Err(Failure::new(&tables::USAGE, "--version takes no arguments")),
         Some(b"--help") if words.len() == 1 => Ok(tables::help()),
-        Some(b"--help") => Err(Failure::new("usage", "--help takes no arguments")),
+        Some(b"--help") => Err(Failure::new(&tables::USAGE, "--help takes no arguments")),
         first => {
             check_env(env)?;
             let Some(verb) = first else {
-                return Err(Failure::new("usage", "no verb given"));
+                return Err(Failure::new(&tables::USAGE, "no verb given"));
             };
             let mut text = b"unknown verb '".to_vec();
             text.extend_from_slice(verb);
             text.push(b'\'');
-            Err(Failure::new("usage", text))
+            Err(Failure::new(&tables::USAGE, text))
         }
     }
 }
@@ -170,7 +188,7 @@ fn check_env(env: &Env) -> Result<(), Failure> {
         let mut text = format!("{name} is '").into_bytes();
         text.extend_from_slice(value);
         text.extend_from_slice(format!("'; {hint}").as_bytes());
-        Failure::new("usage", text)
+        Failure::new(&tables::USAGE, text)
     };
     if let Some(value) = env.get("LENDK_PROMPT")
         && !matches!(value, b"auto" | b"never" | b"allow")

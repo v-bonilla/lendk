@@ -2,9 +2,11 @@
 
 use crate::cli::Env;
 use crate::failure::Failure;
-use crate::map::{path, resolve_links};
+use crate::map::{dirname, path, resolve_links};
 use crate::plaintext::Plaintext;
+use crate::shims;
 use crate::sys;
+use crate::tables;
 use std::ffi::{CStr, CString, c_char};
 use std::io::Read;
 
@@ -25,6 +27,27 @@ fn head(p: &[u8], n: u64) -> Vec<u8> {
     out
 }
 
+/// Each directory of `path_var`, an empty one read as `.`, with `dir/name` in it.
+pub fn path_files<'a>(
+    path_var: &'a [u8],
+    name: &'a [u8],
+) -> impl Iterator<Item = (&'a [u8], Vec<u8>)> {
+    path_var.split(|&c| c == b':').map(move |dir| {
+        let dir = if dir.is_empty() { &b"."[..] } else { dir };
+        (dir, [dir, b"/", name].concat())
+    })
+}
+
+/// Whether `p` is an executable regular file.
+pub fn is_executable(p: &[u8]) -> bool {
+    is_file(p) && sys::executable(p)
+}
+
+/// The first executable `name` on `path_var`.
+pub fn find(path_var: &[u8], name: &[u8]) -> Option<Vec<u8>> {
+    path_files(path_var, name).find_map(|(_, file)| is_executable(&file).then_some(file))
+}
+
 /// The file that `cmd` names: as given when it holds `/`, else the first executable regular
 /// file on PATH outside the shim directory and any other lendk shim directory.
 pub fn resolve(env: &Env, shims: &[u8], cmd: &[u8]) -> Result<Vec<u8>, Failure> {
@@ -32,10 +55,8 @@ pub fn resolve(env: &Env, shims: &[u8], cmd: &[u8]) -> Result<Vec<u8>, Failure> 
         cmd.to_vec()
     } else {
         let path_var = env.get("PATH").unwrap_or_default();
-        let found = path_var.split(|&c| c == b':').find_map(|dir| {
-            let dir = if dir.is_empty() { &b"."[..] } else { dir };
-            let file = [dir, b"/", cmd].concat();
-            if !is_file(&file) || !sys::executable(&file) || dir == shims {
+        let found = path_files(path_var, cmd).find_map(|(dir, file)| {
+            if !is_executable(&file) || dir == shims {
                 return None;
             }
             if sys::same_file(dir, shims) {
@@ -43,33 +64,22 @@ pub fn resolve(env: &Env, shims: &[u8], cmd: &[u8]) -> Result<Vec<u8>, Failure> 
             }
             if std::fs::symlink_metadata(path(&file)).is_ok_and(|m| m.is_symlink()) {
                 let resolved = resolve_links(&file);
-                let rdir = match resolved.iter().rposition(|&c| c == b'/') {
-                    Some(0) => &b"/"[..],
-                    Some(i) => &resolved[..i],
-                    None => &b"."[..],
-                };
-                if sys::same_file(rdir, shims) {
+                if sys::same_file(dirname(&resolved), shims) {
                     return None;
                 }
             }
-            let text = head(&file, 513);
-            let mut lines = text.split(|&c| c == b'\n');
-            let second = lines.nth(1).unwrap_or_default();
-            if second.starts_with(b"# lendk shim ") {
-                return None;
-            }
-            Some(file)
+            (!shims::marked(&head(&file, 513))).then_some(file)
         });
         found.ok_or_else(|| {
             Failure::new(
-                "not-found",
+                &tables::NOT_FOUND,
                 [cmd, b" is not on PATH outside ", shims].concat(),
             )
             .with("CMD", cmd)
         })?
     };
     let not_executable = |p: &[u8]| {
-        Failure::new("exec", [p, b" is not executable"].concat())
+        Failure::new(&tables::EXEC, [p, b" is not executable"].concat())
             .with("PATH", p)
             .with("CMD", basename(cmd))
     };
@@ -103,7 +113,7 @@ pub fn exec(
     injected: &[(&[u8], usize)],
     list: &[u8],
 ) -> Failure {
-    let failure = Failure::new("exec", [target, b" is not executable"].concat())
+    let failure = Failure::new(&tables::EXEC, [target, b" is not executable"].concat())
         .with("PATH", target)
         .with("CMD", basename(cmd));
     let Ok(cmd0) = CString::new(cmd) else {

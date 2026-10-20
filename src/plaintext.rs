@@ -28,8 +28,9 @@ impl Plaintext {
         &self.pages.as_slice()[..self.len]
     }
 
-    /// Room for at least `more` bytes after the end. A bigger buffer takes a copy, and the old
-    /// one is zeroed as it drops; nothing reallocates in place.
+    /// Room for at least `more` bytes after the end. Only a value longer than the pre-size gets
+    /// here: the buffer at least doubles into fresh pages by copy, and the old pages are zeroed
+    /// as they drop; nothing reallocates in place.
     pub fn reserve(&mut self, more: usize) -> io::Result<()> {
         let need = self.len + more;
         if need <= self.pages.as_slice().len() {

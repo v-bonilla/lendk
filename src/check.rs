@@ -4,12 +4,11 @@
 use crate::cli::{self, Env};
 use crate::edit::{Call, Outcome};
 use crate::exec;
-use crate::failure::Failure;
+use crate::failure;
 use crate::map::{self, Paths, Scan, path};
 use crate::pass;
 use crate::shims;
 use crate::sys;
-use std::io::Write;
 
 /// A problem as `TEXT (FIX)`; NFIX replaces FIX in a non-interactive call, `ask the user` by
 /// default (ADR 0012).
@@ -162,12 +161,7 @@ pub fn rows<'a>(
         } else if shims::is_shim(&f) {
             let content = std::fs::read(path(&f)).unwrap_or_default();
             if content != shims::text(lendk, name) || !shims::mode_ok(&f) {
-                let third = content.split(|&c| c == b'\n').nth(2).unwrap_or_default();
-                let quoted = third.strip_prefix(b"lendk='").unwrap_or(third);
-                let quoted = quoted.strip_suffix(b"'").unwrap_or(quoted);
-                let runs = String::from_utf8_lossy(quoted)
-                    .replace("'\\''", "'")
-                    .into_bytes();
+                let runs = shims::runs(&content);
                 let runnable = std::fs::metadata(path(&runs)).is_ok_and(|m| m.is_file())
                     && sys::executable(&runs);
                 if runnable {
@@ -186,13 +180,11 @@ pub fn rows<'a>(
         if !onpath {
             continue;
         }
-        for dir in path_var.split(|&c| c == b':') {
+        for (dir, f) in exec::path_files(path_var, name) {
             if on_path_dir(dir, shims) {
                 break;
             }
-            let dir = if dir.is_empty() { &b"."[..] } else { dir };
-            let f = [dir, b"/", name].concat();
-            if std::fs::metadata(path(&f)).is_ok_and(|m| m.is_file()) && sys::executable(&f) {
+            if exec::is_executable(&f) {
                 let run = [b"lendk run -- ", &name[..]].concat();
                 let fix = [b"put ", shims, b" first on PATH, or call: ", &run[..]].concat();
                 rows.add(
@@ -268,24 +260,29 @@ fn globals(call: &Call, scan: &Scan) -> Vec<Vec<u8>> {
     out
 }
 
+/// The notice for a map with no command, with the next step for the call's mode.
+pub fn empty_map_notice(interactive: bool) {
+    let next: &[u8] = if interactive {
+        b"map one with lendk add CMD KEY"
+    } else {
+        b"ask the user which commands to map"
+    };
+    failure::notice(
+        &[
+            &b"no command is mapped yet, so lendk gives no keys; "[..],
+            next,
+        ]
+        .concat(),
+    );
+}
+
 /// `lendk check [NAME...]`: the headers, the problems no row holds, then the rows; exit 1 only
 /// when a shown item has a problem.
 pub fn check(call: &Call, names: &[&[u8]]) -> Outcome {
     let paths = call.paths;
     let scan = map::scan(&paths.map);
     if scan.cmds.is_empty() && scan.groups.is_empty() && scan.bad.is_empty() {
-        let next: &[u8] = if call.interactive {
-            b"map one with lendk add CMD KEY"
-        } else {
-            b"ask the user which commands to map"
-        };
-        let notice = [
-            &b"lendk: notice: no command is mapped yet, so lendk gives no keys; "[..],
-            next,
-            b".\n",
-        ]
-        .concat();
-        let _ = std::io::stderr().write_all(&notice);
+        empty_map_notice(call.interactive);
     }
     let global = globals(call, &scan);
     let lendk = shims::self_path(call.env, call.argv0);
@@ -315,68 +312,9 @@ pub fn check(call: &Call, names: &[&[u8]]) -> Outcome {
     Ok((out, i32::from(bad)))
 }
 
-/// `lendk init sh|bash|zsh|systemd`: the login block holding the absolute shim directory. It
-/// reads no map, and prints no code for a shim directory open to others.
-pub fn init(call: &Call, words: &[&[u8]]) -> Outcome {
-    let [shell] = words else {
-        return Err(Failure::new("usage", "init takes one of sh, bash, zsh or systemd").into());
-    };
-    if ![&b"sh"[..], b"bash", b"zsh", b"systemd"].contains(shell) {
-        let text = [
-            b"init takes one of sh, bash, zsh or systemd, not '",
-            *shell,
-            b"'",
-        ]
-        .concat();
-        return Err(Failure::new("usage", text).into());
-    }
-    let shims = &call.paths.shims;
-    let dir = if shims.starts_with(b"/") {
-        shims.clone()
-    } else {
-        shims::absolute(call.env, shims)
-    };
-    shims::check_dir(&dir)?;
-    let block = |body: &[u8]| [b"# >>> lendk >>>\n", body, b"\n# <<< lendk <<<\n"].concat();
-    if *shell == b"systemd" {
-        return Ok((block(&[b"PATH=", &dir[..], b":${PATH}"].concat()), 0));
-    }
-    let mut q = b"'".to_vec();
-    for &c in &dir {
-        if c == b'\'' {
-            q.extend_from_slice(b"'\\''");
-        } else {
-            q.push(c);
-        }
-    }
-    q.push(b'\'');
-    // The loop keeps every other entry, empty ones included, in order.
-    let front = [
-        &b"lendk_p=; lendk_r=${PATH:+$PATH:}\nwhile [ -n \"$lendk_r\" ]; do\n\tlendk_d=${lendk_r%%:*}; lendk_r=${lendk_r#*:}\n\t[ \"$lendk_d\" = "[..],
-        &q,
-        b" ] || lendk_p=$lendk_p:$lendk_d\ndone\nPATH=",
-        &q,
-        b"$lendk_p; export PATH\nunset lendk_p lendk_r lendk_d",
-    ]
-    .concat();
-    let (head, tail): (&[u8], &[u8]) = match *shell {
-        b"bash" => (
-            b"__lendk_path() {\n",
-            b"\nhash -r\n}\n__lendk_path\ncase \";${PROMPT_COMMAND-};\" in *\";__lendk_path;\"*) ;; *) PROMPT_COMMAND=\"__lendk_path${PROMPT_COMMAND:+;$PROMPT_COMMAND}\" ;; esac",
-        ),
-        b"zsh" => (
-            b"__lendk_path() {\n",
-            b"\nrehash\n}\n__lendk_path\n(( ${+precmd_functions} )) || typeset -ga precmd_functions; (( ${precmd_functions[(Ie)__lendk_path]} )) || precmd_functions+=(__lendk_path)",
-        ),
-        _ => (b"", b""),
-    };
-    Ok((block(&[head, &front, tail].concat()), 0))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::ffi::CStr;
 
     #[test]
     fn an_agent_gets_ask_the_user_unless_the_problem_names_its_own_fix() {
@@ -392,42 +330,6 @@ mod tests {
         assert_eq!(
             item(b"x", b"put it first", run, false),
             b"x (lendk run -- gh)"
-        );
-    }
-
-    fn init_with(shims: &'static CStr, shell: &[u8]) -> Vec<u8> {
-        let entries = [shims, c"HOME=/nonexistent"];
-        let env = Env(&entries);
-        let paths = Paths::new(&env);
-        let call = Call {
-            env: &env,
-            paths: &paths,
-            interactive: false,
-            argv0: b"lendk",
-        };
-        let Ok((out, 0)) = init(&call, &[shell]) else {
-            panic!("init failed");
-        };
-        out
-    }
-
-    #[test]
-    fn init_quotes_the_shim_directory_for_sh_and_leaves_systemd_unquoted() {
-        let sh = "# >>> lendk >>>
-lendk_p=; lendk_r=${PATH:+$PATH:}
-while [ -n \"$lendk_r\" ]; do
-\tlendk_d=${lendk_r%%:*}; lendk_r=${lendk_r#*:}
-\t[ \"$lendk_d\" = '/nonexistent/it'\\''s' ] || lendk_p=$lendk_p:$lendk_d
-done
-PATH='/nonexistent/it'\\''s'$lendk_p; export PATH
-unset lendk_p lendk_r lendk_d
-# <<< lendk <<<
-";
-        let shims = c"LENDK_SHIMS=/nonexistent/it's";
-        assert_eq!(String::from_utf8_lossy(&init_with(shims, b"sh")), sh);
-        assert_eq!(
-            init_with(shims, b"systemd"),
-            b"# >>> lendk >>>\nPATH=/nonexistent/it's:${PATH}\n# <<< lendk <<<\n"
         );
     }
 }
