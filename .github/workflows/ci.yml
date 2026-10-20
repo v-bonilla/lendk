@@ -4,12 +4,15 @@ on:
   push:
   pull_request:
   workflow_dispatch:
+  schedule:
+    - cron: "17 5 * * *"
 
 permissions:
   contents: read
 
 jobs:
   check:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -17,9 +20,33 @@ jobs:
           submodules: true
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends pass gnupg
+      - run: rustup toolchain install
+      - run: make deps
       - run: make check
 
+  # RustSec advisories: this branch's Cargo.lock, and the latest release tag's once a tag carries one.
+  advisories:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - run: rustup toolchain install
+      - run: cargo install --locked --root "$RUNNER_TEMP/tools" cargo-deny@=$(sed -n 's/^CARGO_DENY_VERSION := //p' Makefile)
+      - run: '"$RUNNER_TEMP/tools/bin/cargo-deny" check advisories'
+      - name: latest release tag
+        run: |
+          tag=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          if [ -n "$tag" ] && git cat-file -e "$tag:Cargo.lock" 2>/dev/null; then
+            git worktree add "$RUNNER_TEMP/release" "$tag"
+            cd "$RUNNER_TEMP/release" && "$RUNNER_TEMP/tools/bin/cargo-deny" check advisories
+          else
+            echo "the latest release tag, ${tag:-none}, carries no Cargo.lock"
+          fi
+
   docker:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -28,6 +55,7 @@ jobs:
       - run: make check-docker
 
   bench:
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     continue-on-error: true
     steps:
@@ -38,6 +66,7 @@ jobs:
       - run: make bench
 
   macos:
+    if: github.event_name != 'schedule'
     runs-on: macos-latest
     timeout-minutes: 30
     steps:
@@ -46,4 +75,5 @@ jobs:
           submodules: true
       - run: brew install bash gnupg pass
       - run: bash --version | head -n 1 && gpg --version | head -n 1
+      - run: rustup toolchain install && cargo fetch --locked
       - run: make test

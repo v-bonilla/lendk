@@ -8,11 +8,12 @@ A shim per mapped command sits first on PATH and calls `lendk run -- CMD`, which
 - `GLOSSARY.md`: the domain terms. `docs/adr/`: the decisions and their reasons. No doc ranks above another: tests pin the public interface, and a conflict between code, tests and docs goes to the maintainer as an issue.
 - `README.md`: the user manual, holding the quick start and the installation prompt for AI agents. `skills/lendk/`: the agent skill, `SKILL.md` plus `references/setup.md`.
 - `test/*.bats`: the suite, one file per verb or concern. `test/frozen/`: the frozen 1.x verb synopses, name lists, classes with exit hints, FIX texts, variable names and shim text, which `test/contract.bats` checks `--help` against. `test/helpers/`: sandbox, GnuPG and pseudo-terminal helpers. `test/fixtures/`: the fake `pass`, the stub target, the recording pinentry. `test/lint-repo.bash`: the repo lint. `test/bench/bench.bash`: the benchmark. `test/docker/`: the two test images.
-- `Makefile`: the gates, plus `install`, `uninstall` and `dist`. `docs/release.md`: the release steps. `CHANGELOG.md`: the only place for history.
+- The Rust port of lendk 2.0 (spec #37), one Cargo package at the root building one binary `lendk`: `src/` (`tables.rs` holds the tables once, `failure.rs` the class line, `sys.rs` the one `unsafe` module), `Cargo.toml` and the committed `Cargo.lock`, `rust-toolchain.toml` (the one pinned toolchain), `clippy.toml` (the environment and socket bans), `deny.toml` (the closed crate allow list) and `supply-chain/` (cargo-vet), all under ADR 0016.
+- `Makefile`: the gates, plus `build`, `test-port` (the port's selection by the `port:` tags against the release binary; it fails for each verb not yet ported), `install`, `uninstall` and `dist`. `docs/release.md`: the release steps. `CHANGELOG.md`: the only place for history.
 
 ## Acceptance criteria for every task
 
-- `make check` exits 0 for every change, docs included: shellcheck, the repo lint and the host suite, whose tests read the docs.
+- `make check` exits 0 for every change, docs included: shellcheck, the repo lint, `cargo fmt --check`, clippy at `-D warnings`, the release build, `cargo test`, the host suite, whose tests read the docs, `cargo deny --frozen check -D warnings bans licenses sources` and `cargo vet --locked --frozen`. It runs offline after `make deps`.
 - `make check-docker` exits 0 when `bin/lendk`, `install.sh`, the `Makefile` or anything under `test/` changes, and CI runs it on each push. It alone runs the container tests (lendk's opening lines under bash 3.2 and 4.3, the installer under bash 3.2, dash and busybox sh) and the suite in bash 4.4 on busybox. Its Ubuntu 24.04 run guarantees every test a host may skip, such as real GnuPG in both of pass's branches and strace.
 - `make bench` exits 0 on the development host when the run path changes: the opening lines, `run`, the backend, the shim text.
 - A behavior change, to what `bin/lendk` or `install.sh` does or to what `--help` or the README promises, starts as an issue and lands as code with a test. Any other change goes straight to `dev`. `docs/agents/issue-tracker.md` says which issue to open and how it closes.
@@ -38,16 +39,18 @@ Each of these is a lendk failure, and the next release fixes it first:
 - A lendk message that leads an agent to widen the map, print a key or upgrade lendk unasked.
 - `lendk upgrade` leaving a lendk that does not run, a partly written file, or a changed login file, map, store or skill copy.
 - lendk using the network in any call but a `lendk upgrade` the user ran.
+- A release binary carrying a crate with a RustSec vulnerability advisory that `deny.toml` does not ignore.
 
 ## Repository facts that are easy to get wrong
 
-- `make deps` checks out the bats-core submodule; a fresh clone or worktree has none, and `make test` stops with that hint. One file: `test/lib/bats-core/bin/bats test/NAME.bats`.
+- `make deps` checks out the bats-core submodule, runs `cargo fetch --locked` and installs `cargo-deny` and `cargo-vet` at the Makefile's exact versions into `.tools/`; a fresh clone or worktree has none, and `make test` stops with that hint. One file: `test/lib/bats-core/bin/bats test/NAME.bats`; against the port: `LENDK=$PWD/target/x86_64-unknown-linux-musl/release/lendk` after `make build`.
+- On Linux the Makefile builds for the host architecture's static musl target, with `rust-lld` and self-contained musl, so one binary runs on the host and in both test images. rustup installs the pinned toolchain and its musl targets from `rust-toolchain.toml`.
 - `require` skips a test whose tool the host lacks (strace, zsh, `script`, systemd's environment.d generator) and fails it in the Ubuntu image, whose `TEST_REQUIRE` lists them. Read the skip lines before calling a host run complete.
 - `install.sh` reaches users from `main` the moment `main` moves; `bin/lendk` and `skills/` reach them only in a release archive (`make dist`, a `git archive` of HEAD), which `install.sh` and `lendk upgrade` both read from `releases/latest/download/`. An installer change must work with the latest released archive. The marker strings sit in `bin/lendk`, `install.sh` and the `Makefile`, and `test/installer.bats` holds them equal.
 - Tests parse the README and the skill, so keep their shapes: in the README, the `<!-- quickstart -->` and `<!-- agent-prompt -->` markers and the list lines `--help` prints; in the skill, the class table, the `Options:` line and the 250-line limit of `SKILL.md`.
 - `bin/lendk` ends with `main "$@"; exit $?` on one line: bash reads a script as it runs, and `sandbox` builds `lendk-fn` by dropping that line to call single functions.
 - The reasons behind the decrypt path, the timeout watchdog and the terminal handoff are ADRs 0004 to 0006 in `docs/adr/`, and those behind the write lock are the comments on `take_lock` and `break_lock`. Read them before changing those parts.
-- `dist/`, `test/bench/out/` and `.claude/worktrees/` are ignored by git and skipped by the lint. Never commit them.
+- `dist/`, `target/`, `.tools/`, `test/bench/out/` and `.claude/worktrees/` are ignored by git and skipped by the lint. Never commit them.
 
 ## Agent skills
 

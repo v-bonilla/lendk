@@ -12,5 +12,6 @@ lendk reads every mapped key, so any network use by it is a path for values to l
 ## Consequences
 
 - `test/lint-repo.bash` and `test/net.bats` hold the region: one begin and one end marker, no download tool named outside it, and no `nc` or `/dev/tcp`. Under strace, every other verb, and `lendk upgrade` from a `file://` base, connects to no internet address.
+- In the Rust source, `clippy.toml`'s `disallowed-types` bans the socket types of `std::net` and `std::os::unix::net`, `make lint` fails on any use, and `test/lint-repo.bash` allows `curl` and `wget` only between the `// lint: network begin` and `// lint: network end` markers. No crate ban reaches `std::net`, so `test/net.bats` stays the behavior check ([ADR 0016](0016-dependencies-admitted-by-rule.md)).
 - The download tool runs with PATH without the shim directory and stdin `/dev/null`, and its output never reaches the caller, so a mapped `curl` runs without its shim and gets no key.
 - What `lendk upgrade` trusts when it does use the network: see [ADR 0014](0014-upgrade-trusts-https-release-replaces-one-file.md).

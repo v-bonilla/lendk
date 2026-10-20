@@ -1,0 +1,17 @@
+[package]
+name = "lendk"
+version = "1.1.0"
+edition = "2024"
+rust-version = "1.99.1"
+license = "MIT"
+publish = false
+
+[dependencies]
+libc = { version = "=0.2.190", default-features = false, features = [] }
+zeroize = { version = "=1.8.2", default-features = false, features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+panic = "abort"
+strip = "debuginfo"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Repository lint: content rules, no reference to the retired spec or its FR, NFR and AC IDs, portability of bin/lendk, one file in bin/.
+# Repository lint: content rules, no reference to the retired spec or its FR, NFR and AC IDs, portability of bin/lendk, the network markers of the Rust source, one file in bin/.
 # Usage: test/lint-repo.bash [ROOT]; prints one line per problem and exits 1 when there is any.
 set -u -o pipefail
 root=${1:-$(cd "$(dirname "$0")/.." && pwd)}
@@ -68,6 +68,13 @@ if [[ -f bin/lendk ]]; then
 		{ grep -E -e "$(cmdpos nc "$start")" <<<"$code"; grep -E -e '/dev/(tcp|udp)' <<<"$body"; } | sort -u)
 	while IFS= read -r hit; do problem "bin/lendk:${hit:1}: /proc or ps outside the terminal-owner test"; done < <(grep -E -e "/proc|$(cmdpos ps "$start")" <<<"$code" | grep -v '^O')
 fi
+# The Rust source names curl and wget only between the network markers (ADR 0013).
+for f in "${files[@]}"; do
+	[[ $f == src/*.rs ]] || continue
+	while IFS= read -r hit; do problem "$f:$hit: curl or wget outside the network region"; done < <(awk '
+		/^[[:space:]]*\/\/ lint: network begin$/ { n = 1 } /^[[:space:]]*\/\/ lint: network end$/ { n = 0; next }
+		!n && /(^|[^A-Za-z0-9_-])(curl|wget)([^A-Za-z0-9_-]|$)/ { print NR }' "$f")
+done
 for f in "${files[@]}"; do
 	[[ $f == bin/lendk || $f == test/*.bats || $f == test/fixtures/* ]] || continue
 	while IFS= read -r hit; do problem "$f:$hit: only test helpers may call script"; done < <(grep -nE -e "$(cmdpos script)" -- "$f")

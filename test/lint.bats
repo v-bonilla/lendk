@@ -13,7 +13,7 @@ scratch() {
 	mkdir -p "$COPY"
 	local f
 	for f in "$ROOT"/* "$ROOT"/.[!.]*; do
-		[[ ${f##*/} == .git ]] || cp -R "$f" "$COPY/"
+		[[ ${f##*/} == @(.git|target|.tools) ]] || cp -R "$f" "$COPY/"
 	done
 	rm -rf "$COPY/test/lib"
 }
@@ -168,6 +168,20 @@ lint_copy() {
 		*curl* | *wget*) [[ $output == "lint-repo: bin/lendk:"*": curl or wget outside the network region" ]] ;;
 		*) [[ $output == "lint-repo: bin/lendk:"*": network tool" ]] ;;
 		esac
+	done
+}
+
+@test "lint-repo.bash allows curl and wget in the Rust source only between the network markers" {
+	scratch
+	local tool
+	for tool in curl wget; do
+		printf '// lint: network begin\nconst TOOL: &str = "%s";\n// lint: network end\n' "$tool" >>"$COPY/src/main.rs"
+		run bash "$ROOT/test/lint-repo.bash" "$COPY"
+		assert_eq "$output" ""
+		printf 'const OTHER: &str = "%s";\n' "$tool" >>"$COPY/src/main.rs"
+		lint_copy "src/main.rs:"
+		assert_eq "$output" "lint-repo: src/main.rs:$(wc -l <"$COPY/src/main.rs"): curl or wget outside the network region"
+		cp "$ROOT/src/main.rs" "$COPY/src/main.rs"
 	done
 }
 
