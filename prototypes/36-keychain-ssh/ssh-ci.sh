@@ -35,9 +35,10 @@ note() {
 }
 
 # ssh_key USER: an ssh key that logs USER in to this runner from itself, and a config naming that login lendk-probe-self.
+# The runner image ships ~/.ssh world-writable, so sshd's StrictModes refuses keys there until chmod.
 ssh_key() {
 	sudo -u "$1" -H sh -c '
-		cd && umask 077 && mkdir -p .ssh &&
+		cd && umask 077 && mkdir -p .ssh && chmod 700 .ssh &&
 			{ [ -f .ssh/lendk-probe ] || ssh-keygen -q -t ed25519 -N "" -C lendk-probe-36 -f .ssh/lendk-probe; } &&
 			cat .ssh/lendk-probe.pub >>.ssh/authorized_keys &&
 			printf "%s\n" "Host lendk-probe-self" "  HostName 127.0.0.1" "  User $1" "  IdentityFile ~/.ssh/lendk-probe" \
@@ -48,12 +49,15 @@ ssh_key() {
 }
 
 # ssh_as USER COMMAND: one ssh session to this runner as USER, running COMMAND. probe.sh logs it to its own file.
+failed=0
 ssh_as() {
 	user=$1
 	shift
 	printf '$ ssh %s@127.0.0.1 %s\n' "$user" "$*" | out
 	sudo -u "$user" -H sh -c 'cd && exec ssh -F .ssh/lendk-probe-config lendk-probe-self "$1"' sh "$*" </dev/null 2>&1
-	printf 'ssh session as %s: exit %s\n' "$user" "$?" | out
+	rc=$?
+	printf 'ssh session as %s: exit %s\n' "$user" "$rc" | out
+	[ "$rc" = 0 ] || failed=$((failed + 1))
 }
 
 say "Remote Login before this job"
@@ -140,3 +144,4 @@ sudo mkdir -p "$probe_dir/results/$second" &&
 sudo log show --last 30m --style compact --predicate 'process BEGINSWITH "sshd"' 2>&1 |
 	sed -e "s|$HOME|~|g" -e "s|$second_home|~$second|g" -e "s|$password|<password>|g" >"${log%.log}-sshd.log"
 find "$probe_dir/results" -type f | sort | out
+[ "$failed" = 0 ] || die "$failed ssh session(s) failed; the job log shows why"
