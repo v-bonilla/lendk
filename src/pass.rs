@@ -186,6 +186,23 @@ fn check_gnupg(
     ))
 }
 
+/// The GnuPG 2.4 floor as check sees it, within `timeout` seconds. The call has no temporary
+/// directory for the watchdog to remove.
+pub fn gnupg(env: &Env, paths: &Paths, timeout: u64) -> Result<(), Failure> {
+    let deadline = Instant::now() + Duration::from_secs(timeout);
+    let watchdog = helpers::Watchdog::start(b"").map_err(|e| {
+        Failure::new(
+            "write",
+            [b"cannot start the watchdog: ", e.to_string().as_bytes()].concat(),
+        )
+    })?;
+    check_gnupg(
+        &watchdog,
+        &helpers::helper_env(env, &paths.shims, &[]),
+        deadline,
+    )
+}
+
 /// A test hook: pauses for LENDK_TEST_PAUSE seconds when LENDK_TEST_AT, `exec` when unset,
 /// names `point`.
 pub fn test_pause(env: &Env, point: &[u8]) {

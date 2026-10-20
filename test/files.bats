@@ -52,26 +52,23 @@ verb() {
 }
 
 @test "check, sync, add, rm, init, --help and --version make no backend read" {
-	verb check
-	verb sync
-	verb add stub K4
-	verb rm stub K4
-	verb init sh
-	verb --help
-	verb --version
+	local v
+	for v in check sync "add stub K4" "rm stub K4" "init sh" --help --version; do
+		# shellcheck disable=SC2086
+		verb $v
+		assert_eq "$v: $status" "$v: 0"
+	done
 	assert_eq "$(calls)" 0
 }
 
 @test "run, unlock, check, init, --help and --version leave the filesystem unchanged" {
-	local before
+	local before v
 	before=$(snapshot)
-	verb run -- stub
-	verb run K4 -- stub
-	verb unlock
-	verb check
-	verb init bash
-	verb --help
-	verb --version
+	for v in "run -- stub" "run K4 -- stub" unlock check "init bash" --help --version; do
+		# shellcheck disable=SC2086
+		verb $v
+		assert_eq "$v: $status" "$v: 0"
+	done
 	printf 'locked\n' >"$SB/store/env/K2.mode"
 	verb run -- stub
 	assert_class locked 120

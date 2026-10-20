@@ -1,17 +1,17 @@
 //! The command line: `--help`, `--version`, and usage for anything else until a verb is ported.
 
-use crate::edit;
 use crate::failure::Failure;
 use crate::map::Paths;
 use crate::run;
 use crate::sys;
 use crate::tables;
 use crate::unlock;
+use crate::{check, edit};
 use std::ffi::CStr;
 use std::io::Write;
 
 /// The environment lendk was started with: exec's own strings, never copied.
-pub struct Env<'a>(&'a [&'static CStr]);
+pub struct Env<'a>(pub &'a [&'static CStr]);
 
 impl Env<'_> {
     /// The value of the first `NAME=` entry, as getenv finds it.
@@ -79,6 +79,8 @@ pub fn main(args: &[&'static CStr], env: &[&'static CStr]) -> i32 {
         Some(b"sync") => Some(edit::sync),
         Some(b"add") => Some(edit::add),
         Some(b"rm") => Some(edit::rm),
+        Some(b"check") => Some(check::check),
+        Some(b"init") => Some(check::init),
         _ => None,
     };
     if let Some(verb) = verb {
@@ -181,7 +183,7 @@ fn check_env(env: &Env) -> Result<(), Failure> {
 
 /// The bound of a call's backend work in seconds: LENDK_TIMEOUT, else 60 in an interactive call
 /// and 10 otherwise. check_env has validated LENDK_TIMEOUT.
-fn timeout(env: &Env, interactive: bool) -> u64 {
+pub fn timeout(env: &Env, interactive: bool) -> u64 {
     env.get("LENDK_TIMEOUT")
         .and_then(|v| std::str::from_utf8(v).ok()?.parse().ok())
         .unwrap_or(if interactive { 60 } else { 10 })
