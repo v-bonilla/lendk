@@ -256,7 +256,9 @@ pub fn read_first_line(fd: i32, plaintext: &mut Plaintext, deadline: Instant) ->
         }
     };
     loop {
-        plaintext.reserve(64 * 1024)?;
+        if plaintext.spare().is_empty() {
+            plaintext.reserve(1)?;
+        }
         ready(fd)?;
         let before = plaintext.len();
         let n = sys::read(fd, plaintext.spare())?;

@@ -228,6 +228,26 @@ lendk: missing-key: env/K3 is not in the store. Stop and ask the user."
 	assert_eq "$(target_var K1)" "$SENTINEL"
 }
 
+@test "under a 64 KiB memlock limit, a call with four keys of ordinary length locks the memory that holds the values" {
+	[[ -d /proc/self ]] || skip "no /proc"
+	map 'stub K1 K2 K3 K4'
+	local k i lck=0 long
+	long=$(printf '%0200d' 0)
+	for k in K1 K2 K3 K4; do entry "$k" "$SENTINEL-$k-$long"; done
+	(ulimit -l 64 && LENDK_TEST_PAUSE=3 exec "$LENDK" run -- stub </dev/null 2>"$SB/stderr") &
+	local pid=$!
+	for ((i = 0; i < 50; i++)); do
+		[[ $(compgen -G "$SB/log/pass.*" | wc -l) == 4 ]] && break
+		sleep 0.1
+	done
+	sleep 0.5
+	lck=$(sed -n 's/^VmLck:[[:space:]]*\([0-9]*\) kB$/\1/p' "/proc/$pid/status")
+	wait "$pid"
+	assert_eq "$(<"$SB/stderr")" ""
+	((lck * 1024 >= 4 * (${#SENTINEL} + ${#long} + 6))) || { echo "VmLck: $lck kB" >&2; return 1; }
+	assert_eq "$(target_var K4)" "$SENTINEL-K4-$long"
+}
+
 @test "a call whose memory cannot be locked still runs" {
 	map 'stub K1'
 	entry K1 "$SENTINEL"

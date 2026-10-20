@@ -70,6 +70,8 @@ pub fn read_keys(
             last,
         });
     }
+    // 4 KiB per value keeps a typical call in one mapping small enough to mlock under a 64 KiB
+    // RLIMIT_MEMLOCK; pass gives no length in advance, so a longer value grows it by copy.
     let capacity: usize = keys.iter().map(|k| k.len() + 2 + 4096).sum();
     let mut plaintext = Plaintext::with_capacity(capacity)
         .map_err(|_| Failure::new("write", "memory for the values cannot be mapped"))?;
